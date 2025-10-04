@@ -1,3 +1,4 @@
+pub(crate) mod coreml_model;
 mod face_embedding;
 mod face_image;
 

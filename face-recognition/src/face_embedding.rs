@@ -3,45 +3,26 @@ use std::path::Path;
 use anyhow::Result;
 use candle_core::Tensor;
 use image::DynamicImage;
-use objc2::{
-    rc::{Retained, autoreleasepool},
-    runtime::ProtocolObject,
-};
-use objc2_core_ml::{MLDictionaryFeatureProvider, MLFeatureProvider, MLModel};
-use objc2_foundation::{NSString, NSURL};
 
-use crate::utils::{create_feature_provider, extract_vector, tensor_to_mlmultiarray};
+use crate::coreml_model::CoreMLModel;
 
 const INPUT_NAME: &str = "x_1";
 const OUTPUT_NAME: &str = "var_2167";
 
 pub struct FaceEmbeddingModel {
-    model: Retained<MLModel>,
+    model: CoreMLModel,
 }
 
 impl FaceEmbeddingModel {
     pub fn new(path: &Path) -> Result<Self> {
-        if !path.exists() {
-            anyhow::bail!("Model file not found: {}", path.display());
-        }
-
-        autoreleasepool(|_| {
-            let url =
-                unsafe { NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy())) };
-            match unsafe { MLModel::modelWithContentsOfURL_error(&url) } {
-                Ok(model) => Ok(model),
-                Err(err) => Err(err.into()),
-            }
+        Ok(Self {
+            model: CoreMLModel::new(path, INPUT_NAME.into(), OUTPUT_NAME.into())?,
         })
-        .map(|model| Self { model })
     }
 
     pub fn generate_embedding(&self, image: DynamicImage) -> Result<Vec<f32>> {
         let tensor = tensor_from_image(image)?;
-        let ml_array = tensor_to_mlmultiarray(&tensor)?;
-        let provider = create_feature_provider(INPUT_NAME, &ml_array)?;
-        let prediction = run_model_prediction(&self.model, &provider)?;
-        let embedding = extract_vector(&prediction, OUTPUT_NAME)?;
+        let embedding = self.model.predict(tensor)?;
         Ok(embedding)
     }
 }
@@ -61,16 +42,34 @@ fn tensor_from_image(image: DynamicImage) -> Result<Tensor> {
     normalized_tensor.map_err(|e| e.into())
 }
 
-fn run_model_prediction(
-    model: &MLModel,
-    provider: &MLDictionaryFeatureProvider,
-) -> Result<Retained<ProtocolObject<dyn MLFeatureProvider>>> {
-    objc2::rc::autoreleasepool(|_| unsafe {
-        // Convert MLDictionaryFeatureProvider to ProtocolObject
-        let protocol_provider = ProtocolObject::from_ref(provider);
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
 
-        model
-            .predictionFromFeatures_error(protocol_provider)
-            .map_err(|e| e.into())
-    })
+    use super::*;
+
+    fn workspace_path() -> std::path::PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .to_path_buf()
+    }
+
+    #[test]
+    fn test_tensor_from_image() {
+        let image_path = workspace_path().join("test_data/example.png");
+        let image = image::open(image_path).unwrap();
+        let tensor = tensor_from_image(image).unwrap();
+        assert_eq!(tensor.dims(), &[1, 3, 160, 160]);
+    }
+
+    #[test]
+    fn test_generate_embedding() {
+        let model_path = workspace_path().join("models/facenet-1.mlmodelc");
+        let model = FaceEmbeddingModel::new(model_path.as_path()).unwrap();
+        let image_path = workspace_path().join("test_data/example.png");
+        let image = image::open(image_path).unwrap();
+        let embedding = model.generate_embedding(image).unwrap();
+        assert_eq!(embedding.len(), 512);
+    }
 }
