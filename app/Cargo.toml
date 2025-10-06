@@ -5,6 +5,5 @@ edition = "2024"
 
 [dependencies]
 eframe = "0.32.3"
-egui = "0.32.3"
 egui_extras = { version = "0.32.3", features = ["default", "image"] }
 env_logger = { version = "0.11.8", features = ["auto-color", "humantime"] }

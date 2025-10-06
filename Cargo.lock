@@ -242,7 +242,6 @@ name = "app"
 version = "0.1.0"
 dependencies = [
  "eframe",
- "egui",
  "egui_extras",
  "env_logger",
 ]
