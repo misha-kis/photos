@@ -2,20 +2,49 @@ use eframe::egui;
 use egui::{ColorImage, TextureHandle, Vec2};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{channel, Receiver, Sender};
+use std::thread;
+
+#[derive(Debug)]
+enum LoadRequest {
+    Thumbnail { path: PathBuf, index: usize },
+    FullImage { path: PathBuf },
+}
+
+#[derive(Debug)]
+enum LoadResponse {
+    Thumbnail {
+        index: usize,
+        path: PathBuf,
+        image_data: Vec<u8>,
+        width: u32,
+        height: u32,
+    },
+    FullImage {
+        path: PathBuf,
+        image_data: Vec<u8>,
+        width: u32,
+        height: u32,
+    },
+}
 
 struct Photo {
     path: PathBuf,
     thumbnail: Option<TextureHandle>, // Lazy-loaded
     loaded: bool,
+    loading: bool, // Track if currently being loaded
 }
 
 struct PhotoLibraryApp {
     photos: Vec<Photo>,
     selected_photo: Option<usize>,
-    image_dir: PathBuf,
+    _image_dir: PathBuf,
     thumb_size: Vec2,
     columns: usize,
     first_load: bool,
+    load_tx: Sender<LoadRequest>,
+    load_rx: Receiver<LoadResponse>,
+    full_image_cache: Option<(PathBuf, TextureHandle)>,
 }
 
 impl PhotoLibraryApp {
@@ -23,13 +52,25 @@ impl PhotoLibraryApp {
         let dir = dirs::picture_dir().unwrap_or_else(|| PathBuf::from("."));
         let photos = Self::scan_directory(&dir.join("pics"));
 
+        // Create channels for async image loading
+        let (load_tx, worker_rx) = channel::<LoadRequest>();
+        let (worker_tx, load_rx) = channel::<LoadResponse>();
+
+        // Spawn worker thread for image loading
+        thread::spawn(move || {
+            Self::image_loader_worker(worker_rx, worker_tx);
+        });
+
         Self {
             photos,
             selected_photo: None,
-            image_dir: dir,
+            _image_dir: dir,
             thumb_size: Vec2::new(200.0, 200.0),
             columns: 2,
             first_load: true,
+            load_tx,
+            load_rx,
+            full_image_cache: None,
         }
     }
 
@@ -47,6 +88,7 @@ impl PhotoLibraryApp {
                             path,
                             thumbnail: None,
                             loaded: false,
+                            loading: false,
                         });
                     }
                 }
@@ -57,22 +99,102 @@ impl PhotoLibraryApp {
         photos
     }
 
-    fn load_thumbnail(&mut self, ctx: &egui::Context, index: usize) {
-        if let Some(photo) = self.photos.get_mut(index) {
-            if photo.loaded {
-                return;
+    // Worker thread that loads images in background
+    fn image_loader_worker(rx: Receiver<LoadRequest>, tx: Sender<LoadResponse>) {
+        while let Ok(request) = rx.recv() {
+            match request {
+                LoadRequest::Thumbnail { path, index } => {
+                    if let Ok(img) = image::open(&path) {
+                        println!("Loading thumbnail: {:?}", &path);
+                        let thumb = img.thumbnail_exact(200, 200).to_rgba8();
+                        let width = thumb.width();
+                        let height = thumb.height();
+                        let image_data = thumb.into_raw();
+                        
+                        let _ = tx.send(LoadResponse::Thumbnail {
+                            index,
+                            path,
+                            image_data,
+                            width,
+                            height,
+                        });
+                    }
+                }
+                LoadRequest::FullImage { path } => {
+                    if let Ok(img) = image::open(&path) {
+                        println!("Loading full image: {:?}", &path);
+                        let rgba = img.to_rgba8();
+                        let width = rgba.width();
+                        let height = rgba.height();
+                        let image_data = rgba.into_raw();
+                        
+                        let _ = tx.send(LoadResponse::FullImage {
+                            path,
+                            image_data,
+                            width,
+                            height,
+                        });
+                    }
+                }
             }
-            if let Ok(img) = image::open(&photo.path) {
-                println!("Reading {:?}", &photo.path);
-                let thumb = img.thumbnail_exact(200, 200).to_rgba8();
-                let size = [thumb.width() as usize, thumb.height() as usize];
-                let tex = ctx.load_texture(
-                    format!("thumb-{}", photo.path.display()),
-                    ColorImage::from_rgba_unmultiplied(size, thumb.as_raw()),
-                    Default::default(),
-                );
-                photo.thumbnail = Some(tex);
-                photo.loaded = true;
+        }
+    }
+
+    // Request thumbnail loading for a specific index
+    fn request_thumbnail_load(&mut self, index: usize) {
+        if let Some(photo) = self.photos.get_mut(index) {
+            if !photo.loaded && !photo.loading {
+                photo.loading = true;
+                let _ = self.load_tx.send(LoadRequest::Thumbnail {
+                    path: photo.path.clone(),
+                    index,
+                });
+            }
+        }
+    }
+
+    // Process any loaded images from the worker thread
+    fn process_loaded_images(&mut self, ctx: &egui::Context) {
+        // Process all available responses (non-blocking)
+        while let Ok(response) = self.load_rx.try_recv() {
+            match response {
+                LoadResponse::Thumbnail {
+                    index,
+                    path,
+                    image_data,
+                    width,
+                    height,
+                } => {
+                    if let Some(photo) = self.photos.get_mut(index) {
+                        let size = [width as usize, height as usize];
+                        let tex = ctx.load_texture(
+                            format!("thumb-{}", path.display()),
+                            ColorImage::from_rgba_unmultiplied(size, &image_data),
+                            Default::default(),
+                        );
+                        photo.thumbnail = Some(tex);
+                        photo.loaded = true;
+                        photo.loading = false;
+                    }
+                    // Request repaint to show the newly loaded thumbnail
+                    ctx.request_repaint();
+                }
+                LoadResponse::FullImage {
+                    path,
+                    image_data,
+                    width,
+                    height,
+                } => {
+                    let size = [width as usize, height as usize];
+                    let tex = ctx.load_texture(
+                        format!("full-{}", path.display()),
+                        ColorImage::from_rgba_unmultiplied(size, &image_data),
+                        Default::default(),
+                    );
+                    self.full_image_cache = Some((path, tex));
+                    // Request repaint to show the newly loaded full image
+                    ctx.request_repaint();
+                }
             }
         }
     }
@@ -80,6 +202,9 @@ impl PhotoLibraryApp {
 
 impl eframe::App for PhotoLibraryApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Process any loaded images from the worker thread
+        self.process_loaded_images(ctx);
+
         egui::CentralPanel::default().show(ctx, |ui| {
             if let Some(idx) = self.selected_photo {
                 // Full image view
@@ -88,16 +213,21 @@ impl eframe::App for PhotoLibraryApp {
                     ui.heading(photo.path.file_name().unwrap().to_string_lossy());
                     if ui.button("← Back").clicked() {
                         self.selected_photo = None;
+                        self.full_image_cache = None;
                     }
-                    if let Ok(img) = image::open(&photo.path) {
-                        let rgba = img.to_rgba8();
-                        let size = [rgba.width() as usize, rgba.height() as usize];
-                        let tex = ctx.load_texture(
-                            format!("full-{}", photo.path.display()),
-                            ColorImage::from_rgba_unmultiplied(size, rgba.as_raw()),
-                            Default::default(),
-                        );
-                        ui.image(&tex);
+                    
+                    // Check if we have the full image cached
+                    if let Some((cached_path, tex)) = &self.full_image_cache {
+                        if cached_path == &photo.path {
+                            ui.image(tex);
+                        }
+                    } else {
+                        // Request loading if not cached
+                        let _ = self.load_tx.send(LoadRequest::FullImage {
+                            path: photo.path.clone(),
+                        });
+                        ui.spinner();
+                        ui.label("Loading...");
                     }
                 });
                 return;
@@ -106,7 +236,6 @@ impl eframe::App for PhotoLibraryApp {
             // Thumbnail grid with lazy loading
             let thumb_height = self.thumb_size.y;
             let total_rows = (self.photos.len() + self.columns - 1) / self.columns;
-            let total_height = total_rows as f32 * thumb_height;
 
             egui::ScrollArea::vertical()
                 .auto_shrink([false; 2])
@@ -142,7 +271,7 @@ impl eframe::App for PhotoLibraryApp {
                         self.first_load = false;
                     } else {
                         for i in start_index..end_index {
-                            self.load_thumbnail(ctx, i);
+                            self.request_thumbnail_load(i);
                         }
                     }
 
@@ -153,13 +282,7 @@ impl eframe::App for PhotoLibraryApp {
                         ui.horizontal(|ui| {
                             for _ in 0..self.columns {
                                 if let Some(photo) = self.photos.get(i as usize) {
-                                    let (texture, label) = if let Some(tex) = &photo.thumbnail {
-                                        (Some(tex), "")
-                                    } else {
-                                        (None, "Loading…")
-                                    };
-
-                                    if let Some(tex) = texture {
+                                    if let Some(tex) = &photo.thumbnail {
                                         if ui
                                             .add(egui::ImageButton::new(tex).frame(false))
                                             .clicked()
