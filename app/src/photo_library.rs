@@ -1,4 +1,4 @@
-use eframe::egui::{ColorImage, TextureHandle, Vec2};
+use eframe::egui::{ColorImage, TextureHandle};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -52,7 +52,6 @@ pub struct PhotoLibrary {
     pub thumbnails_dir: PathBuf,
     pub thumb_size: ThumbSize,
     pub photos: Vec<Photo>,
-    pub selected_photo: Option<usize>,
     pub load_tx: Sender<LoadRequest>,
     pub load_rx: Receiver<LoadResponse>,
     pub full_image_cache: Option<(PathBuf, TextureHandle)>,
@@ -74,7 +73,6 @@ impl PhotoLibrary {
             thumbnails_dir: library_path.join("thumbnails"),
             thumb_size: ThumbSize::T64,
             photos,
-            selected_photo: None,
             load_tx,
             load_rx,
             full_image_cache: None,
