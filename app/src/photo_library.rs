@@ -11,7 +11,7 @@ pub enum LoadRequest {
 }
 
 #[derive(Debug)]
-pub enum LoadResponse {
+enum LoadResponse {
     Thumbnail {
         index: usize,
         path: PathBuf,

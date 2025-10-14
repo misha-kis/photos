@@ -1,11 +1,6 @@
+use crate::photo_library::{LoadRequest, PhotoLibrary};
 use eframe::egui;
-use egui::{ColorImage, TextureHandle, Vec2};
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::mpsc::{Receiver, Sender, channel};
-use std::thread;
-
-use crate::photo_library::{LoadRequest, LoadResponse, Photo, PhotoLibrary};
+use egui::Vec2;
 
 mod photo_library;
 
