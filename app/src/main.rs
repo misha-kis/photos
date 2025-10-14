@@ -1,4 +1,4 @@
-use eframe::egui;
+use eframe::egui::{self, RichText};
 use egui::{ColorImage, TextureHandle, Vec2};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -15,21 +15,21 @@ struct PhotoLibraryApp {
     image_dir: PathBuf,
     thumb_size: Vec2,
     columns: usize,
+    first_load: bool,
 }
 
 impl PhotoLibraryApp {
     fn new() -> Self {
-        let dir = dirs::picture_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("pics");
-        let photos = Self::scan_directory(&dir);
+        let dir = dirs::picture_dir().unwrap_or_else(|| PathBuf::from("."));
+        let photos = Self::scan_directory(&dir.join("pics"));
 
         Self {
             photos,
             selected_photo: None,
             image_dir: dir,
-            thumb_size: Vec2::new(128.0, 128.0),
+            thumb_size: Vec2::new(200.0, 200.0),
             columns: 1,
+            first_load: true,
         }
     }
 
@@ -52,6 +52,7 @@ impl PhotoLibraryApp {
                 }
             }
         }
+        println!("total: {}", photos.len());
         photos.sort_by_key(|p| p.path.clone());
         photos
     }
@@ -63,7 +64,7 @@ impl PhotoLibraryApp {
             }
             if let Ok(img) = image::open(&photo.path) {
                 println!("Reading {:?}", &photo.path);
-                let thumb = img.thumbnail(200, 200).to_rgba8();
+                let thumb = img.thumbnail_exact(200, 200).to_rgba8();
                 let size = [thumb.width() as usize, thumb.height() as usize];
                 let tex = ctx.load_texture(
                     format!("thumb-{}", photo.path.display()),
@@ -103,7 +104,7 @@ impl eframe::App for PhotoLibraryApp {
             }
 
             // Thumbnail grid with lazy loading
-            let thumb_height = self.thumb_size.y + 10.0;
+            let thumb_height = self.thumb_size.y;
             let total_rows = (self.photos.len() + self.columns - 1) / self.columns;
             let total_height = total_rows as f32 * thumb_height;
 
@@ -114,13 +115,16 @@ impl eframe::App for PhotoLibraryApp {
                     // Compute visible range using scroll area clip rect
                     let clip_rect = ui.clip_rect();
                     let scroll_y = ui.min_rect().top();
-                    let visible_start =
-                        ((clip_rect.top() - scroll_y) / thumb_height).floor() as isize;
-                    let visible_end =
-                        ((clip_rect.bottom() - scroll_y) / thumb_height).ceil() as isize;
+                    println!("scroll: {}", scroll_y);
+                    let visible_start = ((clip_rect.top() - scroll_y)
+                        / (thumb_height + ui.style().spacing.item_spacing.y))
+                        .floor() as isize;
+                    let visible_end = ((clip_rect.bottom() - scroll_y)
+                        / (thumb_height + ui.style().spacing.item_spacing.y))
+                        .ceil() as isize;
 
                     // Load thumbnails near visible region (with margin)
-                    let margin = 3;
+                    let margin = 1;
                     let start_row = (visible_start - margin).max(0) as usize;
                     let end_row = ((visible_end + margin) as usize).min(total_rows);
 
@@ -134,8 +138,12 @@ impl eframe::App for PhotoLibraryApp {
                         end_index = x;
                     }
 
-                    for i in start_index..end_index {
-                        self.load_thumbnail(ctx, i);
+                    if self.first_load {
+                        self.first_load = false;
+                    } else {
+                        for i in start_index..end_index {
+                            self.load_thumbnail(ctx, i);
+                        }
                     }
 
                     // Now draw all (using placeholders if not loaded)
@@ -152,24 +160,30 @@ impl eframe::App for PhotoLibraryApp {
                                     };
 
                                     if let Some(tex) = texture {
-                                        if ui.add(egui::ImageButton::new(tex)).clicked() {
+                                        if ui
+                                            .add(egui::ImageButton::new(tex).frame(false))
+                                            .clicked()
+                                        {
                                             self.selected_photo = Some(i as usize);
                                         }
                                     } else {
                                         ui.vertical_centered(|ui| {
-                                            ui.label(label);
-                                            ui.allocate_space(self.thumb_size);
+                                            ui.label(RichText::new(label).line_height(Some(20f32)));
+                                            ui.allocate_space(Vec2::new(
+                                                200f32,
+                                                180f32 - ui.style().spacing.item_spacing.y,
+                                            ));
                                         });
                                     }
                                 }
                                 i += 1;
                             }
                         });
-                        ui.add_space(4.0);
+                        // ui.add_space(4.0);
                     }
 
                     // Add total height spacer so scroll behaves correctly
-                    ui.set_min_height(total_height);
+                    // ui.set_min_height(total_height);
                 });
         });
     }
