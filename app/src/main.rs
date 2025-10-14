@@ -12,11 +12,12 @@ enum AppState {
 }
 
 struct PhotoLibraryApp {
-    photo_library: photo_library::PhotoLibrary,
+    photo_library: PhotoLibrary,
     columns: usize,
     first_load: bool,
     state: AppState,
     thumb_size: ThumbSize,
+    is_full_photo_requested: bool,
 }
 
 impl PhotoLibraryApp {
@@ -27,7 +28,8 @@ impl PhotoLibraryApp {
             columns: 2,
             first_load: true,
             state: AppState::Main,
-            thumb_size: ThumbSize::T256,
+            thumb_size: ThumbSize::T128,
+            is_full_photo_requested: false,
         }
     }
 }
@@ -46,6 +48,7 @@ impl eframe::App for PhotoLibraryApp {
                         if ui.button("← Back").clicked() {
                             self.state = AppState::Main;
                             self.photo_library.full_image_cache = None;
+                            self.is_full_photo_requested = false;
                         }
 
                         // Check if we have the full image cached
@@ -55,9 +58,13 @@ impl eframe::App for PhotoLibraryApp {
                             }
                         } else {
                             // Request loading if not cached
-                            let _ = self.photo_library.load_tx.send(LoadRequest::FullImage {
-                                path: photo.path.clone(),
-                            });
+                            if !self.is_full_photo_requested {
+                                let _ = self.photo_library.load_tx.send(LoadRequest::FullImage {
+                                    path: photo.path.clone(),
+                                    size: ui.available_size(),
+                                });
+                                self.is_full_photo_requested = true;
+                            }
                             ui.spinner();
                             ui.label("Loading...");
                         }
@@ -78,7 +85,6 @@ impl eframe::App for PhotoLibraryApp {
                         .show(ui, |ui| {
                             let clip_rect = ui.clip_rect();
                             let scroll_y = ui.min_rect().top();
-                            println!("scroll: {}", scroll_y);
                             let visible_start = ((clip_rect.top() - scroll_y)
                                 / (thumb_height + ui.style().spacing.item_spacing.y))
                                 .floor() as isize;
@@ -94,7 +100,6 @@ impl eframe::App for PhotoLibraryApp {
                             let mut end_index =
                                 (end_row * self.columns).min(self.photo_library.photos.len());
 
-                            println!("{start_index} - {end_index}");
                             if start_index > end_index {
                                 let x = start_index;
                                 start_index = end_index;

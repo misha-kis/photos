@@ -1,5 +1,6 @@
 use crate::thumb_size::ThumbSize;
-use eframe::egui::{ColorImage, TextureHandle};
+use eframe::egui::{ColorImage, TextureHandle, Vec2};
+use image::imageops::FilterType;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -14,6 +15,7 @@ pub enum LoadRequest {
     },
     FullImage {
         path: PathBuf,
+        size: Vec2,
     },
 }
 
@@ -122,10 +124,16 @@ impl PhotoLibrary {
                         });
                     }
                 }
-                LoadRequest::FullImage { path } => {
+                LoadRequest::FullImage { path, size } => {
                     if let Ok(img) = image::open(&path) {
                         println!("Loading full image: {:?}", &path);
-                        let rgba = img.to_rgba8();
+                        let rgba = img
+                            .resize(
+                                size.x.round() as u32,
+                                size.y.round() as u32,
+                                FilterType::Nearest,
+                            )
+                            .to_rgba8();
                         let width = rgba.width();
                         let height = rgba.height();
                         let image_data = rgba.into_raw();
