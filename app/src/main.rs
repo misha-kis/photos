@@ -53,6 +53,10 @@ impl eframe::App for PhotoLibraryApp {
                 return;
             }
 
+            self.columns = (ui.clip_rect().width()
+                / (self.photo_library.thumb_size.x + ui.style().spacing.item_spacing.x).max(0.0))
+                as usize;
+
             // Thumbnail grid with lazy loading
             let thumb_height = self.photo_library.thumb_size.y;
             let total_rows = (self.photo_library.photos.len() + self.columns - 1) / self.columns;
