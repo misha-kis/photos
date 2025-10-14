@@ -1,4 +1,4 @@
-use eframe::egui::{self, RichText};
+use eframe::egui;
 use egui::{ColorImage, TextureHandle, Vec2};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -28,7 +28,7 @@ impl PhotoLibraryApp {
             selected_photo: None,
             image_dir: dir,
             thumb_size: Vec2::new(200.0, 200.0),
-            columns: 1,
+            columns: 2,
             first_load: true,
         }
     }
@@ -167,13 +167,7 @@ impl eframe::App for PhotoLibraryApp {
                                             self.selected_photo = Some(i as usize);
                                         }
                                     } else {
-                                        ui.vertical_centered(|ui| {
-                                            ui.label(RichText::new(label).line_height(Some(20f32)));
-                                            ui.allocate_space(Vec2::new(
-                                                200f32,
-                                                180f32 - ui.style().spacing.item_spacing.y,
-                                            ));
-                                        });
+                                        ui.allocate_space(Vec2::new(200f32, 200f32));
                                     }
                                 }
                                 i += 1;
