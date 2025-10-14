@@ -57,7 +57,7 @@ mod tests {
 
     #[test]
     fn test_tensor_from_image() {
-        let image_path = workspace_path().join("test_data/example.png");
+        let image_path = workspace_path().join("test_data/example.jpeg");
         let image = image::open(image_path).unwrap();
         let tensor = tensor_from_image(image).unwrap();
         assert_eq!(tensor.dims(), &[1, 3, 160, 160]);
@@ -67,7 +67,7 @@ mod tests {
     fn test_generate_embedding() {
         let model_path = workspace_path().join("models/facenet-1.mlmodelc");
         let model = FaceEmbeddingModel::new(model_path.as_path()).unwrap();
-        let image_path = workspace_path().join("test_data/example.png");
+        let image_path = workspace_path().join("test_data/example.jpeg");
         let image = image::open(image_path).unwrap();
         let embedding = model.generate_embedding(image).unwrap();
         assert_eq!(embedding.len(), 512);
