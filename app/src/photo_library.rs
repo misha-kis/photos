@@ -35,9 +35,10 @@ pub struct Photo {
 }
 
 pub struct PhotoLibrary {
+    pub thumbnails_dir: PathBuf,
+    pub thumbnail_size: usize,
     pub photos: Vec<Photo>,
     pub selected_photo: Option<usize>,
-    pub _image_dir: PathBuf,
     pub thumb_size: Vec2,
     pub load_tx: Sender<LoadRequest>,
     pub load_rx: Receiver<LoadResponse>,
@@ -45,10 +46,8 @@ pub struct PhotoLibrary {
 }
 
 impl PhotoLibrary {
-    pub fn new() -> Self {
-        let dir = dirs::picture_dir().unwrap_or_else(|| PathBuf::from("."));
-        let photos = Self::scan_directory(&dir.join("pics"));
-
+    pub fn new(library_path: PathBuf) -> Self {
+        let photos = Self::scan_directory(&library_path.join("originals"));
         // Create channels for async image loading
         let (load_tx, worker_rx) = channel::<LoadRequest>();
         let (worker_tx, load_rx) = channel::<LoadResponse>();
@@ -59,9 +58,10 @@ impl PhotoLibrary {
         });
 
         Self {
+            thumbnails_dir: library_path.join("thumbnails"),
+            thumbnail_size: 128,
             photos,
             selected_photo: None,
-            _image_dir: dir,
             thumb_size: Vec2::new(200.0, 200.0),
             load_tx,
             load_rx,
@@ -141,7 +141,10 @@ impl PhotoLibrary {
             if !photo.loaded && !photo.loading {
                 photo.loading = true;
                 let _ = self.load_tx.send(LoadRequest::Thumbnail {
-                    path: photo.path.clone(),
+                    path: self
+                        .thumbnails_dir
+                        .join(format!("{}", self.thumbnail_size))
+                        .join(photo.path.file_name().unwrap()),
                     index,
                 });
             }

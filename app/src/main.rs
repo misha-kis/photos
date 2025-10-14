@@ -12,8 +12,9 @@ struct PhotoLibraryApp {
 
 impl PhotoLibraryApp {
     fn new() -> Self {
+        let dir = dirs::picture_dir().unwrap().join("picslib");
         Self {
-            photo_library: PhotoLibrary::new(),
+            photo_library: PhotoLibrary::new(dir),
             columns: 2,
             first_load: true,
         }
