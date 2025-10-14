@@ -1,16 +1,9 @@
+use crate::thumb_size::ThumbSize;
 use eframe::egui::{ColorImage, TextureHandle};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
-
-#[derive(Debug, Clone, Copy)]
-pub enum ThumbSize {
-    T32 = 32,
-    T64 = 64,
-    T128 = 128,
-    T256 = 256,
-}
 
 #[derive(Debug)]
 pub enum LoadRequest {
@@ -50,7 +43,6 @@ pub struct Photo {
 
 pub struct PhotoLibrary {
     pub thumbnails_dir: PathBuf,
-    pub thumb_size: ThumbSize,
     pub photos: Vec<Photo>,
     pub load_tx: Sender<LoadRequest>,
     pub load_rx: Receiver<LoadResponse>,
@@ -71,7 +63,6 @@ impl PhotoLibrary {
 
         Self {
             thumbnails_dir: library_path.join("thumbnails"),
-            thumb_size: ThumbSize::T64,
             photos,
             load_tx,
             load_rx,
@@ -159,7 +150,7 @@ impl PhotoLibrary {
                 let _ = self.load_tx.send(LoadRequest::Thumbnail {
                     path: self
                         .thumbnails_dir
-                        .join(format!("{}", self.thumb_size as u32))
+                        .join(format!("{}", thumb_size as u32))
                         .join(photo.path.file_name().unwrap()),
                     index,
                     thumb_size,

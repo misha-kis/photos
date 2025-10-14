@@ -1,8 +1,10 @@
 use crate::photo_library::{LoadRequest, PhotoLibrary};
 use eframe::egui;
 use egui::Vec2;
+use thumb_size::ThumbSize;
 
 mod photo_library;
+pub(crate) mod thumb_size;
 
 enum AppState {
     Main,
@@ -14,6 +16,7 @@ struct PhotoLibraryApp {
     columns: usize,
     first_load: bool,
     state: AppState,
+    thumb_size: ThumbSize,
 }
 
 impl PhotoLibraryApp {
@@ -24,6 +27,7 @@ impl PhotoLibraryApp {
             columns: 2,
             first_load: true,
             state: AppState::Main,
+            thumb_size: ThumbSize::T256,
         }
     }
 }
@@ -61,11 +65,10 @@ impl eframe::App for PhotoLibraryApp {
                 }
                 AppState::Main => {
                     self.columns = (ui.clip_rect().width()
-                        / (self.photo_library.thumb_size as u32 as f32
-                            + ui.style().spacing.item_spacing.x)
+                        / (self.thumb_size as u32 as f32 + ui.style().spacing.item_spacing.x)
                             .max(0.0)) as usize;
 
-                    let thumb_height = self.photo_library.thumb_size as u32 as f32;
+                    let thumb_height = self.thumb_size as u32 as f32;
                     let total_rows =
                         (self.photo_library.photos.len() + self.columns - 1) / self.columns;
 
@@ -103,7 +106,7 @@ impl eframe::App for PhotoLibraryApp {
                             } else {
                                 for i in start_index..end_index {
                                     self.photo_library
-                                        .request_thumbnail_load(i, self.photo_library.thumb_size);
+                                        .request_thumbnail_load(i, self.thumb_size);
                                 }
                             }
 
@@ -123,8 +126,8 @@ impl eframe::App for PhotoLibraryApp {
                                                 }
                                             } else {
                                                 ui.allocate_space(Vec2::new(
-                                                    self.photo_library.thumb_size as u32 as f32,
-                                                    self.photo_library.thumb_size as u32 as f32,
+                                                    self.thumb_size as u32 as f32,
+                                                    self.thumb_size as u32 as f32,
                                                 ));
                                             }
                                         }
@@ -132,6 +135,13 @@ impl eframe::App for PhotoLibraryApp {
                                     }
                                 });
                             }
+
+                            // if ctx.input(|i| i.key_pressed(egui::Key::Period)) {
+                            //     self.thumb_size = self.thumb_size.next();
+                            // }
+                            // if ctx.input(|i| i.key_pressed(egui::Key::Comma)) {
+                            //     self.thumb_size = self.thumb_size.prev();
+                            // }
                         });
                 }
             }
