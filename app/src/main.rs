@@ -55,11 +55,11 @@ impl eframe::App for PhotoLibraryApp {
             }
 
             self.columns = (ui.clip_rect().width()
-                / (self.photo_library.thumb_size.x + ui.style().spacing.item_spacing.x).max(0.0))
-                as usize;
+                / (self.photo_library.thumb_size as u32 as f32 + ui.style().spacing.item_spacing.x)
+                    .max(0.0)) as usize;
 
             // Thumbnail grid with lazy loading
-            let thumb_height = self.photo_library.thumb_size.y;
+            let thumb_height = self.photo_library.thumb_size as u32 as f32;
             let total_rows = (self.photo_library.photos.len() + self.columns - 1) / self.columns;
 
             egui::ScrollArea::vertical()
@@ -97,7 +97,8 @@ impl eframe::App for PhotoLibraryApp {
                         self.first_load = false;
                     } else {
                         for i in start_index..end_index {
-                            self.photo_library.request_thumbnail_load(i);
+                            self.photo_library
+                                .request_thumbnail_load(i, self.photo_library.thumb_size);
                         }
                     }
 
@@ -116,7 +117,10 @@ impl eframe::App for PhotoLibraryApp {
                                             self.photo_library.selected_photo = Some(i as usize);
                                         }
                                     } else {
-                                        ui.allocate_space(Vec2::new(200f32, 200f32));
+                                        ui.allocate_space(Vec2::new(
+                                            self.photo_library.thumb_size as u32 as f32,
+                                            self.photo_library.thumb_size as u32 as f32,
+                                        ));
                                     }
                                 }
                                 i += 1;

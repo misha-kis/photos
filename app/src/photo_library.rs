@@ -4,10 +4,24 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
 
+#[derive(Debug, Clone, Copy)]
+pub enum ThumbSize {
+    T32 = 32,
+    T64 = 64,
+    T128 = 128,
+    T256 = 256,
+}
+
 #[derive(Debug)]
 pub enum LoadRequest {
-    Thumbnail { path: PathBuf, index: usize },
-    FullImage { path: PathBuf },
+    Thumbnail {
+        path: PathBuf,
+        index: usize,
+        thumb_size: ThumbSize,
+    },
+    FullImage {
+        path: PathBuf,
+    },
 }
 
 #[derive(Debug)]
@@ -36,10 +50,9 @@ pub struct Photo {
 
 pub struct PhotoLibrary {
     pub thumbnails_dir: PathBuf,
-    pub thumbnail_size: usize,
+    pub thumb_size: ThumbSize,
     pub photos: Vec<Photo>,
     pub selected_photo: Option<usize>,
-    pub thumb_size: Vec2,
     pub load_tx: Sender<LoadRequest>,
     pub load_rx: Receiver<LoadResponse>,
     pub full_image_cache: Option<(PathBuf, TextureHandle)>,
@@ -59,10 +72,9 @@ impl PhotoLibrary {
 
         Self {
             thumbnails_dir: library_path.join("thumbnails"),
-            thumbnail_size: 128,
+            thumb_size: ThumbSize::T64,
             photos,
             selected_photo: None,
-            thumb_size: Vec2::new(200.0, 200.0),
             load_tx,
             load_rx,
             full_image_cache: None,
@@ -98,10 +110,16 @@ impl PhotoLibrary {
     fn image_loader_worker(rx: Receiver<LoadRequest>, tx: Sender<LoadResponse>) {
         while let Ok(request) = rx.recv() {
             match request {
-                LoadRequest::Thumbnail { path, index } => {
+                LoadRequest::Thumbnail {
+                    path,
+                    index,
+                    thumb_size,
+                } => {
                     if let Ok(img) = image::open(&path) {
                         println!("Loading thumbnail: {:?}", &path);
-                        let thumb = img.thumbnail_exact(200, 200).to_rgba8();
+                        let thumb = img
+                            .thumbnail_exact(thumb_size as u32, thumb_size as u32)
+                            .to_rgba8();
                         let width = thumb.width();
                         let height = thumb.height();
                         let image_data = thumb.into_raw();
@@ -136,16 +154,17 @@ impl PhotoLibrary {
     }
 
     // Request thumbnail loading for a specific index
-    pub fn request_thumbnail_load(&mut self, index: usize) {
+    pub fn request_thumbnail_load(&mut self, index: usize, thumb_size: ThumbSize) {
         if let Some(photo) = self.photos.get_mut(index) {
             if !photo.loaded && !photo.loading {
                 photo.loading = true;
                 let _ = self.load_tx.send(LoadRequest::Thumbnail {
                     path: self
                         .thumbnails_dir
-                        .join(format!("{}", self.thumbnail_size))
+                        .join(format!("{}", self.thumb_size as u32))
                         .join(photo.path.file_name().unwrap()),
                     index,
+                    thumb_size,
                 });
             }
         }
