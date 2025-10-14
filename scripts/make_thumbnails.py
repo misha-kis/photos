@@ -13,12 +13,13 @@ def make_thumbnails(thumbnails: Path, originals: Path, sizes: list[int]):
     )
     thumbnails.mkdir(exist_ok=True)
     for size in sizes:
-        subdir = thumbnails / str(size)
-        subdir.mkdir(exist_ok=True)
-        for image_path in tqdm(images):
-            img = Image.open(image_path)
+        (thumbnails / str(size)).mkdir(exist_ok=True)
+
+    for image_path in tqdm(images):
+        img = Image.open(image_path)
+        for size in reversed(sizes):
             img.thumbnail((size, size))
-            img.save(subdir / image_path.name)
+            img.save((thumbnails / str(size)) / image_path.name)
 
 
 if __name__ == "__main__":
