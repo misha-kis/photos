@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use face_recognition_ort::{BoundingBox, FaceDetector};
+use cv::{BoundingBox, FaceDetector};
 use image::{DynamicImage, Rgba, RgbaImage};
 use imageproc::drawing::draw_hollow_rect_mut;
 use imageproc::rect::Rect;
