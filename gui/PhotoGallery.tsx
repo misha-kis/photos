@@ -7,37 +7,59 @@ const GRID_GAP = 8;
 const PRELOAD_MARGIN = 2;
 
 function useThumbnails() {
-  // Keep cache in a ref to prevent re-renders from causing re-loads
   const cacheRef = useRef<Map<number, string | null>>(new Map());
-  const [, forceUpdate] = useState(0); // For manual re-render
+  const [, forceUpdate] = useState(0);
 
   const loadThumbnail = useCallback(async (index: number) => {
     const cache = cacheRef.current;
 
-    if (cache.has(index)) return; // Already loaded or failed
+    if (cache.has(index)) {
+      if (cache.get(index) === "loading") {
+        return;
+      }
+      if (cache.get(index) !== null) {
+        return;
+      }
+    }
 
-    // Mark as "loading"
-    cache.set(index, null);
+    cache.set(index, "loading");
 
     try {
+      // const bytes = await invoke<Uint8Array>("load_thumbnail", { index });
+      // const blob = new Blob([bytes], { type: "image/webp" });
+      // const url = URL.createObjectURL(blob);
+      // cache.set(index, url);
       const base64 = await invoke<string>("load_thumbnail", { index });
       cache.set(index, `data:image/jpeg;base64,${base64}`);
-    } catch (e) {
-      console.error(`Failed to load thumbnail ${index}`, e);
+    } catch (e: any) {
+      console.error(`Failed to load thumbnail ${index}:`, e);
+      console.error("Error details:", e.message || e);
       cache.set(index, null);
     }
 
-    // Trigger re-render of items
     forceUpdate((x) => x + 1);
   }, []);
 
   const getThumbnail = useCallback((index: number) => {
-    return cacheRef.current.get(index) ?? null;
+    const value = cacheRef.current.get(index);
+    return value === "loading" ? null : (value ?? null);
+  }, []);
+
+  // Cleanup Object URLs when component unmounts
+  useEffect(() => {
+    return () => {
+      cacheRef.current.forEach((url) => {
+        if (url && typeof url === "string" && url.startsWith("blob:")) {
+          URL.revokeObjectURL(url);
+        }
+      });
+    };
   }, []);
 
   return { getThumbnail, loadThumbnail };
 }
 
+// PhotoItem remains largely the same, but now `src` will be a blob URL
 function PhotoItem({
   index,
   getThumbnail,
@@ -51,7 +73,6 @@ function PhotoItem({
 
   useEffect(() => {
     if (src === null) {
-      // Either not loaded or failed previously
       loadThumbnail(index);
     }
   }, [index, src, loadThumbnail]);
@@ -67,7 +88,7 @@ function PhotoItem({
         background: src ? "transparent" : "#eee",
       }}
     >
-      {src && (
+      {src && src !== "loading" && (
         <img
           src={src}
           draggable={false}
