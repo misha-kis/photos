@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["app", "cv", "photo-library"]
+members = ["app", "cv", "photo-library", "src-tauri"]
 exclude = ["models", "test_data", "runs", "scripts"]
 
 [workspace.dependencies]
