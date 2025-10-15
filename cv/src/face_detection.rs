@@ -124,7 +124,7 @@ impl FaceDetector {
 
 #[cfg(test)]
 mod tests {
-    use crate::FaceDetector;
+    use super::FaceDetector;
     use std::path::PathBuf;
 
     fn workspace_path() -> PathBuf {

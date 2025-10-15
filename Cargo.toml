@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
-members = ["app", "face-recognition", "face-recognition-ort"]
+members = ["app", "cv"]
+exclude = ["models", "test_data", "runs", "scripts"]
 
 [workspace.dependencies]
 anyhow = "1.0.100"
