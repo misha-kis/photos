@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["app", "face-recognition"]
+members = ["app", "face-recognition", "face-recognition-ort"]
 
 [workspace.dependencies]
 anyhow = "1.0.100"
+image = "0.25.8"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt"] }
