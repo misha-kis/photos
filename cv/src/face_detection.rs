@@ -9,7 +9,6 @@ use ort::{
     session::{Session, SessionOutputs},
     value::TensorRef,
 };
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, Clone, Copy)]
 pub struct BoundingBox {
@@ -35,14 +34,6 @@ pub struct FaceDetector {
 
 impl FaceDetector {
     pub fn new(model_path: PathBuf, image_size: usize) -> Result<Self> {
-        tracing_subscriber::registry()
-            .with(
-                tracing_subscriber::EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| "info,ort=debug".into()),
-            )
-            .with(tracing_subscriber::fmt::layer())
-            .init();
-
         ort::init()
             .with_execution_providers([CoreMLExecutionProvider::default().build()])
             .commit()?;

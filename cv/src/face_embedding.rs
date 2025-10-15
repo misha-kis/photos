@@ -6,8 +6,6 @@ use ort::inputs;
 use ort::session::{Session, SessionOutputs};
 use ort::value::TensorRef;
 use std::path::PathBuf;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
 
 pub struct FaceEmbedder {
     session: Session,
@@ -16,14 +14,6 @@ pub struct FaceEmbedder {
 
 impl FaceEmbedder {
     pub fn new(model_path: PathBuf, image_size: usize) -> anyhow::Result<Self> {
-        tracing_subscriber::registry()
-            .with(
-                tracing_subscriber::EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| "info,ort=debug".into()),
-            )
-            .with(tracing_subscriber::fmt::layer())
-            .init();
-
         ort::init()
             .with_execution_providers([CoreMLExecutionProvider::default().build()])
             .commit()?;
