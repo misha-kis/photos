@@ -2,39 +2,31 @@ import { VirtuosoGrid } from "react-virtuoso";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState, useCallback, useRef, forwardRef } from "react";
 
-const THUMB_SIZE = 120;
+const THUMB_SIZE = 128;
 const GRID_GAP = 8;
 const PRELOAD_MARGIN = 2;
 
 function useThumbnails() {
-  const cacheRef = useRef<Map<number, string | null>>(new Map());
+  const cacheRef = useRef<Map<number, string | "loading" | null>>(new Map());
   const [, forceUpdate] = useState(0);
 
   const loadThumbnail = useCallback(async (index: number) => {
     const cache = cacheRef.current;
 
-    if (cache.has(index)) {
-      if (cache.get(index) === "loading") {
-        return;
-      }
-      if (cache.get(index) !== null) {
-        return;
-      }
+    if (cache.has(index) && cache.get(index) !== null) {
+      return;
     }
 
     cache.set(index, "loading");
+    forceUpdate((x) => x + 1);
 
     try {
-      // const bytes = await invoke<Uint8Array>("load_thumbnail", { index });
-      // const blob = new Blob([bytes], { type: "image/webp" });
-      // const url = URL.createObjectURL(blob);
-      // cache.set(index, url);
       const base64 = await invoke<string>("load_thumbnail", { index });
       cache.set(index, `data:image/jpeg;base64,${base64}`);
     } catch (e: any) {
       console.error(`Failed to load thumbnail ${index}:`, e);
       console.error("Error details:", e.message || e);
-      cache.set(index, null);
+      cache.set(index, null); // Mark as failed to load
     }
 
     forceUpdate((x) => x + 1);
@@ -45,7 +37,6 @@ function useThumbnails() {
     return value === "loading" ? null : (value ?? null);
   }, []);
 
-  // Cleanup Object URLs when component unmounts
   useEffect(() => {
     return () => {
       cacheRef.current.forEach((url) => {
@@ -69,15 +60,14 @@ function PhotoItem({
   loadThumbnail: (index: number) => void;
 }) {
   const src = getThumbnail(index);
-  const isLoading =
-    useRef<Map<number, string | null>>(new Map()).current.get(index) ===
-    "loading";
+
+  const isCurrentlyLoading = src === null;
 
   useEffect(() => {
-    if (src === null && !isLoading) {
+    if (isCurrentlyLoading) {
       loadThumbnail(index);
     }
-  }, [index, src, loadThumbnail, isLoading]);
+  }, [index, isCurrentlyLoading, loadThumbnail]);
 
   return (
     <div
@@ -89,10 +79,10 @@ function PhotoItem({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: isLoading ? "#ddd" : src ? "transparent" : "#eee",
+        background: isCurrentlyLoading ? "#ddd" : src ? "transparent" : "#eee",
       }}
     >
-      {src && src !== "loading" && (
+      {src && (
         <img
           src={src}
           draggable={false}
@@ -119,14 +109,13 @@ export default function PhotoGallery({
   return (
     <VirtuosoGrid
       totalCount={itemsCount}
-      overscan={PRELOAD_MARGIN * THUMB_SIZE}
+      overscan={PRELOAD_MARGIN * columnCount}
       style={{
         height: "100vh",
         width: "100%",
       }}
       itemContent={(index) => (
         <PhotoItem
-          key={index}
           index={index}
           getThumbnail={getThumbnail}
           loadThumbnail={loadThumbnail}

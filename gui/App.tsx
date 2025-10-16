@@ -16,23 +16,23 @@ function App() {
   }, []);
 
   return (
-    <main
-      className="container"
-      style={{
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        width: "100%",
-        height: "100vh",
-        overflow: "hidden",
-      }}
-    >
-      {itemCount > 0 ? (
-        <PhotoGallery itemsCount={itemCount} columnCount={5} />
-      ) : (
-        <div>Loading gallery...</div>
-      )}
-    </main>
+    // <main
+    //   className="container"
+    //   style={{
+    //     display: "flex",
+    //     justifyContent: "center",
+    //     alignItems: "center",
+    //     width: "100%",
+    //     height: "100vh",
+    //     overflow: "hidden",
+    //   }}
+    // >
+    //   {itemCount > 0 ? (
+    <PhotoGallery itemsCount={itemCount} columnCount={5} />
+    //   ) : (
+    //     <div>Loading gallery...</div>
+    //   )}
+    // </main>
   );
 }
 
