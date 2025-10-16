@@ -97,46 +97,70 @@ function PhotoItem({
   );
 }
 
-export default function PhotoGallery({
-  itemsCount,
-  columnCount,
-}: {
-  itemsCount: number;
-  columnCount: number;
-}) {
+export default function PhotoGallery({ itemsCount }: { itemsCount: number }) {
   const { getThumbnail, loadThumbnail } = useThumbnails();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [columnCount, setColumnCount] = useState(5);
+
+  useEffect(() => {
+    const calculateColumnCount = () => {
+      if (containerRef.current) {
+        const availableWidth = containerRef.current.offsetWidth;
+        const columnWidth = THUMB_SIZE + GRID_GAP;
+        const newColumnCount = Math.max(
+          1,
+          Math.floor((availableWidth + GRID_GAP) / columnWidth),
+        );
+        setColumnCount(newColumnCount);
+      }
+    };
+
+    calculateColumnCount();
+
+    window.addEventListener("resize", calculateColumnCount);
+
+    return () => {
+      window.removeEventListener("resize", calculateColumnCount);
+    };
+  }, []);
 
   return (
-    <VirtuosoGrid
-      totalCount={itemsCount}
-      overscan={PRELOAD_MARGIN * columnCount}
-      style={{
-        height: "100vh",
-        width: "100%",
-      }}
-      itemContent={(index) => (
-        <PhotoItem
-          index={index}
-          getThumbnail={getThumbnail}
-          loadThumbnail={loadThumbnail}
+    <div ref={containerRef} style={{ height: "100vh", width: "100%" }}>
+      {columnCount > 0 && (
+        <VirtuosoGrid
+          totalCount={itemsCount}
+          overscan={PRELOAD_MARGIN * columnCount}
+          style={{
+            height: "100%",
+            width: "100%",
+          }}
+          itemContent={(index) => (
+            <PhotoItem
+              index={index}
+              getThumbnail={getThumbnail}
+              loadThumbnail={loadThumbnail}
+            />
+          )}
+          components={{
+            List: forwardRef<HTMLDivElement, any>(
+              ({ style, children }, ref) => (
+                <div
+                  ref={ref}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: `repeat(auto-fit, minmax(${THUMB_SIZE}px, 1fr))`,
+                    justifyContent: "center",
+                    gap: GRID_GAP,
+                    ...style,
+                  }}
+                >
+                  {children}
+                </div>
+              ),
+            ),
+          }}
         />
       )}
-      components={{
-        List: forwardRef<HTMLDivElement, any>(({ style, children }, ref) => (
-          <div
-            ref={ref}
-            style={{
-              display: "grid",
-              gridTemplateColumns: `repeat(${columnCount}, ${THUMB_SIZE}px)`,
-              justifyContent: "center",
-              gap: GRID_GAP,
-              ...style,
-            }}
-          >
-            {children}
-          </div>
-        )),
-      }}
-    />
+    </div>
   );
 }
