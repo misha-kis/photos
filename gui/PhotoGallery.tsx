@@ -59,7 +59,6 @@ function useThumbnails() {
   return { getThumbnail, loadThumbnail };
 }
 
-// PhotoItem remains largely the same, but now `src` will be a blob URL
 function PhotoItem({
   index,
   getThumbnail,
@@ -70,22 +69,27 @@ function PhotoItem({
   loadThumbnail: (index: number) => void;
 }) {
   const src = getThumbnail(index);
+  const isLoading =
+    useRef<Map<number, string | null>>(new Map()).current.get(index) ===
+    "loading";
 
   useEffect(() => {
-    if (src === null) {
+    if (src === null && !isLoading) {
       loadThumbnail(index);
     }
-  }, [index, src, loadThumbnail]);
+  }, [index, src, loadThumbnail, isLoading]);
 
   return (
     <div
       style={{
         width: THUMB_SIZE,
         height: THUMB_SIZE,
-        margin: GRID_GAP / 2,
         borderRadius: 8,
         overflow: "hidden",
-        background: src ? "transparent" : "#eee",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: isLoading ? "#ddd" : src ? "transparent" : "#eee",
       }}
     >
       {src && src !== "loading" && (
@@ -136,6 +140,7 @@ export default function PhotoGallery({
               display: "grid",
               gridTemplateColumns: `repeat(${columnCount}, ${THUMB_SIZE}px)`,
               justifyContent: "center",
+              gap: GRID_GAP,
               ...style,
             }}
           >
