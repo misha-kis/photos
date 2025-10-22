@@ -5,7 +5,6 @@ use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{Row, Sqlite, SqlitePool};
 use std::path::PathBuf;
 use tokio::sync::{mpsc, oneshot};
-use tokio::task::JoinHandle;
 
 pub(crate) enum DbWorkerCmd {
     GetPhotoNameByPhotoId {
@@ -34,7 +33,6 @@ photo_name TEXT NOT NULL
 }
 
 pub(crate) struct DbWorkerProxy {
-    handle: JoinHandle<()>,
     cmd_tx: mpsc::Sender<DbWorkerCmd>,
 }
 
@@ -49,7 +47,7 @@ impl DbWorkerProxy {
         let conn = db_pool.acquire().await?;
         init_db(conn).await?;
 
-        let handle = tokio::spawn(async move {
+        tokio::spawn(async move {
             while let Some(cmd) = cmd_rx.recv().await {
                 let mut conn = db_pool
                     .acquire()
@@ -96,7 +94,7 @@ impl DbWorkerProxy {
             }
         });
 
-        Ok(Self { handle, cmd_tx })
+        Ok(Self { cmd_tx })
     }
     pub(crate) async fn get_photo_name_by_id(&self, photo_id: u32) -> Result<String> {
         let (response_tx, response_rx) = oneshot::channel();

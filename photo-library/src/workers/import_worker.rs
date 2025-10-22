@@ -38,7 +38,6 @@ impl ImportWorker {
 }
 
 pub(crate) struct ImportWorkerProxy {
-    handle: JoinHandle<()>,
     cmd_tx: Sender<Vec<PathBuf>>,
     res_rx: Receiver<Vec<anyhow::Error>>,
 }
@@ -60,7 +59,7 @@ impl ImportWorkerProxy {
             thumbnail_sizes,
         };
 
-        let handle = tokio::spawn(async move {
+        tokio::spawn(async move {
             while let Some(paths) = cmd_rx.recv().await {
                 let mut failed_to_import = Vec::new();
                 for path in paths {
@@ -75,11 +74,7 @@ impl ImportWorkerProxy {
             }
         });
 
-        Self {
-            handle,
-            cmd_tx,
-            res_rx,
-        }
+        Self { cmd_tx, res_rx }
     }
 
     pub(crate) async fn import_photo(&mut self, photo_path: PathBuf) -> Result<()> {

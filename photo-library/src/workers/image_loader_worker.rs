@@ -8,7 +8,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::task::JoinHandle;
 
 pub(crate) enum ImageLoadCmd {
     LoadThumbnail(u32),
@@ -88,7 +87,6 @@ impl ImageLoader {
 }
 
 pub(crate) struct ImageLoaderProxy {
-    handle: JoinHandle<()>,
     cmd_tx: Sender<ImageLoadCmd>,
     res_rx: Receiver<Result<DynamicImage>>,
 }
@@ -103,7 +101,7 @@ impl ImageLoaderProxy {
         let (res_tx, res_rx) = mpsc::channel(32);
         let mut image_loader = ImageLoader::new(db_worker, thumbnails_path, originals_path);
 
-        let handle = tokio::spawn(async move {
+        tokio::spawn(async move {
             while let Some(cmd) = cmd_rx.recv().await {
                 let res = match cmd {
                     ImageLoadCmd::LoadThumbnail(id) => image_loader.get_thumbnail(id).await,
@@ -113,11 +111,7 @@ impl ImageLoaderProxy {
             }
         });
 
-        Ok(Self {
-            handle,
-            cmd_tx,
-            res_rx,
-        })
+        Ok(Self { cmd_tx, res_rx })
     }
 
     pub(crate) async fn load_thumbnail(&mut self, photo_id: u32) -> Result<DynamicImage> {
