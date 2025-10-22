@@ -2,29 +2,24 @@ mod config;
 mod workers;
 
 use crate::config::Config;
-use crate::workers::db_worker::{DbWorkerCmd, spawn_db_worker};
-use crate::workers::image_loader_worker::ImageLoadCmd;
-use crate::workers::import_worker::spawn_import_worker;
+use crate::workers::db_worker::DbWorkerProxy;
+use crate::workers::image_loader_worker::ImageLoaderProxy;
+use crate::workers::import_worker::ImportWorkerProxy;
 use anyhow::{Context, Result, anyhow};
 use image::DynamicImage;
 use std::fs::create_dir;
 use std::path::PathBuf;
-use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::task::JoinHandle;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 const THUMBNAILS_SUBDIRECTORY: &str = "thumbnails";
 const ORIGINALS_SUBDIRECTORY: &str = "originals";
 const DB_PATH: &str = "db.db";
 
 pub struct PhotoLibrary {
-    db_worker: JoinHandle<()>,
-    db_cmd_tx: Sender<DbWorkerCmd>,
-    thumbnail_worker: JoinHandle<()>,
-    thumbnail_cmd_tx: Sender<ImageLoadCmd>,
-    thumbnail_res_rx: Receiver<Result<DynamicImage>>,
-    import_worker: JoinHandle<()>,
-    import_cmd_tx: Sender<Vec<PathBuf>>,
-    import_res_rx: Receiver<Vec<anyhow::Error>>,
+    db_worker_proxy: Arc<Mutex<DbWorkerProxy>>,
+    image_loader_proxy: ImageLoaderProxy,
+    import_worker_proxy: ImportWorkerProxy,
 }
 
 impl PhotoLibrary {
@@ -40,55 +35,37 @@ impl PhotoLibrary {
                     .join(format!("{thumbnail_size}")),
             )?;
         }
-        let (db_worker, db_cmd_tx) = spawn_db_worker(&config.library_path).await?;
+        let db_worker_proxy = Arc::new(Mutex::new(DbWorkerProxy::new(&config.library_path).await?));
 
-        let (thumbnail_worker, thumbnail_cmd_tx, thumbnail_res_rx) =
-            workers::image_loader_worker::spawn_image_loader(
-                db_cmd_tx.clone(),
-                config.library_path.join(THUMBNAILS_SUBDIRECTORY),
-                config.library_path.join(ORIGINALS_SUBDIRECTORY),
-            );
+        let image_loader_proxy = ImageLoaderProxy::new(
+            db_worker_proxy.clone(),
+            config.library_path.join(THUMBNAILS_SUBDIRECTORY),
+            config.library_path.join(ORIGINALS_SUBDIRECTORY),
+        )?;
 
-        let (import_worker, import_cmd_tx, import_res_rx) = spawn_import_worker(
-            db_cmd_tx.clone(),
+        let import_worker_proxy = ImportWorkerProxy::new(
+            db_worker_proxy.clone(),
             config.library_path.join(THUMBNAILS_SUBDIRECTORY),
             config.library_path.join(ORIGINALS_SUBDIRECTORY),
             config.thumbnail_sizes,
         );
         Ok(Self {
-            db_worker,
-            db_cmd_tx,
-            thumbnail_worker,
-            thumbnail_cmd_tx,
-            thumbnail_res_rx,
-            import_worker,
-            import_cmd_tx,
-            import_res_rx,
+            db_worker_proxy,
+            image_loader_proxy,
+            import_worker_proxy,
         })
     }
 
     pub async fn get_thumbnail(&mut self, photo_id: u32) -> Result<DynamicImage> {
-        self.thumbnail_cmd_tx
-            .send(ImageLoadCmd::LoadThumbnail(photo_id))
-            .await?;
-        self.thumbnail_res_rx.recv().await.unwrap()
+        self.image_loader_proxy.load_thumbnail(photo_id).await
     }
 
     pub async fn get_full_image(&mut self, photo_id: u32) -> Result<DynamicImage> {
-        self.thumbnail_cmd_tx
-            .send(ImageLoadCmd::LoadFullImage(photo_id))
-            .await?;
-        self.thumbnail_res_rx.recv().await.unwrap()
+        self.image_loader_proxy.load_full_image(photo_id).await
     }
 
     pub async fn import_photo(&mut self, photo_path: PathBuf) -> Result<()> {
-        self.import_cmd_tx.send(vec![photo_path]).await?;
-        let _res = self
-            .import_res_rx
-            .recv()
-            .await
-            .expect("no receive or what?");
-        Ok(())
+        self.import_worker_proxy.import_photo(photo_path).await
     }
 }
 

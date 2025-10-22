@@ -1,10 +1,13 @@
-use crate::workers::db_worker::{DbWorkerCmd, get_photo_name_by_id};
+use crate::workers::db_worker::DbWorkerProxy;
 use anyhow::Result;
 use image::DynamicImage;
 use lru::LruCache;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tokio::sync::mpsc;
+use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
 
 pub(crate) enum ImageLoadCmd {
@@ -13,7 +16,7 @@ pub(crate) enum ImageLoadCmd {
 }
 
 struct ImageLoader {
-    db_worker_tx: mpsc::Sender<DbWorkerCmd>,
+    db_worker: Arc<Mutex<DbWorkerProxy>>,
     thumbnails_path: PathBuf,
     full_images_path: PathBuf,
     image_name_cache: LruCache<u32, String>,
@@ -23,12 +26,12 @@ struct ImageLoader {
 
 impl ImageLoader {
     fn new(
-        db_worker_tx: mpsc::Sender<DbWorkerCmd>,
+        db_worker: Arc<Mutex<DbWorkerProxy>>,
         thumbnails_path: PathBuf,
         originals_path: PathBuf,
     ) -> Self {
         Self {
-            db_worker_tx,
+            db_worker,
             thumbnails_path,
             full_images_path: originals_path,
             image_name_cache: LruCache::new(NonZeroUsize::new(128).unwrap()),
@@ -73,34 +76,60 @@ impl ImageLoader {
     }
 
     async fn _get_name_from_db(&mut self, photo_id: u32) -> Result<String> {
-        let name = get_photo_name_by_id(&self.db_worker_tx, photo_id).await?;
+        let name = self
+            .db_worker
+            .lock()
+            .await
+            .get_photo_name_by_id(photo_id)
+            .await?;
         self.image_name_cache.put(photo_id, name.clone());
         Ok(name)
     }
 }
 
-pub(crate) fn spawn_image_loader(
-    db_worker_tx: mpsc::Sender<DbWorkerCmd>,
-    thumbnails_path: PathBuf,
-    originals_path: PathBuf,
-) -> (
-    JoinHandle<()>,
-    mpsc::Sender<ImageLoadCmd>,
-    mpsc::Receiver<Result<DynamicImage>>,
-) {
-    let (thumbnail_cmd_tx, mut thumbnail_cmd_rx) = mpsc::channel(32);
-    let (thumbnail_res_tx, thumbnail_res_rx) = mpsc::channel(32);
-    let mut image_loader = ImageLoader::new(db_worker_tx, thumbnails_path, originals_path);
+pub(crate) struct ImageLoaderProxy {
+    handle: JoinHandle<()>,
+    cmd_tx: Sender<ImageLoadCmd>,
+    res_rx: Receiver<Result<DynamicImage>>,
+}
 
-    let worker = tokio::spawn(async move {
-        while let Some(cmd) = thumbnail_cmd_rx.recv().await {
-            let res = match cmd {
-                ImageLoadCmd::LoadThumbnail(id) => image_loader.get_thumbnail(id).await,
-                ImageLoadCmd::LoadFullImage(id) => image_loader.get_full_image(id).await,
-            };
-            thumbnail_res_tx.send(res).await.expect("Can send result");
-        }
-    });
+impl ImageLoaderProxy {
+    pub(crate) fn new(
+        db_worker: Arc<Mutex<DbWorkerProxy>>,
+        thumbnails_path: PathBuf,
+        originals_path: PathBuf,
+    ) -> Result<Self> {
+        let (cmd_tx, mut cmd_rx) = mpsc::channel(32);
+        let (res_tx, res_rx) = mpsc::channel(32);
+        let mut image_loader = ImageLoader::new(db_worker, thumbnails_path, originals_path);
 
-    (worker, thumbnail_cmd_tx, thumbnail_res_rx)
+        let handle = tokio::spawn(async move {
+            while let Some(cmd) = cmd_rx.recv().await {
+                let res = match cmd {
+                    ImageLoadCmd::LoadThumbnail(id) => image_loader.get_thumbnail(id).await,
+                    ImageLoadCmd::LoadFullImage(id) => image_loader.get_full_image(id).await,
+                };
+                res_tx.send(res).await.expect("Can send result");
+            }
+        });
+
+        Ok(Self {
+            handle,
+            cmd_tx,
+            res_rx,
+        })
+    }
+
+    pub(crate) async fn load_thumbnail(&mut self, photo_id: u32) -> Result<DynamicImage> {
+        self.cmd_tx
+            .send(ImageLoadCmd::LoadThumbnail(photo_id))
+            .await?;
+        self.res_rx.recv().await.unwrap()
+    }
+    pub(crate) async fn load_full_image(&mut self, photo_id: u32) -> Result<DynamicImage> {
+        self.cmd_tx
+            .send(ImageLoadCmd::LoadFullImage(photo_id))
+            .await?;
+        self.res_rx.recv().await.unwrap()
+    }
 }
