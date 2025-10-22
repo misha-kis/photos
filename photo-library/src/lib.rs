@@ -124,8 +124,7 @@ mod tests {
     #[tokio::test]
     async fn test_import_photo_and_get_image() {
         let temp_dir = TempDir::new("photo_library").unwrap();
-        let temp_dir = workspace_path().join("test_data").join("example_library");
-        let config = Config::new(temp_dir.to_path_buf()).with_thumbnail_sizes(vec![32]);
+        let config = Config::new(temp_dir.path().to_path_buf()).with_thumbnail_sizes(vec![32]);
         let mut library = PhotoLibrary::new(config).await.unwrap();
         let new_image_path = workspace_path().join("test_data").join("example.jpeg");
         library
