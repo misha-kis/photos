@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{Mutex, mpsc};
-use tokio::task::JoinHandle;
 
 pub(crate) struct ImportWorker {
     db_worker: Arc<Mutex<DbWorkerProxy>>,

@@ -2,6 +2,7 @@ mod config;
 mod workers;
 
 use crate::config::Config;
+use crate::workers::cv_worker::CvWorkerProxy;
 use crate::workers::db_worker::DbWorkerProxy;
 use crate::workers::image_loader_worker::ImageLoaderProxy;
 use crate::workers::import_worker::ImportWorkerProxy;
@@ -20,6 +21,7 @@ pub struct PhotoLibrary {
     db_worker_proxy: Arc<Mutex<DbWorkerProxy>>,
     image_loader_proxy: ImageLoaderProxy,
     import_worker_proxy: ImportWorkerProxy,
+    cv_worker_proxy: CvWorkerProxy,
 }
 
 impl PhotoLibrary {
@@ -49,10 +51,14 @@ impl PhotoLibrary {
             config.library_path.join(ORIGINALS_SUBDIRECTORY),
             config.thumbnail_sizes,
         );
+
+        let cv_worker_proxy = CvWorkerProxy::new(&config.cv_config)?;
+
         Ok(Self {
             db_worker_proxy,
             image_loader_proxy,
             import_worker_proxy,
+            cv_worker_proxy,
         })
     }
 
@@ -83,6 +89,8 @@ fn try_ensure_dir(path: &PathBuf) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use crate::workers::cv_worker::CvConfig;
+
     use super::*;
     use tempdir::TempDir;
     fn workspace_path() -> PathBuf {
@@ -91,9 +99,20 @@ mod tests {
             .unwrap()
             .to_path_buf()
     }
+
+    fn get_cv_config() -> CvConfig {
+        CvConfig {
+            face_detector_model_path: workspace_path().join("models").join("yolov12n-face.onnx"),
+            face_embedder_model_path: workspace_path().join("models").join("facenet.onnx"),
+            face_detector_image_size: 480,
+            face_embedder_image_size: 160,
+        }
+    }
+
     #[tokio::test]
     async fn test_init_photo_library() {
-        let config = Config::new(workspace_path().join("test_data").join("example_library"))
+        let temp_dir = TempDir::new("photo_library").unwrap();
+        let config = Config::new(temp_dir.path().to_path_buf(), get_cv_config())
             .with_thumbnail_sizes(vec![32, 64]);
         let _ = PhotoLibrary::new(config).await.unwrap();
     }
@@ -101,7 +120,8 @@ mod tests {
     #[tokio::test]
     async fn test_import_photo_and_get_image() {
         let temp_dir = TempDir::new("photo_library").unwrap();
-        let config = Config::new(temp_dir.path().to_path_buf()).with_thumbnail_sizes(vec![32]);
+        let config = Config::new(temp_dir.path().to_path_buf(), get_cv_config())
+            .with_thumbnail_sizes(vec![32]);
         let mut library = PhotoLibrary::new(config).await.unwrap();
         let new_image_path = workspace_path().join("test_data").join("example.jpeg");
         library
@@ -113,5 +133,24 @@ mod tests {
         assert_eq!(thumbnail.height(), 32);
         let full_image = library.get_full_image(1).await.unwrap();
         assert_eq!(full_image.height(), 1280);
+    }
+
+    #[tokio::test]
+    async fn test_cv_worker() {
+        let temp_dir = TempDir::new("photo_library").unwrap();
+        let config = Config::new(temp_dir.path().to_path_buf(), get_cv_config())
+            .with_thumbnail_sizes(vec![32]);
+        let mut library = PhotoLibrary::new(config).await.unwrap();
+        let new_image_path = workspace_path().join("test_data").join("example.jpeg");
+        library
+            .import_photo(new_image_path)
+            .await
+            .expect("could not import");
+
+        let full_image = library.get_full_image(1).await.unwrap();
+        assert_eq!(full_image.height(), 1280);
+
+        let face_boxes = library.cv_worker_proxy.get_faces(full_image).await.unwrap();
+        assert_eq!(face_boxes.len(), 1);
     }
 }
