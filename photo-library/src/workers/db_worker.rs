@@ -72,6 +72,26 @@ impl DbWorker {
         last_inserted_id as u32
     }
 
+    pub(crate) async fn insert_photos_bulk(&self, photo_names: Vec<String>) -> Vec<u32> {
+        if photo_names.is_empty() {
+            return Vec::new();
+        }
+
+        let mut qb = sqlx::QueryBuilder::new("INSERT INTO image (image_name) ");
+        qb.push_values(photo_names.iter(), |mut b, name| {
+            b.push_bind(name);
+        });
+        qb.push(" RETURNING image_id");
+
+        let rows = qb
+            .build_query_as::<(i64,)>()
+            .fetch_all(&self.pool)
+            .await
+            .expect("failed to bulk insert photos");
+
+        rows.into_iter().map(|(id,)| id as u32).collect()
+    }
+
     pub(crate) async fn get_face_detection(&self, detection_id: u32) -> Option<(u32, BoundingBox)> {
         let rows = sqlx::query("SELECT image_id, roi_x1, roi_y1, roi_x2, roi_y2 FROM face_detection WHERE face_detection_id = ?")
             .bind(detection_id)

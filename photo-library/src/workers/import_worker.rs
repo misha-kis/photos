@@ -4,11 +4,13 @@ use crate::{
     workers::{cv_worker::DetectFacesCommand, db_worker::DbWorker},
 };
 use anyhow::{Context, Result, anyhow};
+use futures::stream::{self, StreamExt};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::fmt::Formatter;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::task;
 
 pub(crate) struct ImportWorker {
     db_worker: Arc<Mutex<DbWorker>>,
@@ -33,37 +35,56 @@ impl ImportWorker {
     }
 
     async fn import_many(&self, paths: Vec<PathBuf>) -> Result<Vec<u32>> {
-        let mut image_ids = Vec::new();
-        for path in &paths {
-            match image::open(&path) {
-                Ok(img) => {
+        let concurrency = 8;
+
+        let processed: Vec<_> = stream::iter(paths)
+            .map(|path| {
+                let originals_path = self.originals_path.clone();
+                let thumbnails_path = self.thumbnails_path.clone();
+                let thumbnail_sizes = self.thumbnail_sizes.clone();
+
+                task::spawn_blocking(move || {
+                    let img = image::open(&path)?;
                     let name = path.file_name().ok_or(anyhow!("invalid name"))?;
-                    tracing::debug!(
-                        "Inserting image to db: {}",
-                        name.to_str().ok_or(anyhow!("invalid name"))?
-                    );
-                    let image_id = self
-                        .db_worker
-                        .lock()
-                        .await
-                        .insert_photo(name.to_str().ok_or(anyhow!("invalid name"))?.into())
-                        .await;
-                    let new_path = self.originals_path.join(name);
-                    tracing::debug!("Copying image to {}", new_path.display());
-                    std::fs::copy(&path, new_path)?;
-                    tracing::debug!("Done. Creating thumbnails");
-                    for size in &self.thumbnail_sizes {
+                    let name_str = name.to_str().ok_or(anyhow!("invalid name"))?;
+
+                    let new_path = originals_path.join(name);
+                    std::fs::copy(&path, &new_path)?;
+
+                    for size in &thumbnail_sizes {
                         let thumbnail = img.thumbnail(*size, *size);
-                        thumbnail.save(self.thumbnails_path.join(format!("{size}")).join(name))?
+                        let thumb_path = thumbnails_path.join(format!("{size}")).join(name_str);
+                        std::fs::create_dir_all(thumb_path.parent().unwrap())?;
+                        thumbnail.save(&thumb_path)?;
                     }
-                    tracing::debug!("Done. Creating thumbnails");
-                    image_ids.push(image_id);
+
+                    Ok::<_, anyhow::Error>(name_str.to_string())
+                })
+            })
+            .buffer_unordered(concurrency)
+            .collect()
+            .await;
+
+        let image_names: Vec<String> = processed
+            .into_iter()
+            .filter_map(|res| match res {
+                Ok(Ok(name)) => Some(name),
+                Ok(Err(err)) => {
+                    tracing::error!("Error processing image: {}", err);
+                    None
                 }
-                Err(err) => {
-                    tracing::error!("Error importing image: {}", err);
+                Err(join_err) => {
+                    tracing::error!("Task join error: {}", join_err);
+                    None
                 }
-            }
-        }
+            })
+            .collect();
+
+        let image_ids = {
+            let mut db = self.db_worker.lock().await;
+            db.insert_photos_bulk(image_names.clone()).await
+        };
+
         Ok(image_ids)
     }
 
