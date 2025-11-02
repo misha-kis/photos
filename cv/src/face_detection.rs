@@ -18,6 +18,20 @@ pub struct BoundingBox {
     pub y2: f32,
 }
 
+impl BoundingBox {
+    pub fn new(x1: f32, y1: f32, x2: f32, y2: f32) -> Self {
+        Self { x1, y1, x2, y2 }
+    }
+
+    pub fn height(&self) -> f32 {
+        self.y2 - self.y1
+    }
+
+    pub fn width(&self) -> f32 {
+        self.x2 - self.x1
+    }
+}
+
 fn intersection(box1: &BoundingBox, box2: &BoundingBox) -> f32 {
     (box1.x2.min(box2.x2) - box1.x1.max(box2.x1)) * (box1.y2.min(box2.y2) - box1.y1.max(box2.y1))
 }

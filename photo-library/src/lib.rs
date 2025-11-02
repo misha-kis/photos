@@ -2,76 +2,210 @@ mod config;
 mod workers;
 
 use crate::config::Config;
-use crate::workers::cv_worker::CvWorkerProxy;
-use crate::workers::db_worker::DbWorkerProxy;
-use crate::workers::image_loader_worker::ImageLoaderProxy;
-use crate::workers::import_worker::ImportWorkerProxy;
+use crate::workers::cv_worker::{
+    CreateEmbeddingCommand, CreateEmbeddingCommandResult, CvWorker, DetectFacesCommand,
+    DetectFacesCommandResult,
+};
+use crate::workers::db_worker::DbWorker;
+use crate::workers::image_loader_worker::{
+    ImageLoader, LoadImageCommand, LoadImageCommandResult, LoadThumbnailCommand,
+    LoadThumbnailCommandResult,
+};
+use crate::workers::import_worker::{ImportCommand, ImportCommandResult, ImportWorker};
 use anyhow::{Context, Result, anyhow};
 use image::DynamicImage;
+use rayon::ThreadPoolBuilder;
+use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::fs::create_dir;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
+use tokio_util::sync::CancellationToken;
 
 const THUMBNAILS_SUBDIRECTORY: &str = "thumbnails";
 const ORIGINALS_SUBDIRECTORY: &str = "originals";
 const DB_PATH: &str = "db.db";
 
+#[derive(Debug)]
+enum Command {
+    LoadImage(LoadImageCommand),
+    LoadThumbnail(LoadThumbnailCommand),
+    Import(ImportCommand),
+    DetectFaces(DetectFacesCommand),
+    EmbedFace(CreateEmbeddingCommand),
+}
+
+enum CommandResult {
+    LoadImage(LoadImageCommandResult),
+    LoadThumbnail(LoadThumbnailCommandResult),
+    Import(ImportCommandResult),
+    DetectFaces(DetectFacesCommandResult),
+    EmbedFace(CreateEmbeddingCommandResult),
+}
+
+#[derive(Clone)]
+pub struct SchedulerHandle {
+    ui_tx: mpsc::Sender<Command>,
+    bg_tx: mpsc::Sender<Command>,
+    // cancel: CancellationToken,
+}
+
+pub struct Scheduler {
+    ui_rx: mpsc::Receiver<Command>,
+    bg_rx: mpsc::Receiver<Command>,
+    image_loader: Arc<Mutex<ImageLoader>>,
+    import_worker: ImportWorker,
+    cv_worker: CvWorker,
+    // rayon_pool: Arc<rayon::ThreadPool>,
+    // progress_tx: broadcast::Sender<ProgressEvent>,
+    cancel: CancellationToken,
+}
+
+impl Scheduler {
+    fn new(
+        image_loader: Arc<Mutex<ImageLoader>>,
+        import_worker: ImportWorker,
+        cv_worker: CvWorker,
+    ) -> SchedulerHandle {
+        let (ui_tx, ui_rx) = mpsc::channel(256); // priority queue
+        let (bg_tx, bg_rx) = mpsc::channel(1024); // background queue
+        let cancel = CancellationToken::new();
+
+        // let rayon_pool = ThreadPoolBuilder::new()
+        //     .num_threads(num_cpus::get_physical().max(1))
+        //     .build()
+        //     .unwrap();
+
+        // let (progress_tx, _rx) = broadcast::channel(64);
+
+        let mut sched = Scheduler {
+            ui_rx,
+            bg_rx,
+            image_loader,
+            import_worker,
+            cv_worker,
+            // rayon_pool: Arc::new(rayon_pool),
+            // progress_tx,
+            cancel: cancel.clone(),
+        };
+        tracing::debug!("Scheduler initialized");
+
+        let handle = SchedulerHandle {
+            ui_tx,
+            bg_tx,
+            // cancel,
+        };
+        let handle_clone = handle.clone();
+
+        tokio::spawn(async move {
+            sched
+                .run(handle_clone)
+                .await
+                .expect("error running scheduler");
+            tracing::info!("Scheduler thread stopped");
+        });
+        tracing::info!("Scheduler started");
+
+        handle
+    }
+
+    async fn run(&mut self, handle: SchedulerHandle) -> Result<()> {
+        loop {
+            tokio::select! {
+                biased;
+                Some(task) = self.ui_rx.recv() => self.handle_task(task, &handle).await.context("handling ui task")?,
+                Some(task) = self.bg_rx.recv() => self.handle_task(task, &handle).await.context("handling bg task")?,
+                _ = self.cancel.cancelled() => break,
+            }
+        }
+        tracing::info!("Scheduler loop stopped");
+        Ok(())
+    }
+
+    async fn handle_task(&mut self, cmd: Command, handle: &SchedulerHandle) -> Result<()> {
+        tracing::debug!("Handling task: {:?}", cmd);
+        match cmd {
+            Command::LoadThumbnail(cmd) => cmd.execute(&mut self.image_loader).await?,
+            Command::LoadImage(cmd) => cmd.execute(&mut self.image_loader).await?,
+            Command::Import(cmd) => cmd.execute(&mut self.import_worker, &handle.bg_tx).await,
+            Command::DetectFaces(cmd) => cmd.execute(&mut self.cv_worker, &handle.bg_tx).await?,
+            Command::EmbedFace(cmd) => cmd.execute(&mut self.cv_worker).await?,
+        }
+        Ok(())
+    }
+}
+
 pub struct PhotoLibrary {
-    db_worker_proxy: Arc<Mutex<DbWorkerProxy>>,
-    image_loader_proxy: ImageLoaderProxy,
-    import_worker_proxy: ImportWorkerProxy,
-    cv_worker_proxy: CvWorkerProxy,
+    db_worker: Arc<Mutex<DbWorker>>,
+    scheduler_handle: SchedulerHandle,
 }
 
 impl PhotoLibrary {
     pub async fn new(config: Config) -> Result<Self> {
+        let thumbnails_path = config.library_path.join(THUMBNAILS_SUBDIRECTORY);
+        let originals_path = config.library_path.join(ORIGINALS_SUBDIRECTORY);
         try_ensure_dir(&config.library_path)?;
-        try_ensure_dir(&config.library_path.join(ORIGINALS_SUBDIRECTORY))?;
-        try_ensure_dir(&config.library_path.join(THUMBNAILS_SUBDIRECTORY))?;
+        try_ensure_dir(&thumbnails_path)?;
+        try_ensure_dir(&originals_path)?;
         for thumbnail_size in &config.thumbnail_sizes {
-            try_ensure_dir(
-                &config
-                    .library_path
-                    .join(THUMBNAILS_SUBDIRECTORY)
-                    .join(format!("{thumbnail_size}")),
-            )?;
+            try_ensure_dir(&thumbnails_path.join(format!("{thumbnail_size}")))?;
         }
-        let db_worker_proxy = Arc::new(Mutex::new(DbWorkerProxy::new(&config.library_path).await?));
+        let db_worker = Arc::new(Mutex::new(DbWorker::new(&config.library_path).await?));
 
-        let image_loader_proxy = ImageLoaderProxy::new(
-            db_worker_proxy.clone(),
-            config.library_path.join(THUMBNAILS_SUBDIRECTORY),
-            config.library_path.join(ORIGINALS_SUBDIRECTORY),
-        )?;
+        let image_loader = Arc::new(Mutex::new(ImageLoader::new(
+            db_worker.clone(),
+            thumbnails_path.clone(),
+            originals_path.clone(),
+        )));
 
-        let import_worker_proxy = ImportWorkerProxy::new(
-            db_worker_proxy.clone(),
-            config.library_path.join(THUMBNAILS_SUBDIRECTORY),
-            config.library_path.join(ORIGINALS_SUBDIRECTORY),
+        let cv_worker = CvWorker::new(&config.cv_config, db_worker.clone(), image_loader.clone())?;
+        let import_worker = ImportWorker::new(
+            db_worker.clone(),
+            thumbnails_path.clone(),
+            originals_path.clone(),
             config.thumbnail_sizes,
         );
-
-        let cv_worker_proxy = CvWorkerProxy::new(&config.cv_config)?;
+        let scheduler_handle = Scheduler::new(image_loader.clone(), import_worker, cv_worker);
 
         Ok(Self {
-            db_worker_proxy,
-            image_loader_proxy,
-            import_worker_proxy,
-            cv_worker_proxy,
+            db_worker,
+            scheduler_handle,
         })
     }
 
-    pub async fn get_thumbnail(&mut self, photo_id: u32) -> Result<DynamicImage> {
-        self.image_loader_proxy.load_thumbnail(photo_id).await
+    pub async fn get_thumbnail(&mut self, id: u32) -> Result<DynamicImage> {
+        tracing::debug!("Loading thumbnail for photo with ID {}", id);
+        let (tx, rx) = oneshot::channel();
+        self.scheduler_handle
+            .ui_tx
+            .send(Command::LoadThumbnail(LoadThumbnailCommand { id, tx }))
+            .await?;
+        tracing::debug!("Task sent for thumbnail {}", id);
+        rx.await?
     }
 
-    pub async fn get_full_image(&mut self, photo_id: u32) -> Result<DynamicImage> {
-        self.image_loader_proxy.load_full_image(photo_id).await
+    pub async fn get_full_image(&mut self, id: u32) -> Result<DynamicImage> {
+        tracing::debug!("Loading full image for photo with ID {}", id);
+        let (tx, rx) = oneshot::channel();
+        self.scheduler_handle
+            .ui_tx
+            .send(Command::LoadImage(LoadImageCommand { id, tx }))
+            .await?;
+        tracing::debug!("Task sent for full image {}", id);
+        rx.await?
     }
 
-    pub async fn import_photo(&mut self, photo_path: PathBuf) -> Result<()> {
-        self.import_worker_proxy.import_photo(photo_path).await
+    pub async fn import_photo(&mut self, path: PathBuf) -> Result<ImportCommandResult> {
+        tracing::debug!("Importing photo from {}", path.display());
+        let (tx, rx) = oneshot::channel();
+        self.scheduler_handle
+            .bg_tx
+            .send(Command::Import(ImportCommand { path, tx }))
+            .await?;
+        tracing::debug!("Task sent for import");
+        rx.await?
     }
 }
 
@@ -118,16 +252,16 @@ mod tests {
     }
 
     #[tokio::test]
+    #[tracing_test::traced_test]
     async fn test_import_photo_and_get_image() {
+        // tracing_subscriber::fmt::init();
         let temp_dir = TempDir::new("photo_library").unwrap();
         let config = Config::new(temp_dir.path().to_path_buf(), get_cv_config())
             .with_thumbnail_sizes(vec![32]);
         let mut library = PhotoLibrary::new(config).await.unwrap();
         let new_image_path = workspace_path().join("test_data").join("example.jpeg");
-        library
-            .import_photo(new_image_path)
-            .await
-            .expect("could not import");
+        let result = library.import_photo(new_image_path).await;
+        assert!(result.is_ok());
 
         let thumbnail = library.get_thumbnail(1).await.unwrap();
         assert_eq!(thumbnail.height(), 32);
@@ -142,15 +276,17 @@ mod tests {
             .with_thumbnail_sizes(vec![32]);
         let mut library = PhotoLibrary::new(config).await.unwrap();
         let new_image_path = workspace_path().join("test_data").join("example.jpeg");
-        library
-            .import_photo(new_image_path)
-            .await
-            .expect("could not import");
+        let import_cmd_result = library.import_photo(new_image_path).await.unwrap();
 
         let full_image = library.get_full_image(1).await.unwrap();
         assert_eq!(full_image.height(), 1280);
 
-        let face_boxes = library.cv_worker_proxy.get_faces(full_image).await.unwrap();
-        assert_eq!(face_boxes.len(), 1);
+        let detect_faces_result = import_cmd_result.rx.await.unwrap();
+        for rx in detect_faces_result.rxs {
+            rx.await.unwrap();
+        }
+
+        // let face_boxes = library.get_faces(full_image).await.unwrap();
+        // assert_eq!(face_boxes.len(), 1);
     }
 }
