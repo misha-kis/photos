@@ -102,6 +102,7 @@ impl Scheduler {
         let handle_clone = handle.clone();
 
         tokio::spawn(async move {
+            tracing::debug!("Starting scheduler thread");
             sched
                 .run(handle_clone)
                 .await
@@ -114,6 +115,7 @@ impl Scheduler {
     }
 
     async fn run(&mut self, handle: SchedulerHandle) -> Result<()> {
+        tracing::debug!("Starting scheduling loop");
         loop {
             tokio::select! {
                 biased;
@@ -129,11 +131,23 @@ impl Scheduler {
     async fn handle_task(&mut self, cmd: Command, handle: &SchedulerHandle) -> Result<()> {
         tracing::debug!("Handling task: {:?}", cmd);
         match cmd {
-            Command::LoadThumbnail(cmd) => cmd.execute(&mut self.image_loader).await?,
-            Command::LoadImage(cmd) => cmd.execute(&mut self.image_loader).await?,
+            Command::LoadThumbnail(cmd) => cmd
+                .execute(&mut self.image_loader)
+                .await
+                .context("loading thumbnail")?,
+            Command::LoadImage(cmd) => cmd
+                .execute(&mut self.image_loader)
+                .await
+                .context("loading image")?,
             Command::Import(cmd) => cmd.execute(&mut self.import_worker, &handle.bg_tx).await,
-            Command::DetectFaces(cmd) => cmd.execute(&mut self.cv_worker, &handle.bg_tx).await?,
-            Command::EmbedFace(cmd) => cmd.execute(&mut self.cv_worker).await?,
+            Command::DetectFaces(cmd) => cmd
+                .execute(&mut self.cv_worker, &handle.bg_tx)
+                .await
+                .context("detecting faces")?,
+            Command::EmbedFace(cmd) => cmd
+                .execute(&mut self.cv_worker)
+                .await
+                .context("embedding face")?,
         }
         Ok(())
     }
@@ -210,7 +224,7 @@ impl PhotoLibrary {
         rx.await?
     }
 
-    pub async fn get_number_of_images(&mut self) -> Result<usize> {
+    pub async fn get_number_of_images(&self) -> Result<usize> {
         self.db_worker
             .lock()
             .await
@@ -237,6 +251,7 @@ mod tests {
     use crate::workers::cv_worker::CvConfig;
 
     use super::*;
+    use futures::future::join_all;
     use tempdir::TempDir;
     fn workspace_path() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -265,12 +280,11 @@ mod tests {
     #[tokio::test]
     #[tracing_test::traced_test]
     async fn test_import_photo_and_get_image() {
-        // tracing_subscriber::fmt::init();
         let temp_dir = TempDir::new("photo_library").unwrap();
         let config = Config::new(temp_dir.path().to_path_buf(), get_cv_config())
             .with_thumbnail_sizes(vec![32]);
         let mut library = PhotoLibrary::new(config).await.unwrap();
-        let new_image_path = workspace_path().join("test_data").join("example.jpeg");
+        let new_image_path = workspace_path().join("test_data");
         let result = library.import_photo(new_image_path).await;
         assert!(result.is_ok());
 
@@ -292,10 +306,10 @@ mod tests {
         let full_image = library.get_full_image(1).await.unwrap();
         assert_eq!(full_image.height(), 1280);
 
-        let detect_faces_result = import_cmd_result.rx.await.unwrap();
-        for rx in detect_faces_result.rxs {
-            rx.await.unwrap();
-        }
+        let detect_faces_result = join_all(import_cmd_result.rxs)
+            .await
+            .into_iter()
+            .map(|result| result.unwrap());
 
         // let face_boxes = library.get_faces(full_image).await.unwrap();
         // assert_eq!(face_boxes.len(), 1);

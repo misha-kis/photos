@@ -109,8 +109,8 @@ impl std::fmt::Debug for DetectFacesCommand {
     }
 }
 
-pub(crate) struct DetectFacesCommandResult {
-    pub(crate) rxs: Vec<oneshot::Receiver<CreateEmbeddingCommandResult>>,
+pub struct DetectFacesCommandResult {
+    pub rxs: Vec<oneshot::Receiver<CreateEmbeddingCommandResult>>,
 }
 
 pub(crate) struct CreateEmbeddingCommand {
@@ -128,7 +128,7 @@ impl CreateEmbeddingCommand {
 
     pub(crate) async fn execute(self, worker: &mut CvWorker) -> Result<()> {
         let result = self.do_execute(worker).await;
-        self.tx.send(result?).expect("cound not send");
+        self.tx.send(result?).expect("Could not send");
         Ok(())
     }
 
@@ -177,4 +177,4 @@ impl std::fmt::Debug for CreateEmbeddingCommand {
 }
 
 #[derive(Debug)]
-pub(crate) struct CreateEmbeddingCommandResult {}
+pub struct CreateEmbeddingCommandResult {}

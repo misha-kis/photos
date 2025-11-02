@@ -3,10 +3,11 @@ use crate::{
     Command,
     workers::{cv_worker::DetectFacesCommand, db_worker::DbWorker},
 };
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::fmt::Formatter;
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::{cell::RefCell, path::PathBuf, rc::Rc};
 use tokio::sync::{Mutex, mpsc, oneshot};
 
 pub(crate) struct ImportWorker {
@@ -31,26 +32,58 @@ impl ImportWorker {
         }
     }
 
-    pub(crate) async fn import(&self, path: &PathBuf) -> Result<u32> {
-        match image::open(&path) {
-            Ok(img) => {
-                let name = path.file_name().ok_or(anyhow!("invalid name"))?;
-                let image_id = self
-                    .db_worker
-                    .lock()
-                    .await
-                    .insert_photo(name.to_str().ok_or(anyhow!("invalid name"))?.into())
-                    .await;
-                let new_path = self.originals_path.join(name);
-                std::fs::copy(&path, new_path)?;
-                for size in &self.thumbnail_sizes {
-                    let thumbnail = img.thumbnail(*size, *size);
-                    thumbnail.save(self.thumbnails_path.join(format!("{size}")).join(name))?
+    async fn import_many(&self, paths: Vec<PathBuf>) -> Result<Vec<u32>> {
+        let mut image_ids = Vec::new();
+        for path in &paths {
+            match image::open(&path) {
+                Ok(img) => {
+                    let name = path.file_name().ok_or(anyhow!("invalid name"))?;
+                    tracing::debug!(
+                        "Inserting image to db: {}",
+                        name.to_str().ok_or(anyhow!("invalid name"))?
+                    );
+                    let image_id = self
+                        .db_worker
+                        .lock()
+                        .await
+                        .insert_photo(name.to_str().ok_or(anyhow!("invalid name"))?.into())
+                        .await;
+                    let new_path = self.originals_path.join(name);
+                    tracing::debug!("Copying image to {}", new_path.display());
+                    std::fs::copy(&path, new_path)?;
+                    tracing::debug!("Done. Creating thumbnails");
+                    for size in &self.thumbnail_sizes {
+                        let thumbnail = img.thumbnail(*size, *size);
+                        thumbnail.save(self.thumbnails_path.join(format!("{size}")).join(name))?
+                    }
+                    tracing::debug!("Done. Creating thumbnails");
+                    image_ids.push(image_id);
                 }
-
-                Ok(image_id)
+                Err(err) => {
+                    tracing::error!("Error importing image: {}", err);
+                }
             }
-            Err(err) => Err(anyhow!("failed to open img, {}", err)),
+        }
+        Ok(image_ids)
+    }
+
+    pub(crate) async fn import(&self, path: &PathBuf) -> Result<Vec<u32>> {
+        let meta = std::fs::metadata(path)?;
+        if meta.is_file() {
+            self.import_many(vec![path.clone()]).await
+        } else if meta.is_dir() {
+            self.import_many(
+                std::fs::read_dir(path)?
+                    .map(|entry| entry.unwrap().path())
+                    .filter(|path| {
+                        path.extension()
+                            .is_some_and(|ext| ext == "JPG" || ext == "jpeg" || ext == "PNG")
+                    })
+                    .collect(),
+            )
+            .await
+        } else {
+            Err(anyhow!("invalid path"))
         }
     }
 }
@@ -67,15 +100,17 @@ impl ImportCommand {
         cmd_tx: &mpsc::Sender<Command>,
     ) {
         tracing::debug!("Importing image");
-        let resp = if let Ok(image_id) = import_worker.import(&self.path).await {
-            let (res_tx, res_rx) = oneshot::channel();
-            if let Ok(()) = cmd_tx
-                .send(Command::DetectFaces(DetectFacesCommand::new(
-                    image_id, res_tx,
-                )))
-                .await
-            {
-                Ok(ImportCommandResult { rx: res_rx })
+        let resp = if let Ok(image_ids) = import_worker.import(&self.path).await {
+            let mut rxs = Vec::new();
+            let mut commands = Vec::new();
+            for id in image_ids {
+                let (tx, rx) = oneshot::channel();
+                commands.push(Command::DetectFaces(DetectFacesCommand::new(id, tx)));
+                rxs.push(rx);
+            }
+
+            if let Ok(()) = bulk_add_commands(commands, cmd_tx).await {
+                Ok(ImportCommandResult { rxs })
             } else {
                 Err(anyhow!("could not schedule a new command"))
             }
@@ -86,6 +121,13 @@ impl ImportCommand {
     }
 }
 
+async fn bulk_add_commands(commands: Vec<Command>, cmd_tx: &mpsc::Sender<Command>) -> Result<()> {
+    for command in commands {
+        cmd_tx.send(command).await?
+    }
+    Ok(())
+}
+
 impl std::fmt::Debug for ImportCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ImportCommand")
@@ -94,8 +136,8 @@ impl std::fmt::Debug for ImportCommand {
     }
 }
 
-pub(crate) struct ImportCommandResult {
-    pub(crate) rx: oneshot::Receiver<DetectFacesCommandResult>,
+pub struct ImportCommandResult {
+    pub rxs: Vec<oneshot::Receiver<DetectFacesCommandResult>>,
 }
 
 impl std::fmt::Debug for ImportCommandResult {

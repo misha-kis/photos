@@ -1,5 +1,5 @@
 use crate::workers::db_worker::DbWorker;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use image::DynamicImage;
 use lru::LruCache;
 use std::num::NonZeroUsize;
@@ -44,7 +44,8 @@ impl ImageLoader {
             Ok(result.clone())
         } else {
             let path = self.thumbnails_path.join(format!("{}", 32)).join(name); // todo(other sizes)
-            let result = image::open(path)?;
+            let result =
+                image::open(&path).context(format!("Failed to open image {}", path.display()))?;
             self.thumbnail_cache.put(photo_id, result.clone());
             Ok(result)
         }
@@ -86,7 +87,8 @@ impl ImageLoader {
             .lock()
             .await
             .get_photo_name_by_photo_id(photo_id)
-            .await?;
+            .await
+            .context("Failed to get photo name")?;
         self.image_name_cache.put(photo_id, name.clone());
         Ok(name)
     }
@@ -100,7 +102,12 @@ pub struct LoadImageCommand {
 impl LoadImageCommand {
     pub async fn execute(self, loader: &mut Arc<Mutex<ImageLoader>>) -> Result<()> {
         tracing::debug!("Loading full image for photo ID: {}", self.id);
-        let image = loader.lock().await.get_full_image(self.id).await?;
+        let image = loader
+            .lock()
+            .await
+            .get_full_image(self.id)
+            .await
+            .context("Failed to load full image")?;
         tracing::debug!("Full image loaded for photo ID: {}", self.id);
         self.tx.send(Ok(image)).unwrap();
         tracing::debug!("Full image sent for photo ID: {}", self.id);
@@ -124,7 +131,12 @@ pub struct LoadThumbnailCommand {
 impl LoadThumbnailCommand {
     pub async fn execute(self, loader: &mut Arc<Mutex<ImageLoader>>) -> Result<()> {
         tracing::debug!("Loading thumbnail for photo ID: {}", self.id);
-        let image = loader.lock().await.get_thumbnail(self.id).await?;
+        let image = loader
+            .lock()
+            .await
+            .get_thumbnail(self.id)
+            .await
+            .context("Failed to load thumbnail")?;
         tracing::debug!("Thumbnail loaded for photo ID: {}", self.id);
         self.tx.send(Ok(image)).unwrap();
         tracing::debug!("Thumbnail sent for photo ID: {}", self.id);

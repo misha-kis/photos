@@ -12,7 +12,7 @@ impl Config {
     pub fn new(library_path: PathBuf, cv_config: CvConfig) -> Self {
         Self {
             library_path,
-            thumbnail_sizes: Vec::new(),
+            thumbnail_sizes: vec![32],
             cv_config,
         }
     }

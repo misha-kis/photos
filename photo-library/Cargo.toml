@@ -3,6 +3,10 @@ name = "photo-library"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "photo_library"
+crate-type = ["lib"]
+
 [dependencies]
 anyhow = { workspace = true }
 sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite"] }
