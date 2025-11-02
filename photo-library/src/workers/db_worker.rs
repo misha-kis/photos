@@ -128,4 +128,12 @@ impl DbWorker {
                 .last_insert_rowid();
         Ok(last_inserted_id)
     }
+
+    pub(crate) async fn get_number_of_images(&self) -> Result<u32> {
+        sqlx::query("SELECT COUNT(image_id) AS count FROM image")
+            .fetch_one(&self.pool)
+            .await?
+            .try_get("count")
+            .map_err(|e| e.into())
+    }
 }

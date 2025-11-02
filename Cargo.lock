@@ -200,6 +200,8 @@ dependencies = [
  "dirs",
  "eframe",
  "image",
+ "photo-library",
+ "tokio",
 ]
 
 [[package]]

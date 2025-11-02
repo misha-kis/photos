@@ -1,7 +1,6 @@
 mod config;
 mod workers;
 
-use crate::config::Config;
 use crate::workers::cv_worker::{
     CreateEmbeddingCommand, CreateEmbeddingCommandResult, CvWorker, DetectFacesCommand,
     DetectFacesCommandResult,
@@ -23,6 +22,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
+
+pub use crate::config::Config;
+pub use crate::workers::cv_worker::CvConfig;
 
 const THUMBNAILS_SUBDIRECTORY: &str = "thumbnails";
 const ORIGINALS_SUBDIRECTORY: &str = "originals";
@@ -206,6 +208,15 @@ impl PhotoLibrary {
             .await?;
         tracing::debug!("Task sent for import");
         rx.await?
+    }
+
+    pub async fn get_number_of_images(&mut self) -> Result<usize> {
+        self.db_worker
+            .lock()
+            .await
+            .get_number_of_images()
+            .await
+            .map(|x| x as usize)
     }
 }
 
