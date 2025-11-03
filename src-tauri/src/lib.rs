@@ -127,27 +127,15 @@ pub fn run() {
             let gallery_dir = PathBuf::from("/Users/mikhailkiselyov/Pictures/picslib2");
             let mut state = AppState::new(gallery_dir);
 
-            // let to_import_path = PathBuf::from("/Users/mikhailkiselyov/Pictures/pics2");
+            let to_import_path = PathBuf::from("/Users/mikhailkiselyov/Pictures/pics2");
             // PathBuf::from("/Users/mikhailkiselyov/code/misc/photos/test_data/example.jpeg");
 
-            // println!("Starting runtime");
-            // state
-            //     .rt
-            //     .block_on(async {
-            //         let res = state.library.import_photo(to_import_path);
-            //         let res = futures::future::join_all(res.await.unwrap().rxs).await;
-            //         for r in res {
-            //             match r {
-            //                 Ok(r) => {
-            //                     futures::future::join_all(r.rxs).await;
-            //                 }
-            //                 Err(e) => return Err(e),
-            //             }
-            //         }
-            //         Ok(())
-            //     })
-            //     .unwrap();
-            // println!("Photo imported");
+            println!("Starting runtime");
+            state
+                .rt
+                .block_on(state.library.import_photo(to_import_path))
+                .unwrap();
+            println!("Photo imported");
 
             app.manage(Mutex::new(state));
             Ok(())

@@ -2,7 +2,7 @@ use crate::{
     Command,
     workers::{db_worker::DbWorker, image_loader_worker::ImageLoader},
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
 use cv::{BoundingBox, FaceDetector, FaceEmbedder};
 use futures::future::join_all;
 use image::DynamicImage;
@@ -95,7 +95,9 @@ impl DetectFacesCommand {
                 .await?;
             result_rxs.push(rx);
         }
-        self.tx.send(DetectFacesCommandResult { rxs: result_rxs });
+        if let Err(e) = self.tx.send(DetectFacesCommandResult { rxs: result_rxs }) {
+            tracing::warn!("Failed to send result: {:?}", e);
+        }
         tracing::debug!("Inserted faces, created embedding tasks");
         Ok(())
     }
@@ -113,6 +115,12 @@ pub struct DetectFacesCommandResult {
     pub rxs: Vec<oneshot::Receiver<CreateEmbeddingCommandResult>>,
 }
 
+impl std::fmt::Debug for DetectFacesCommandResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CreateEmbeddingCommand").finish()
+    }
+}
+
 pub(crate) struct CreateEmbeddingCommand {
     pub(crate) detection_id: u32,
     pub(crate) tx: oneshot::Sender<CreateEmbeddingCommandResult>,
@@ -127,8 +135,13 @@ impl CreateEmbeddingCommand {
     }
 
     pub(crate) async fn execute(self, worker: &mut CvWorker) -> Result<()> {
-        let result = self.do_execute(worker).await;
-        self.tx.send(result?).expect("Could not send");
+        let result = self
+            .do_execute(worker)
+            .await
+            .context("Failed to create embedding")?;
+        if let Err(e) = self.tx.send(result) {
+            tracing::warn!("Failed to send result: {:?}", e);
+        }
         Ok(())
     }
 

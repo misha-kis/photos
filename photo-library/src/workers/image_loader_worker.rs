@@ -54,8 +54,10 @@ impl ImageLoader {
         let name = self._get_name(photo_id).await?;
 
         if let Some(result) = self.full_image_cache.get(&photo_id) {
+            tracing::debug!("getting image from cache for photo id {}", photo_id);
             Ok(result.clone())
         } else {
+            tracing::debug!("getting image from disk for photo id {}", photo_id);
             let path = self.full_images_path.join(name);
             let result = image::open(path)?;
             self.full_image_cache.put(photo_id, result.clone());
@@ -73,8 +75,10 @@ impl ImageLoader {
 
     async fn _get_name(&mut self, photo_id: u32) -> Result<String> {
         if let Some(name) = self.image_name_cache.get(&photo_id) {
+            tracing::debug!("getting image name from cache for photo id {}", photo_id);
             Ok(name.clone())
         } else {
+            tracing::debug!("getting image name from database for photo id {}", photo_id);
             let name = self._get_name_from_db(photo_id).await?;
             self.image_name_cache.put(photo_id, name.clone());
             Ok(name)

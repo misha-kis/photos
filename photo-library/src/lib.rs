@@ -155,6 +155,7 @@ impl Scheduler {
 
 pub struct PhotoLibrary {
     db_worker: Arc<Mutex<DbWorker>>,
+    image_loader: Arc<Mutex<ImageLoader>>,
     scheduler_handle: SchedulerHandle,
 }
 
@@ -187,30 +188,17 @@ impl PhotoLibrary {
 
         Ok(Self {
             db_worker,
+            image_loader,
             scheduler_handle,
         })
     }
 
     pub async fn get_thumbnail(&mut self, id: u32) -> Result<DynamicImage> {
-        tracing::debug!("Loading thumbnail for photo with ID {}", id);
-        let (tx, rx) = oneshot::channel();
-        self.scheduler_handle
-            .ui_tx
-            .send(Command::LoadThumbnail(LoadThumbnailCommand { id, tx }))
-            .await?;
-        tracing::debug!("Task sent for thumbnail {}", id);
-        rx.await?
+        self.image_loader.lock().await.get_thumbnail(id).await
     }
 
     pub async fn get_full_image(&mut self, id: u32) -> Result<DynamicImage> {
-        tracing::debug!("Loading full image for photo with ID {}", id);
-        let (tx, rx) = oneshot::channel();
-        self.scheduler_handle
-            .ui_tx
-            .send(Command::LoadImage(LoadImageCommand { id, tx }))
-            .await?;
-        tracing::debug!("Task sent for full image {}", id);
-        rx.await?
+        self.image_loader.lock().await.get_full_image(id).await
     }
 
     pub async fn import_photo(&mut self, path: PathBuf) -> Result<ImportCommandResult> {
