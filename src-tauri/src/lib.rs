@@ -63,9 +63,9 @@ async fn load_thumbnail(
     index: u32,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<String, tauri::Error> {
-    println!("waiting for lock for index {}", index);
+    tracing::info!("waiting for lock for index {}", index);
     let mut app_state = state.lock().await;
-    println!("load_thumbnail {}", index);
+    tracing::info!("load_thumbnail {}", index);
 
     let img = app_state.load_thumbnail(index).await?;
 
@@ -85,7 +85,7 @@ async fn load_thumbnail(
             .write_to(&mut std::io::Cursor::new(&mut buffer), ImageFormat::WebP)
             .unwrap();
 
-        println!("Sending thumbnail");
+        tracing::info!("Sending thumbnail");
         general_purpose::STANDARD.encode(&buffer)
     })
     .await
@@ -93,9 +93,9 @@ async fn load_thumbnail(
 
 #[tauri::command]
 async fn load_image(index: u32, state: State<'_, Mutex<AppState>>) -> Result<String, tauri::Error> {
-    println!("waiting for lock for index {}", index);
+    tracing::info!("waiting for lock for index {}", index);
     let mut app_state = state.lock().await;
-    println!("load_image {}", index);
+    tracing::info!("load_image {}", index);
 
     let img = app_state.load_full_image(index).await?;
 
@@ -106,7 +106,7 @@ async fn load_image(index: u32, state: State<'_, Mutex<AppState>>) -> Result<Str
         img.write_to(&mut std::io::Cursor::new(&mut buffer), ImageFormat::WebP)
             .unwrap();
 
-        println!("Sending thumbnail");
+        tracing::info!("Sending full image");
         general_purpose::STANDARD.encode(&buffer)
     })
     .await
@@ -130,12 +130,11 @@ pub fn run() {
             let to_import_path = PathBuf::from("/Users/mikhailkiselyov/Pictures/pics2");
             // PathBuf::from("/Users/mikhailkiselyov/code/misc/photos/test_data/example.jpeg");
 
-            println!("Starting runtime");
-            state
-                .rt
-                .block_on(state.library.import_photo(to_import_path))
-                .unwrap();
-            println!("Photo imported");
+            // state
+            //     .rt
+            //     .block_on(state.library.import_photo(to_import_path))
+            //     .unwrap();
+            tracing::info!("Photo imported");
 
             app.manage(Mutex::new(state));
             Ok(())

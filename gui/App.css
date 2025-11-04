@@ -113,3 +113,11 @@ button {
         background-color: #0f0f0f69;
     }
 }
+
+html,
+body,
+#root {
+    margin: 0;
+    height: 100%;
+    overflow: hidden; /* disable global scroll */
+}
