@@ -1,5 +1,7 @@
-use crate::photo_library::{LoadRequest, PhotoLibrary};
-use eframe::egui;
+use std::path::PathBuf;
+
+use crate::photo_library::PhotoLibraryProxy;
+use eframe::egui::{self, ColorImage};
 use egui::Vec2;
 use thumb_size::ThumbSize;
 
@@ -12,7 +14,7 @@ enum AppState {
 }
 
 struct PhotoLibraryApp {
-    photo_library: PhotoLibrary,
+    photo_library: PhotoLibraryProxy,
     columns: usize,
     first_load: bool,
     state: AppState,
@@ -22,9 +24,9 @@ struct PhotoLibraryApp {
 
 impl PhotoLibraryApp {
     fn new() -> Self {
-        let dir = dirs::picture_dir().unwrap().join("picslib");
+        let gallery_dir = PathBuf::from("/Users/mikhailkiselyov/Pictures/picslib3");
         Self {
-            photo_library: PhotoLibrary::new(dir),
+            photo_library: PhotoLibraryProxy::new(gallery_dir),
             columns: 2,
             first_load: true,
             state: AppState::Main,
@@ -36,39 +38,39 @@ impl PhotoLibraryApp {
 
 impl eframe::App for PhotoLibraryApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.photo_library.process_loaded_images(ctx);
+        // self.photo_library.process_loaded_images(ctx);
 
         egui::CentralPanel::default().show(ctx, |ui| {
             match self.state {
                 AppState::PhotoSelected(idx) => {
                     // Full image view
-                    let photo = &self.photo_library.photos[idx];
-                    ui.vertical_centered(|ui| {
-                        ui.heading(photo.path.file_name().unwrap().to_string_lossy());
-                        if ui.button("← Back").clicked() {
-                            self.state = AppState::Main;
-                            self.photo_library.full_image_cache = None;
-                            self.is_full_photo_requested = false;
-                        }
+                    // let photo = &self.photo_library.try_get_image(idx as u32);
+                    // ui.vertical_centered(|ui| {
+                    //     // ui.heading(photo.path.file_name().unwrap().to_string_lossy());
+                    //     if ui.button("← Back").clicked() {
+                    //         self.state = AppState::Main;
+                    //         self.photo_library.full_image_cache = None;
+                    //         self.is_full_photo_requested = false;
+                    //     }
 
-                        // Check if we have the full image cached
-                        if let Some((cached_path, tex)) = &self.photo_library.full_image_cache {
-                            if cached_path == &photo.path {
-                                ui.image(tex);
-                            }
-                        } else {
-                            // Request loading if not cached
-                            if !self.is_full_photo_requested {
-                                let _ = self.photo_library.load_tx.send(LoadRequest::FullImage {
-                                    path: photo.path.clone(),
-                                    size: ui.available_size(),
-                                });
-                                self.is_full_photo_requested = true;
-                            }
-                            ui.spinner();
-                            ui.label("Loading...");
-                        }
-                    });
+                    //     // Check if we have the full image cached
+                    //     if let Some((cached_path, tex)) = &self.photo_library.full_image_cache {
+                    //         if cached_path == &photo.path {
+                    //             ui.image(tex);
+                    //         }
+                    //     } else {
+                    //         // Request loading if not cached
+                    //         if !self.is_full_photo_requested {
+                    //             let _ = self.photo_library.load_tx.send(LoadRequest::FullImage {
+                    //                 path: photo.path.clone(),
+                    //                 size: ui.available_size(),
+                    //             });
+                    //             self.is_full_photo_requested = true;
+                    //         }
+                    //         ui.spinner();
+                    //         ui.label("Loading...");
+                    //     }
+                    // });
                 }
                 AppState::Main => {
                     self.columns = (ui.clip_rect().width()
@@ -76,8 +78,8 @@ impl eframe::App for PhotoLibraryApp {
                             .max(0.0)) as usize;
 
                     let thumb_height = self.thumb_size as u32 as f32;
-                    let total_rows =
-                        (self.photo_library.photos.len() + self.columns - 1) / self.columns;
+                    let total_rows = (self.photo_library.get_number_of_images() + self.columns - 1)
+                        / self.columns;
 
                     egui::ScrollArea::vertical()
                         .auto_shrink([false; 2])
@@ -97,8 +99,8 @@ impl eframe::App for PhotoLibraryApp {
                             let end_row = ((visible_end + margin) as usize).min(total_rows);
 
                             let mut start_index = start_row * self.columns;
-                            let mut end_index =
-                                (end_row * self.columns).min(self.photo_library.photos.len());
+                            let mut end_index = (end_row * self.columns)
+                                .min(self.photo_library.get_number_of_images());
 
                             if start_index > end_index {
                                 let x = start_index;
@@ -106,38 +108,45 @@ impl eframe::App for PhotoLibraryApp {
                                 end_index = x;
                             }
 
-                            if self.first_load {
-                                self.first_load = false;
-                            } else {
-                                for i in start_index..end_index {
-                                    self.photo_library
-                                        .request_thumbnail_load(i, self.thumb_size);
-                                }
-                            }
+                            // if self.first_load {
+                            //     self.first_load = false;
+                            // } else {
+                            //     for i in start_index..end_index {
+                            //         self.photo_library
+                            //             .request_thumbnail_load(i, self.thumb_size);
+                            //     }
+                            // }
 
-                            let mut i = 0;
-                            while i < self.photo_library.photos.len() {
+                            let mut i = 1;
+                            while i <= self.photo_library.get_number_of_images() {
                                 ui.horizontal(|ui| {
                                     for _ in 0..self.columns {
-                                        if let Some(photo) =
-                                            self.photo_library.photos.get(i as usize)
+                                        if let Some(image) =
+                                            self.photo_library.try_get_thumbnail(i as u32)
                                         {
-                                            if let Some(tex) = &photo.thumbnail {
-                                                if ui
-                                                    .add(egui::ImageButton::new(tex).frame(false))
-                                                    .clicked()
-                                                {
-                                                    self.state = AppState::PhotoSelected(i as usize)
-                                                }
-                                            } else {
-                                                ui.allocate_space(Vec2::new(
-                                                    self.thumb_size as u32 as f32,
-                                                    self.thumb_size as u32 as f32,
-                                                ));
+                                            let rgba = image.into_rgba8();
+                                            let tex = ctx.load_texture(
+                                                format!("thumb-{}", i),
+                                                ColorImage::from_rgba_unmultiplied(
+                                                    [rgba.width() as _, rgba.height() as _],
+                                                    rgba.as_raw(),
+                                                ),
+                                                Default::default(),
+                                            );
+                                            if ui
+                                                .add(egui::ImageButton::new(&tex).frame(false))
+                                                .clicked()
+                                            {
+                                                self.state = AppState::PhotoSelected(i as usize)
                                             }
+                                        } else {
+                                            ui.allocate_space(Vec2::new(
+                                                self.thumb_size as u32 as f32,
+                                                self.thumb_size as u32 as f32,
+                                            ));
                                         }
-                                        i += 1;
                                     }
+                                    i += 1;
                                 });
                             }
 
@@ -155,6 +164,13 @@ impl eframe::App for PhotoLibraryApp {
 }
 
 fn main() -> eframe::Result<()> {
+    tracing_subscriber::fmt()
+        .with_target(false)
+        .with_level(true)
+        .with_thread_names(true)
+        .with_thread_ids(true)
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
     let options = eframe::NativeOptions::default();
     eframe::run_native(
         "Photo Library (Lazy Loading)",

@@ -73,6 +73,7 @@ impl DbWorker {
     }
 
     pub(crate) async fn insert_photos_bulk(&self, photo_names: Vec<String>) -> Vec<u32> {
+        tracing::info!("Writing image info to db");
         if photo_names.is_empty() {
             return Vec::new();
         }

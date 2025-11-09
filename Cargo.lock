@@ -217,6 +217,7 @@ dependencies = [
  "image",
  "photo-library",
  "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]

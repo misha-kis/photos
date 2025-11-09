@@ -35,6 +35,7 @@ impl ImportWorker {
     }
 
     async fn import_many(&self, paths: Vec<PathBuf>) -> Result<Vec<u32>> {
+        tracing::info!("Copying images");
         let concurrency = 8;
 
         let processed: Vec<_> = stream::iter(paths)
@@ -44,6 +45,7 @@ impl ImportWorker {
                 let thumbnail_sizes = self.thumbnail_sizes.clone();
 
                 task::spawn_blocking(move || {
+                    tracing::info!("Copying image {}", path.display());
                     let img = image::open(&path)?;
                     let name = path.file_name().ok_or(anyhow!("invalid name"))?;
                     let name_str = name.to_str().ok_or(anyhow!("invalid name"))?;
@@ -57,6 +59,7 @@ impl ImportWorker {
                         std::fs::create_dir_all(thumb_path.parent().unwrap())?;
                         thumbnail.save(&thumb_path)?;
                     }
+                    tracing::info!("Copied image {}", path.display());
 
                     Ok::<_, anyhow::Error>(name_str.to_string())
                 })
@@ -64,6 +67,7 @@ impl ImportWorker {
             .buffer_unordered(concurrency)
             .collect()
             .await;
+        tracing::info!("Done copying images");
 
         let image_names: Vec<String> = processed
             .into_iter()

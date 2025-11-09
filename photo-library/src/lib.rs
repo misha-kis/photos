@@ -135,10 +135,11 @@ impl Scheduler {
                 .execute(&mut self.image_loader)
                 .await
                 .context("loading thumbnail")?,
-            Command::LoadImage(cmd) => cmd
-                .execute(&mut self.image_loader)
-                .await
-                .context("loading image")?,
+            Command::LoadImage(cmd) => {
+                cmd.execute(&mut self.image_loader)
+                    .await
+                    .context("loading image")?;
+            }
             Command::Import(cmd) => cmd.execute(&mut self.import_worker, &handle.bg_tx).await,
             Command::DetectFaces(cmd) => cmd
                 .execute(&mut self.cv_worker, &handle.bg_tx)

@@ -1,215 +1,83 @@
-use crate::thumb_size::ThumbSize;
-use eframe::egui::{ColorImage, TextureHandle, Vec2};
-use image::imageops::FilterType;
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::mpsc::{Receiver, Sender, channel};
-use std::thread;
+use std::{collections::HashMap, path::PathBuf};
 
-#[derive(Debug)]
-pub enum LoadRequest {
-    Thumbnail {
-        path: PathBuf,
-        index: usize,
-        thumb_size: ThumbSize,
-    },
-    FullImage {
-        path: PathBuf,
-        size: Vec2,
-    },
+use image::DynamicImage;
+use photo_library::{Config, CvConfig, PhotoLibrary};
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+pub(crate) struct PhotoLibraryProxy {
+    rt: tokio::runtime::Runtime,
+    library: Arc<Mutex<PhotoLibrary>>,
+    thumbnail_load_requests: HashMap<u32, Arc<Mutex<Option<DynamicImage>>>>,
+    image_load_requests: HashMap<u32, Arc<Mutex<Option<DynamicImage>>>>,
 }
 
-#[derive(Debug)]
-pub(crate) enum LoadResponse {
-    Thumbnail {
-        index: usize,
-        path: PathBuf,
-        image_data: Vec<u8>,
-        width: u32,
-        height: u32,
-    },
-    FullImage {
-        path: PathBuf,
-        image_data: Vec<u8>,
-        width: u32,
-        height: u32,
-    },
-}
+impl PhotoLibraryProxy {
+    pub fn new(gallery_dir: PathBuf) -> Self {
+        let workspace_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let cv_cfg = CvConfig {
+            face_detector_model_path: workspace_path.join("models").join("yolov12n-face.onnx"),
+            face_embedder_model_path: workspace_path.join("models").join("facenet.onnx"),
+            face_detector_image_size: 480,
+            face_embedder_image_size: 160,
+        };
+        let cfg = Config::new(gallery_dir, cv_cfg);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let mut library = rt.block_on(PhotoLibrary::new(cfg)).unwrap();
+        let to_import_path = PathBuf::from("/Users/mikhailkiselyov/Pictures/pics2");
 
-pub struct Photo {
-    pub path: PathBuf,
-    pub thumbnail: Option<TextureHandle>, // Lazy-loaded
-    pub loaded: bool,
-    pub loading: bool, // Track if currently being loaded
-}
+        rt.block_on(library.import_photo(to_import_path)).unwrap();
 
-pub struct PhotoLibrary {
-    pub thumbnails_dir: PathBuf,
-    pub photos: Vec<Photo>,
-    pub load_tx: Sender<LoadRequest>,
-    pub load_rx: Receiver<LoadResponse>,
-    pub full_image_cache: Option<(PathBuf, TextureHandle)>,
-}
-
-impl PhotoLibrary {
-    pub fn new(library_path: PathBuf) -> Self {
-        let photos = Self::scan_directory(&library_path.join("originals"));
-        // Create channels for async image loading
-        let (load_tx, worker_rx) = channel::<LoadRequest>();
-        let (worker_tx, load_rx) = channel::<LoadResponse>();
-
-        // Spawn worker thread for image loading
-        thread::spawn(move || {
-            Self::image_loader_worker(worker_rx, worker_tx);
-        });
-
+        let library = Arc::new(Mutex::new(library));
         Self {
-            thumbnails_dir: library_path.join("thumbnails"),
-            photos,
-            load_tx,
-            load_rx,
-            full_image_cache: None,
+            rt,
+            library,
+            thumbnail_load_requests: HashMap::new(),
+            image_load_requests: HashMap::new(),
         }
     }
 
-    fn scan_directory(dir: &Path) -> Vec<Photo> {
-        let mut photos = Vec::new();
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if !path.is_file() {
-                    continue;
-                }
-                if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                    if ["jpg", "jpeg", "png", "bmp"].contains(&ext.to_lowercase().as_str()) {
-                        photos.push(Photo {
-                            path,
-                            thumbnail: None,
-                            loaded: false,
-                            loading: false,
-                        });
-                    }
-                }
-            }
-        }
-        println!("total: {}", photos.len());
-        photos.sort_by_key(|p| p.path.clone());
-        photos
+    pub fn get_number_of_images(&self) -> usize {
+        self.rt.block_on(async {
+            let library = self.library.lock().await;
+            library.get_number_of_images().await.unwrap()
+        })
     }
 
-    // Worker thread that loads images in background
-    fn image_loader_worker(rx: Receiver<LoadRequest>, tx: Sender<LoadResponse>) {
-        while let Ok(request) = rx.recv() {
-            match request {
-                LoadRequest::Thumbnail {
-                    path,
-                    index,
-                    thumb_size,
-                } => {
-                    if let Ok(img) = image::open(&path) {
-                        println!("Loading thumbnail: {:?}", &path);
-                        let thumb = img
-                            .thumbnail_exact(thumb_size as u32, thumb_size as u32)
-                            .to_rgba8();
-                        let width = thumb.width();
-                        let height = thumb.height();
-                        let image_data = thumb.into_raw();
-
-                        let _ = tx.send(LoadResponse::Thumbnail {
-                            index,
-                            path,
-                            image_data,
-                            width,
-                            height,
-                        });
-                    }
-                }
-                LoadRequest::FullImage { path, size } => {
-                    if let Ok(img) = image::open(&path) {
-                        println!("Loading full image: {:?}", &path);
-                        let rgba = img
-                            .resize(
-                                size.x.round() as u32,
-                                size.y.round() as u32,
-                                FilterType::Nearest,
-                            )
-                            .to_rgba8();
-                        let width = rgba.width();
-                        let height = rgba.height();
-                        let image_data = rgba.into_raw();
-
-                        let _ = tx.send(LoadResponse::FullImage {
-                            path,
-                            image_data,
-                            width,
-                            height,
-                        });
-                    }
-                }
-            }
+    pub fn try_get_thumbnail(&mut self, id: u32) -> Option<DynamicImage> {
+        if let Some(thumbnail) = self.thumbnail_load_requests.get(&id).cloned() {
+            self.rt.block_on(thumbnail.lock()).clone()
+        } else {
+            let result = Arc::new(Mutex::new(None));
+            self.thumbnail_load_requests.insert(id, result.clone());
+            let library = self.library.clone();
+            self.rt.spawn(async move {
+                let mut library = library.lock().await;
+                let future = library.get_thumbnail(id);
+                let thumbnail = future.await.unwrap();
+                result.lock().await.replace(thumbnail);
+            });
+            None
         }
     }
 
-    // Request thumbnail loading for a specific index
-    pub fn request_thumbnail_load(&mut self, index: usize, thumb_size: ThumbSize) {
-        if let Some(photo) = self.photos.get_mut(index) {
-            if !photo.loaded && !photo.loading {
-                photo.loading = true;
-                let _ = self.load_tx.send(LoadRequest::Thumbnail {
-                    path: self
-                        .thumbnails_dir
-                        .join(format!("{}", thumb_size as u32))
-                        .join(photo.path.file_name().unwrap()),
-                    index,
-                    thumb_size,
-                });
-            }
-        }
-    }
-
-    // Process any loaded images from the worker thread
-    pub fn process_loaded_images(&mut self, ctx: &eframe::egui::Context) {
-        // Process all available responses (non-blocking)
-        while let Ok(response) = self.load_rx.try_recv() {
-            match response {
-                LoadResponse::Thumbnail {
-                    index,
-                    path,
-                    image_data,
-                    width,
-                    height,
-                } => {
-                    if let Some(photo) = self.photos.get_mut(index) {
-                        let size = [width as usize, height as usize];
-                        let tex = ctx.load_texture(
-                            format!("thumb-{}", path.display()),
-                            ColorImage::from_rgba_unmultiplied(size, &image_data),
-                            Default::default(),
-                        );
-                        photo.thumbnail = Some(tex);
-                        photo.loaded = true;
-                        photo.loading = false;
-                    }
-                    // Request repaint to show the newly loaded thumbnail
-                    ctx.request_repaint();
-                }
-                LoadResponse::FullImage {
-                    path,
-                    image_data,
-                    width,
-                    height,
-                } => {
-                    let size = [width as usize, height as usize];
-                    let tex = ctx.load_texture(
-                        format!("full-{}", path.display()),
-                        ColorImage::from_rgba_unmultiplied(size, &image_data),
-                        Default::default(),
-                    );
-                    self.full_image_cache = Some((path, tex));
-                    // Request repaint to show the newly loaded full image
-                    ctx.request_repaint();
-                }
-            }
+    pub fn try_get_image(&mut self, id: u32) -> Option<DynamicImage> {
+        if let Some(image) = self.image_load_requests.get(&id).cloned() {
+            self.rt.block_on(image.lock()).clone()
+        } else {
+            let result = Arc::new(Mutex::new(None));
+            self.image_load_requests.insert(id, result.clone());
+            let library = self.library.clone();
+            tokio::task::spawn(async move {
+                let mut library = library.lock().await;
+                let future = library.get_full_image(id);
+                let image = future.await.unwrap();
+                result.lock().await.replace(image);
+            });
+            None
         }
     }
 }
