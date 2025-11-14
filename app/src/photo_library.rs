@@ -27,7 +27,7 @@ impl PhotoLibraryProxy {
         let cfg = Config::new(gallery_dir, cv_cfg);
         let rt = tokio::runtime::Runtime::new().unwrap();
         let mut library = rt.block_on(PhotoLibrary::new(cfg)).unwrap();
-        let to_import_path = PathBuf::from("/Users/mikhailkiselyov/Pictures/pics2");
+        let to_import_path = PathBuf::from("/Users/misha-kis/Pictures/pics2");
 
         rt.block_on(library.import_photo(to_import_path)).unwrap();
 

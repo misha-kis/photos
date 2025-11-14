@@ -35,7 +35,7 @@ impl ImportWorker {
     }
 
     async fn import_many(&self, paths: Vec<PathBuf>) -> Result<Vec<u32>> {
-        tracing::info!("Copying images");
+        tracing::info!("Copying {} images", paths.len());
         let concurrency = 8;
 
         let processed: Vec<_> = stream::iter(paths)
@@ -95,14 +95,23 @@ impl ImportWorker {
     pub(crate) async fn import(&self, path: &PathBuf) -> Result<Vec<u32>> {
         let meta = std::fs::metadata(path)?;
         if meta.is_file() {
+            tracing::debug!("Import worker importing file: {}", path.display());
             self.import_many(vec![path.clone()]).await
         } else if meta.is_dir() {
+            tracing::debug!("Import worker importing directory: {}", path.display());
             self.import_many(
                 std::fs::read_dir(path)?
                     .map(|entry| entry.unwrap().path())
                     .filter(|path| {
                         path.extension()
-                            .is_some_and(|ext| ext == "JPG" || ext == "jpeg" || ext == "PNG")
+                            .and_then(|ext| ext.to_str())
+                            .map(|ext| {
+                                matches!(
+                                    ext.to_ascii_lowercase().as_str(),
+                                    "jpg" | "jpeg" | "png"
+                                )
+                            })
+                            .unwrap_or(false)
                     })
                     .collect(),
             )

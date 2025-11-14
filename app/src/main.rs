@@ -24,7 +24,7 @@ struct PhotoLibraryApp {
 
 impl PhotoLibraryApp {
     fn new() -> Self {
-        let gallery_dir = PathBuf::from("/Users/mikhailkiselyov/Pictures/picslib3");
+        let gallery_dir = PathBuf::from("/Users/misha-kis/Pictures/picslib3");
         Self {
             photo_library: PhotoLibraryProxy::new(gallery_dir),
             columns: 2,
@@ -108,21 +108,18 @@ impl eframe::App for PhotoLibraryApp {
                                 end_index = x;
                             }
 
-                            // if self.first_load {
-                            //     self.first_load = false;
-                            // } else {
-                            //     for i in start_index..end_index {
-                            //         self.photo_library
-                            //             .request_thumbnail_load(i, self.thumb_size);
-                            //     }
+                            // for i in start_index..end_index {
+                            //     self.photo_library.request_thumbnail_load(i as u32);
                             // }
 
                             let mut i = 1;
                             while i <= self.photo_library.get_number_of_images() {
                                 ui.horizontal(|ui| {
                                     for _ in 0..self.columns {
-                                        if let Some(image) =
-                                            self.photo_library.try_get_thumbnail(i as u32)
+                                        if start_index <= i
+                                            && i < end_index
+                                            && let Some(image) =
+                                                self.photo_library.try_get_thumbnail(i as u32)
                                         {
                                             let rgba = image.into_rgba8();
                                             let tex = ctx.load_texture(
@@ -134,7 +131,7 @@ impl eframe::App for PhotoLibraryApp {
                                                 Default::default(),
                                             );
                                             if ui
-                                                .add(egui::ImageButton::new(&tex).frame(false))
+                                                .add(egui::Button::image(&tex).frame(false))
                                                 .clicked()
                                             {
                                                 self.state = AppState::PhotoSelected(i as usize)
