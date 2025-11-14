@@ -27,10 +27,9 @@ impl PhotoLibraryProxy {
         };
         let cfg = Config::new(gallery_dir, cv_cfg);
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let mut library = rt.block_on(PhotoLibrary::new(cfg)).unwrap();
-        let to_import_path = PathBuf::from("/Users/misha-kis/Pictures/pics2");
-
-        rt.block_on(library.import_photo(to_import_path)).unwrap();
+        let library = rt.block_on(PhotoLibrary::new(cfg)).unwrap();
+        // let to_import_path = PathBuf::from("/Users/misha-kis/Pictures/pics2");
+        // rt.block_on(library.import_photo(to_import_path)).unwrap();
 
         let number_of_images = rt.block_on(async {
             library.get_number_of_images().await.unwrap()
@@ -82,5 +81,23 @@ impl PhotoLibraryProxy {
             });
             None
         }
+    }
+
+    pub fn import_photo(&mut self, path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+        let library = self.library.clone();
+        self.rt.block_on(async {
+            let mut library = library.lock().await;
+            library.import_photo(path).await?;
+            Ok::<(), Box<dyn std::error::Error>>(())
+        })?;
+        Ok(())
+    }
+
+    pub fn refresh_image_count(&mut self) {
+        let library = self.library.clone();
+        self.number_of_images = self.rt.block_on(async {
+            let library = library.lock().await;
+            library.get_number_of_images().await.unwrap()
+        });
     }
 }
