@@ -71,7 +71,7 @@ impl PhotoLibraryProxy {
             let result = Arc::new(Mutex::new(None));
             self.image_load_requests.insert(id, result.clone());
             let library = self.library.clone();
-            tokio::task::spawn(async move {
+            self.rt.spawn(async move {
                 let mut library = library.lock().await;
                 let future = library.get_full_image(id);
                 let image = future.await.unwrap();

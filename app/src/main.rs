@@ -38,39 +38,43 @@ impl PhotoLibraryApp {
 
 impl eframe::App for PhotoLibraryApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // self.photo_library.process_loaded_images(ctx);
-
         egui::CentralPanel::default().show(ctx, |ui| {
             match self.state {
                 AppState::PhotoSelected(idx) => {
-                    // Full image view
-                    // let photo = &self.photo_library.try_get_image(idx as u32);
-                    // ui.vertical_centered(|ui| {
-                    //     // ui.heading(photo.path.file_name().unwrap().to_string_lossy());
-                    //     if ui.button("← Back").clicked() {
-                    //         self.state = AppState::Main;
-                    //         self.photo_library.full_image_cache = None;
-                    //         self.is_full_photo_requested = false;
-                    //     }
+                    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        self.state = AppState::Main;
+                        self.is_full_photo_requested = false;
+                    }
+                    ui.vertical_centered(|ui| {
+                        if ui.button("← Back to Gallery").clicked() {
+                            self.state = AppState::Main;
+                            self.is_full_photo_requested = false;
+                        }
+                        ui.add_space(10.0);
 
-                    //     // Check if we have the full image cached
-                    //     if let Some((cached_path, tex)) = &self.photo_library.full_image_cache {
-                    //         if cached_path == &photo.path {
-                    //             ui.image(tex);
-                    //         }
-                    //     } else {
-                    //         // Request loading if not cached
-                    //         if !self.is_full_photo_requested {
-                    //             let _ = self.photo_library.load_tx.send(LoadRequest::FullImage {
-                    //                 path: photo.path.clone(),
-                    //                 size: ui.available_size(),
-                    //             });
-                    //             self.is_full_photo_requested = true;
-                    //         }
-                    //         ui.spinner();
-                    //         ui.label("Loading...");
-                    //     }
-                    // });
+                        if let Some(image) = self.photo_library.try_get_image(idx as u32) {
+                            let rgba = image.to_rgba8();
+                            let size = [rgba.width() as usize, rgba.height() as usize];
+                            
+                            let tex = ctx.load_texture(
+                                format!("full-image-{}", idx),
+                                ColorImage::from_rgba_unmultiplied(size, rgba.as_raw()),
+                                Default::default(),
+                            );
+                            
+                            let available_size = ui.available_size();
+                            let image_size = Vec2::new(size[0] as f32, size[1] as f32);
+                            let scale = (available_size.x / image_size.x)
+                                .min(available_size.y / image_size.y)
+                                .min(1.0);
+                            let display_size = image_size * scale;
+                            
+                            ui.image((tex.id(), display_size));
+                        } else {
+                            ui.spinner();
+                            ui.label("Loading full image...");
+                        }
+                    });
                 }
                 AppState::Main => {
                     self.columns = (ui.clip_rect().width()
@@ -108,10 +112,6 @@ impl eframe::App for PhotoLibraryApp {
                                 end_index = x;
                             }
 
-                            // for i in start_index..end_index {
-                            //     self.photo_library.request_thumbnail_load(i as u32);
-                            // }
-
                             let mut i = 1;
                             while i <= self.photo_library.get_number_of_images() {
                                 ui.horizontal(|ui| {
@@ -142,8 +142,8 @@ impl eframe::App for PhotoLibraryApp {
                                                 self.thumb_size as u32 as f32,
                                             ));
                                         }
+                                        i += 1;
                                     }
-                                    i += 1;
                                 });
                             }
 
