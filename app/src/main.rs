@@ -45,6 +45,21 @@ impl eframe::App for PhotoLibraryApp {
                         self.state = AppState::Main;
                         self.is_full_photo_requested = false;
                     }
+                    
+                    let total_images = self.photo_library.get_number_of_images();
+                    if ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
+                        if idx > 1 {
+                            self.state = AppState::PhotoSelected(idx - 1);
+                            self.is_full_photo_requested = false;
+                        }
+                    }
+                    if ctx.input(|i| i.key_pressed(egui::Key::ArrowRight)) {
+                        if idx < total_images {
+                            self.state = AppState::PhotoSelected(idx + 1);
+                            self.is_full_photo_requested = false;
+                        }
+                    }
+                    
                     ui.vertical_centered(|ui| {
                         if ui.button("← Back to Gallery").clicked() {
                             self.state = AppState::Main;

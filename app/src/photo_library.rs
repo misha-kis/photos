@@ -10,6 +10,7 @@ pub(crate) struct PhotoLibraryProxy {
     library: Arc<Mutex<PhotoLibrary>>,
     thumbnail_load_requests: HashMap<u32, Arc<Mutex<Option<DynamicImage>>>>,
     image_load_requests: HashMap<u32, Arc<Mutex<Option<DynamicImage>>>>,
+    number_of_images: usize,
 }
 
 impl PhotoLibraryProxy {
@@ -31,20 +32,22 @@ impl PhotoLibraryProxy {
 
         rt.block_on(library.import_photo(to_import_path)).unwrap();
 
+        let number_of_images = rt.block_on(async {
+            library.get_number_of_images().await.unwrap()
+        });
+
         let library = Arc::new(Mutex::new(library));
         Self {
             rt,
             library,
             thumbnail_load_requests: HashMap::new(),
             image_load_requests: HashMap::new(),
+            number_of_images,
         }
     }
 
     pub fn get_number_of_images(&self) -> usize {
-        self.rt.block_on(async {
-            let library = self.library.lock().await;
-            library.get_number_of_images().await.unwrap()
-        })
+        self.number_of_images
     }
 
     pub fn try_get_thumbnail(&mut self, id: u32) -> Option<DynamicImage> {
