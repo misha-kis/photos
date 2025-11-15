@@ -2,7 +2,7 @@ mod config;
 mod workers;
 
 use crate::workers::cv_worker::{
-    CreateEmbeddingCommand, CvWorker, DetectFacesCommand,
+    ClusterFacesCommand, CreateEmbeddingCommand, CvWorker, DetectFacesCommand,
 };
 use crate::workers::db_worker::DbWorker;
 use crate::workers::image_loader_worker::ImageLoader;
@@ -27,6 +27,7 @@ enum Command {
     Import(ImportCommand),
     DetectFaces(DetectFacesCommand),
     EmbedFace(CreateEmbeddingCommand),
+    ClusterFaces(ClusterFacesCommand),
 }
 
 #[derive(Clone)]
@@ -113,6 +114,10 @@ impl Scheduler {
                 .execute(&mut self.cv_worker)
                 .await
                 .context("embedding face")?,
+            Command::ClusterFaces(cmd) => cmd
+                .execute(&mut self.cv_worker)
+                .await
+                .context("clustering faces")?,
         }
         Ok(())
     }
@@ -184,6 +189,20 @@ impl PhotoLibrary {
             .get_number_of_images()
             .await
             .map(|x| x as usize)
+    }
+
+    pub async fn cluster_faces(
+        &mut self,
+        config: cv::ClusteringConfig,
+    ) -> Result<crate::workers::cv_worker::ClusterFacesCommandResult> {
+        tracing::debug!("Requesting face clustering");
+        let (tx, rx) = oneshot::channel();
+        self.scheduler_handle
+            .bg_tx
+            .send(Command::ClusterFaces(ClusterFacesCommand::new(config, tx)))
+            .await?;
+        tracing::debug!("Clustering task sent");
+        Ok(rx.await?)
     }
 }
 

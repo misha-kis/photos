@@ -3,7 +3,7 @@ use anyhow::{Result, anyhow};
 use cv::BoundingBox;
 use sqlx::pool::PoolConnection;
 use sqlx::sqlite::SqliteConnectOptions;
-use sqlx::{Row, Sqlite, SqlitePool};
+use sqlx::{Acquire, Row, Sqlite, SqlitePool};
 use std::path::PathBuf;
 
 async fn init_db(mut conn: PoolConnection<Sqlite>) -> Result<()> {
@@ -146,5 +146,72 @@ impl DbWorker {
             .await?
             .try_get("count")
             .map_err(|e| e.into())
+    }
+
+    /// Get all face detections with their embeddings
+    /// Returns a vector of (detection_id, embedding) tuples
+    /// Only includes detections that have embeddings
+    pub(crate) async fn get_all_face_embeddings(&self) -> Result<Vec<(u32, [f32; 512])>> {
+        let rows = sqlx::query(
+            "SELECT face_detection_id, embedding FROM face_detection WHERE embedding IS NOT NULL"
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut result = Vec::new();
+        for row in rows {
+            let detection_id: i64 = row.try_get("face_detection_id")?;
+            let embedding_blob: Vec<u8> = row.try_get("embedding")?;
+            
+            if embedding_blob.len() == 512 * 4 {
+                let embedding_slice: &[f32] = bytemuck::cast_slice(&embedding_blob);
+                if embedding_slice.len() == 512 {
+                    let mut embedding = [0f32; 512];
+                    embedding.copy_from_slice(embedding_slice);
+                    result.push((detection_id as u32, embedding));
+                }
+            } else {
+                tracing::error!("Invalid embedding blob length: {}", embedding_blob.len());
+            }
+        }
+        Ok(result)
+    }
+
+    pub(crate) async fn bulk_update_face_ids(
+        &self,
+        updates: Vec<(u32, Option<u32>)>,
+    ) -> Result<()> {
+        if updates.is_empty() {
+            return Ok(());
+        }
+
+        let mut conn = self.pool.acquire().await?;
+        let mut tx = conn.begin().await?;
+        let mut query_builder = sqlx::QueryBuilder::new(
+            "WITH updates(detection_id, face_id) AS (VALUES "
+        );
+        
+        let mut separated = query_builder.separated(", ");
+        for (detection_id, face_id) in &updates {
+            separated.push("(");
+            separated.push_bind(detection_id);
+            separated.push(",");
+            separated.push_bind(face_id.map(|id| id as i64));
+            separated.push(")");
+        }
+        
+        query_builder.push(
+            ") UPDATE face_detection \
+             SET face_id = (SELECT face_id FROM updates WHERE updates.detection_id = face_detection.face_detection_id) \
+             WHERE face_detection_id IN (SELECT detection_id FROM updates)"
+        );
+        
+        query_builder
+            .build()
+            .execute(&mut *tx)
+            .await?;
+        
+        tx.commit().await?;
+        Ok(())
     }
 }
