@@ -32,7 +32,7 @@ impl GalleryView {
         
         // Calculate actual image size based on available width and number of columns
         let actual_image_size = ((available_width + spacing) / self.columns as f32 - spacing)
-            .max(200.0) // Minimum size of 200px
+            .max(50.0) // Minimum size of 50px
             .min(500.0); // Maximum size of 500px
 
         let thumb_height = actual_image_size;
