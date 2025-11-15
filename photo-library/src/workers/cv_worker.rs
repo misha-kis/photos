@@ -152,7 +152,7 @@ impl CreateEmbeddingCommand {
             .await
             .get_face_detection(self.detection_id)
             .await
-            .ok_or(anyhow::anyhow!("Face detection not found"))?;
+            .context("Failed to get face detection")?;
         tracing::debug!("Image ID: {}", image_id);
         let image = worker
             .image_loader

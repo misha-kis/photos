@@ -13,6 +13,7 @@ pub struct ImageLoader {
     full_images_path: PathBuf,
     image_name_cache: LruCache<u32, String>,
     thumbnail_cache: LruCache<u32, DynamicImage>,
+    face_thumbnail_cache: LruCache<u32, DynamicImage>,
     full_image_cache: LruCache<u32, DynamicImage>,
 }
 
@@ -28,36 +29,34 @@ impl ImageLoader {
             full_images_path: originals_path,
             image_name_cache: LruCache::new(NonZeroUsize::new(128).unwrap()),
             thumbnail_cache: LruCache::new(NonZeroUsize::new(64).unwrap()),
-            full_image_cache: LruCache::new(NonZeroUsize::new(5).unwrap()),
+            face_thumbnail_cache: LruCache::new(NonZeroUsize::new(64).unwrap()),
+            full_image_cache: LruCache::new(NonZeroUsize::new(16).unwrap()),
         }
     }
 
     pub(crate) async fn get_thumbnail(&mut self, photo_id: u32) -> Result<DynamicImage> {
         let name = self._get_name(photo_id).await?;
 
-        if let Some(result) = self.thumbnail_cache.get(&photo_id) {
-            Ok(result.clone())
-        } else {
+        let result = self.thumbnail_cache.get_or_insert(photo_id, || {
+            tracing::debug!("getting thumbnail from disk for photo id {}", photo_id);
             let path = self.thumbnails_path.join(format!("{}", 32)).join(name); // todo(other sizes)
-            let result =
-                image::open(&path).context(format!("Failed to open image {}", path.display()))?;
-            self.thumbnail_cache.put(photo_id, result.clone());
-            Ok(result)
-        }
+            let result = image::open(path).expect("Failed to open image");
+            result
+        }).clone();
+
+        Ok(result)
     }
     pub(crate) async fn get_full_image(&mut self, photo_id: u32) -> Result<DynamicImage> {
         let name = self._get_name(photo_id).await?;
 
-        if let Some(result) = self.full_image_cache.get(&photo_id) {
-            tracing::debug!("getting image from cache for photo id {}", photo_id);
-            Ok(result.clone())
-        } else {
+        let result = self.full_image_cache.get_or_insert(photo_id, || {
             tracing::debug!("getting image from disk for photo id {}", photo_id);
             let path = self.full_images_path.join(name);
-            let result = image::open(path)?;
-            self.full_image_cache.put(photo_id, result.clone());
-            Ok(result)
-        }
+            let result = image::open(path).expect("Failed to open image");
+            result
+        }).clone();
+
+        Ok(result)
     }
 
     pub(crate) async fn get_image_no_cache(&mut self, photo_id: u32) -> Result<DynamicImage> {
@@ -67,6 +66,24 @@ impl ImageLoader {
         let result = image::open(path)?;
         Ok(result)
     }
+
+    pub(crate) async fn get_face_thumbnail(&mut self, face_detection_id: u32) -> Result<DynamicImage> {
+        if let Some(thumbnail) = self.face_thumbnail_cache.get(&face_detection_id) {
+            Ok(thumbnail.clone())
+        } else {
+            tracing::debug!("getting face thumbnail from disk for face detection id {}", face_detection_id);
+            let face_detection = self.db_worker.lock().await.get_face_detection(face_detection_id).await?;
+            let mut full_image = self.get_full_image(face_detection.0).await?;
+            let bounding_box = face_detection.1;
+            let x = bounding_box.x1 as u32;
+            let y = bounding_box.y1 as u32;
+            let w = bounding_box.x2 as u32 - x;
+            let h = bounding_box.y2 as u32 - y;
+            let thumbnail = full_image.crop(x, y, w, h);
+            self.face_thumbnail_cache.put(face_detection_id, thumbnail.clone());
+            Ok(thumbnail)
+        }
+    }   
 
     async fn _get_name(&mut self, photo_id: u32) -> Result<String> {
         if let Some(name) = self.image_name_cache.get(&photo_id) {

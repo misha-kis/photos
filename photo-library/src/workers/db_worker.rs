@@ -34,6 +34,13 @@ CREATE TABLE IF NOT EXISTS face_detection (
     Ok(())
 }
 
+pub struct FaceDetection {
+    detection_id: u32,
+    image_id: u32,
+    bounding_box: BoundingBox,
+    face_id: u32,
+}
+
 pub(crate) struct DbWorker {
     pool: sqlx::SqlitePool,
 }
@@ -83,13 +90,13 @@ impl DbWorker {
         rows.into_iter().map(|(id,)| id as u32).collect()
     }
 
-    pub(crate) async fn get_face_detection(&self, detection_id: u32) -> Option<(u32, BoundingBox)> {
+    pub(crate) async fn get_face_detection(&self, detection_id: u32) -> Result<(u32, BoundingBox)> {
         let rows = sqlx::query("SELECT image_id, roi_x1, roi_y1, roi_x2, roi_y2 FROM face_detection WHERE face_detection_id = ?")
             .bind(detection_id)
             .fetch_all(&self.pool)
             .await.expect("failed to fetch");
         if rows.len() != 1 {
-            None
+            Err(anyhow!("too many rows"))
         } else {
             let row = &rows[0];
             let image_id = row.try_get("image_id").expect("failed to get image_id");
@@ -97,7 +104,7 @@ impl DbWorker {
             let y1 = row.try_get("roi_y1").expect("failed to get roi_y1");
             let x2 = row.try_get("roi_x2").expect("failed to get roi_x2");
             let y2 = row.try_get("roi_y2").expect("failed to get roi_y2");
-            Some((image_id, BoundingBox::new(x1, y1, x2, y2)))
+            Ok((image_id, BoundingBox::new(x1, y1, x2, y2)))
         }
     }
 
@@ -213,5 +220,35 @@ impl DbWorker {
         
         tx.commit().await?;
         Ok(())
+    }
+
+    pub(crate) async fn get_unique_face_detections(&self) -> Result<Vec<FaceDetection>> {
+        let rows = sqlx::query(
+            "SELECT face_detection_id, image_id, roi_x1, roi_y1, roi_x2, roi_y2, face_id
+            FROM face_detection
+            WHERE face_id = (
+                SELECT face_id FROM face_detection
+                GROUP BY face_id
+                HAVING COUNT(face_detection_id) > 1
+            )"
+        )
+            .fetch_all(&self.pool)
+            .await.expect("failed to fetch");
+        let face_detections = rows.into_iter().map(|row| {
+            let detection_id = row.try_get("face_detection_id").expect("failed to get face_detection_id");
+            let image_id = row.try_get("image_id").expect("failed to get image_id");
+            let roi_x1 = row.try_get("roi_x1").expect("failed to get roi_x1");
+            let roi_y1 = row.try_get("roi_y1").expect("failed to get roi_y1");
+            let roi_x2 = row.try_get("roi_x2").expect("failed to get roi_x2");
+            let roi_y2 = row.try_get("roi_y2").expect("failed to get roi_y2");
+            let face_id = row.try_get("face_id").expect("failed to get face_id");
+            FaceDetection {
+                detection_id,
+                image_id,
+                bounding_box: BoundingBox::new(roi_x1, roi_y1, roi_x2, roi_y2),
+                face_id,
+            }
+        }).collect();
+        Ok(face_detections)
     }
 }

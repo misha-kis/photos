@@ -17,6 +17,7 @@ use tokio_util::sync::CancellationToken;
 
 pub use crate::config::Config;
 pub use crate::workers::cv_worker::CvConfig;
+pub use crate::workers::db_worker::FaceDetection;
 
 const THUMBNAILS_SUBDIRECTORY: &str = "thumbnails";
 const ORIGINALS_SUBDIRECTORY: &str = "originals";
@@ -203,6 +204,23 @@ impl PhotoLibrary {
             .await?;
         tracing::debug!("Clustering task sent");
         Ok(rx.await?)
+    }
+
+    pub async fn get_unique_face_detections(&self) -> Result<Vec<FaceDetection>> {
+        self.db_worker
+            .lock()
+            .await
+            .get_unique_face_detections()
+            .await
+            .context("getting unique face detections")
+    }
+
+    pub async fn get_face_thumbnail(&mut self, face_detection_id: u32) -> Result<DynamicImage> {
+        self.image_loader
+            .lock()
+            .await
+            .get_face_thumbnail(face_detection_id)
+            .await.context("getting face thumbnail")
     }
 }
 
