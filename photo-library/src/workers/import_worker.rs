@@ -1,10 +1,12 @@
 use crate::workers::cv_worker::DetectFacesCommandResult;
+use crate::workers::image_loader_worker::UpdateImageNameMapCommand;
 use crate::{
     Command,
     workers::{cv_worker::DetectFacesCommand, db_worker::DbWorker},
 };
 use anyhow::{Result, anyhow};
 use futures::stream::{self, StreamExt};
+use std::collections::HashMap;
 use std::fmt::Formatter;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -33,7 +35,7 @@ impl ImportWorker {
         }
     }
 
-    async fn import_many(&self, paths: Vec<PathBuf>) -> Result<Vec<u32>> {
+    async fn import_many(&self, paths: Vec<PathBuf>) -> Result<HashMap<u32, String>> {
         tracing::info!("Copying {} images", paths.len());
         let concurrency = 8;
 
@@ -88,10 +90,10 @@ impl ImportWorker {
             db.insert_photos_bulk(image_names.clone()).await
         };
 
-        Ok(image_ids)
+        Ok(image_ids.into_iter().zip(image_names.into_iter()).collect())
     }
 
-    pub(crate) async fn import(&self, path: &PathBuf) -> Result<Vec<u32>> {
+    pub(crate) async fn import(&self, path: &PathBuf) -> Result<HashMap<u32, String>> {
         let meta = std::fs::metadata(path)?;
         if meta.is_file() {
             tracing::debug!("Import worker importing file: {}", path.display());
@@ -133,14 +135,15 @@ impl ImportCommand {
         cmd_tx: &mpsc::Sender<Command>,
     ) {
         tracing::debug!("Importing image");
-        let resp = if let Ok(image_ids) = import_worker.import(&self.path).await {
+        let resp = if let Ok(new_image_name_map) = import_worker.import(&self.path).await {
             let mut rxs = Vec::new();
             let mut commands = Vec::new();
-            for id in image_ids {
+            for (id, _) in &new_image_name_map {
                 let (tx, rx) = oneshot::channel();
-                commands.push(Command::DetectFaces(DetectFacesCommand::new(id, tx)));
+                commands.push(Command::DetectFaces(DetectFacesCommand::new(*id, tx)));
                 rxs.push(rx);
             }
+            commands.insert(0, Command::UpdateImageNameMap(UpdateImageNameMapCommand{new_image_name_map}));
 
             if let Ok(()) = bulk_add_commands(commands, cmd_tx).await {
                 Ok(ImportCommandResult { rxs })

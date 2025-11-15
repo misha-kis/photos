@@ -4,6 +4,7 @@ use cv::BoundingBox;
 use sqlx::pool::PoolConnection;
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{Acquire, Row, Sqlite, SqlitePool};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 async fn init_db(mut conn: PoolConnection<Sqlite>) -> Result<()> {
@@ -56,18 +57,6 @@ impl DbWorker {
         let conn = db_pool.acquire().await?;
         init_db(conn).await?;
         Ok(Self { pool: db_pool })
-    }
-
-    pub(crate) async fn get_photo_name_by_photo_id(&self, photo_id: u32) -> Result<String> {
-        let rows = sqlx::query("SELECT image_name FROM image WHERE image_id = ?")
-            .bind(photo_id)
-            .fetch_all(&self.pool)
-            .await?;
-        if rows.len() != 1 {
-            Err(anyhow!("too many rows"))
-        } else {
-            rows[0].try_get("image_name").map_err(|e| e.into())
-        }
     }
 
     pub(crate) async fn insert_photos_bulk(&self, photo_names: Vec<String>) -> Vec<u32> {
@@ -282,5 +271,17 @@ impl DbWorker {
         }
         
         Ok(grouped)
+    }
+
+    pub(crate) async fn get_image_names(&self) -> Result<HashMap<u32, String>> {
+        let rows = sqlx::query("SELECT image_id, image_name FROM image")
+            .fetch_all(&self.pool)
+            .await?;
+        let image_names = rows.into_iter().map(|row| {
+            let image_id = row.get("image_id");
+            let image_name = row.get("image_name");
+            (image_id, image_name)
+        }).collect();
+        Ok(image_names)
     }
 }

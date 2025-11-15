@@ -5,7 +5,7 @@ use crate::workers::cv_worker::{
     ClusterFacesCommand, CreateEmbeddingCommand, CvWorker, DetectFacesCommand,
 };
 use crate::workers::db_worker::DbWorker;
-use crate::workers::image_loader_worker::ImageLoader;
+use crate::workers::image_loader_worker::{ImageLoader, UpdateImageNameMapCommand};
 use crate::workers::import_worker::{ImportCommand, ImportCommandResult, ImportWorker};
 use anyhow::{Context, Result, anyhow};
 use image::DynamicImage;
@@ -29,6 +29,7 @@ enum Command {
     DetectFaces(DetectFacesCommand),
     EmbedFace(CreateEmbeddingCommand),
     ClusterFaces(ClusterFacesCommand),
+    UpdateImageNameMap(UpdateImageNameMapCommand),
 }
 
 #[derive(Clone)]
@@ -41,6 +42,7 @@ pub struct Scheduler {
     bg_rx: mpsc::Receiver<Command>,
     import_worker: ImportWorker,
     cv_worker: CvWorker,
+    image_loader: Arc<Mutex<ImageLoader>>,
     // rayon_pool: Arc<rayon::ThreadPool>,
     // progress_tx: broadcast::Sender<ProgressEvent>,
     cancel: CancellationToken,
@@ -50,6 +52,7 @@ impl Scheduler {
     fn new(
         import_worker: ImportWorker,
         cv_worker: CvWorker,
+        image_loader: Arc<Mutex<ImageLoader>>,
     ) -> SchedulerHandle {
         let (bg_tx, bg_rx) = mpsc::channel(1024); // background queue
         let cancel = CancellationToken::new();
@@ -65,6 +68,7 @@ impl Scheduler {
             bg_rx,
             import_worker,
             cv_worker,
+            image_loader,
             // rayon_pool: Arc::new(rayon_pool),
             // progress_tx,
             cancel: cancel.clone(),
@@ -119,6 +123,10 @@ impl Scheduler {
                 .execute(&mut self.cv_worker)
                 .await
                 .context("clustering faces")?,
+            Command::UpdateImageNameMap(cmd) => cmd
+                .execute(self.image_loader.clone())
+                .await
+                .context("updating image name map")?,
         }
         Ok(())
     }
@@ -146,7 +154,7 @@ impl PhotoLibrary {
             db_worker.clone(),
             thumbnails_path.clone(),
             originals_path.clone(),
-        )));
+        ).await));
 
         let cv_worker = CvWorker::new(&config.cv_config, db_worker.clone(), image_loader.clone())?;
         let import_worker = ImportWorker::new(
@@ -155,7 +163,7 @@ impl PhotoLibrary {
             originals_path.clone(),
             config.thumbnail_sizes,
         );
-        let scheduler_handle = Scheduler::new(import_worker, cv_worker);
+        let scheduler_handle = Scheduler::new(import_worker, cv_worker, image_loader.clone());
 
         Ok(Self {
             db_worker,
