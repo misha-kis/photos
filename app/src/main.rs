@@ -5,11 +5,9 @@ use crate::components::{
 };
 use crate::photo_library::PhotoLibraryProxy;
 use eframe::egui;
-use thumb_size::ThumbSize;
 
 mod components;
 mod photo_library;
-pub(crate) mod thumb_size;
 
 enum AppState {
     Gallery,
@@ -36,7 +34,7 @@ impl PhotoLibraryApp {
             photo_library: PhotoLibraryProxy::new(gallery_dir),
             state: AppState::Gallery,
             is_full_photo_requested: false,
-            gallery_view: GalleryView::new(ThumbSize::T256),
+            gallery_view: GalleryView::new(),
             photo_viewer: PhotoViewer::new(),
             navbar: Navbar::new(),
             import_view: ImportView::new(),

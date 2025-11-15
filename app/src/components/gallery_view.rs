@@ -1,19 +1,16 @@
 use crate::photo_library::PhotoLibraryProxy;
-use crate::thumb_size::ThumbSize;
 use eframe::egui::{self, ColorImage};
 use egui::Vec2;
 
 pub struct GalleryView {
     pub columns: usize,
-    pub thumb_size: ThumbSize,
     desired_image_size: f32,
 }
 
 impl GalleryView {
-    pub fn new(thumb_size: ThumbSize) -> Self {
+    pub fn new() -> Self {
         Self {
             columns: 2,
-            thumb_size,
             desired_image_size: 100.0, // Desired image size in pixels
         }
     }
