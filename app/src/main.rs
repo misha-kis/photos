@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::components::{
-    gallery_view::GalleryView, import_view::ImportView, navbar::Navbar, photo_viewer::PhotoViewer,
+    faces_view::FacesView, gallery_view::GalleryView, import_view::ImportView, navbar::Navbar, photo_viewer::PhotoViewer,
 };
 use crate::photo_library::PhotoLibraryProxy;
 use eframe::egui;
@@ -24,6 +24,7 @@ struct PhotoLibraryApp {
     photo_viewer: PhotoViewer,
     navbar: Navbar,
     import_view: ImportView,
+    faces_view: FacesView,
     pending_file_dialog: bool,
 }
 
@@ -38,6 +39,7 @@ impl PhotoLibraryApp {
             photo_viewer: PhotoViewer::new(),
             navbar: Navbar::new(),
             import_view: ImportView::new(),
+            faces_view: FacesView::new(),
             pending_file_dialog: false,
         }
     }
@@ -166,10 +168,7 @@ impl eframe::App for PhotoLibraryApp {
                     }
                 }
                 AppState::Faces => {
-                    ui.centered_and_justified(|ui| {
-                        ui.heading("Faces");
-                        ui.label("This feature is not yet implemented.");
-                    });
+                    self.faces_view.show(ui, ctx, &mut self.photo_library);
                 }
             }
         });

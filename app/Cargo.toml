@@ -10,4 +10,6 @@ image = { workspace = true }
 photo-library = { path = "../photo-library" }
 tokio = { workspace = true }
 tracing-subscriber.workspace = true
+tracing = { workspace = true }
+cv = { path = "../cv" }
 rfd = "0.14"

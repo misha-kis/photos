@@ -222,6 +222,15 @@ impl PhotoLibrary {
             .get_face_thumbnail(face_detection_id)
             .await.context("getting face thumbnail")
     }
+
+    pub async fn get_faces_grouped_by_id(&self) -> Result<std::collections::HashMap<u32, Vec<FaceDetection>>> {
+        self.db_worker
+            .lock()
+            .await
+            .get_faces_grouped_by_id()
+            .await
+            .context("getting faces grouped by id")
+    }
 }
 
 fn try_ensure_dir(path: &PathBuf) -> Result<()> {

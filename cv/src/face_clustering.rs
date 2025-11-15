@@ -29,14 +29,34 @@ pub struct ClusteringResult {
     pub n_clusters: usize,
 }
 
-/// Normalize an embedding vector (L2 normalization)
-fn normalize_embedding(embedding: &[f32; 512]) -> Vec<f32> {
+fn normalize_embedding(embedding: &mut [f32; 512]){
     let norm: f32 = embedding.iter().map(|&x| x * x).sum::<f32>().sqrt();
     if norm > 1e-8 {
-        embedding.iter().map(|&x| x / norm).collect()
-    } else {
-        embedding.to_vec()
+        for i in 0..512 {
+            embedding[i] /= norm;
+        }
     }
+}
+
+fn cosine_similarity(normalized_embedding1: &[f32; 512], normalized_embedding2: &[f32; 512]) -> f32 {
+    normalized_embedding1.iter().zip(normalized_embedding2.iter()).map(|(x, y)| x * y).sum::<f32>()
+}
+
+fn distance_matrix(embeddings: &[[f32; 512]]) -> Vec<Vec<f32>> {
+    let normalized_embeddings = embeddings.iter().map(|embedding| {
+        let mut normalized_embedding = *embedding;
+        normalize_embedding(&mut normalized_embedding);
+        normalized_embedding
+    }).collect::<Vec<[f32; 512]>>();
+    let mut distance_matrix = Vec::new();
+    for i in 0..embeddings.len() {
+        let mut row = Vec::new();
+        for j in 0..embeddings.len() {
+            row.push(1.0 - cosine_similarity(&normalized_embeddings[i], &normalized_embeddings[j]));
+        }
+        distance_matrix.push(row);
+    }
+    distance_matrix
 }
 
 pub fn cluster_embeddings(
@@ -58,9 +78,7 @@ pub fn cluster_embeddings(
         });
     }
 
-    // Normalize all embeddings
-    let normalized: Vec<Vec<f32>> = embeddings.iter().map(normalize_embedding).collect();
-    // // Build HDBSCAN hyperparameters
+    let distance_matrix = distance_matrix(embeddings);
     let min_samples = config.min_samples.unwrap_or(config.min_cluster_size);
     let hyper_params = HdbscanHyperParams::builder()
         .min_cluster_size(config.min_cluster_size)
@@ -69,9 +87,7 @@ pub fn cluster_embeddings(
         .allow_single_cluster(true)
         .build();
 
-    // // Run HDBSCAN clustering
-    // let clusterer = Hdbscan::new(&distance_matrix, hyper_params);
-    let clusterer = Hdbscan::new(&normalized, hyper_params);
+    let clusterer = Hdbscan::new(&distance_matrix, hyper_params);
     let labels = clusterer
         .cluster()
         .context("Failed to run HDBSCAN clustering")?;
@@ -93,23 +109,23 @@ pub fn cluster_embeddings(
 mod tests {
     use super::*;
 
-    // #[test]
-    // fn test_cluster_identical_embeddings() {
-    //     // Create two identical embeddings
-    //     let embedding1 = [1.0; 512];
-    //     let embedding2 = [1.0; 512];
-    //     let embeddings = vec![embedding1, embedding2];
+    #[test]
+    fn test_cluster_identical_embeddings() {
+        // Create two identical embeddings
+        let embedding1 = [1.0; 512];
+        let embedding2 = [1.0; 512];
+        let embeddings = vec![embedding1, embedding2];
 
-    //     let config = ClusteringConfig {
-    //         min_cluster_size: 2,
-    //         min_samples: None,
-    //     };
+        let config = ClusteringConfig {
+            min_cluster_size: 2,
+            min_samples: None,
+        };
 
-    //     let result = cluster_embeddings(&embeddings, config).unwrap();
-    //     // Identical embeddings should be in the same cluster
-    //     assert!(result.labels[0] == result.labels[1] && result.labels[0] >= 0);
-    //     assert_eq!(result.n_clusters, 1);
-    // }
+        let result = cluster_embeddings(&embeddings, config).unwrap();
+        // Identical embeddings should be in the same cluster
+        assert!(result.labels[0] == result.labels[1] && result.labels[0] >= 0);
+        assert_eq!(result.n_clusters, 1);
+    }
 
     #[test]
     fn test_cluster_empty() {

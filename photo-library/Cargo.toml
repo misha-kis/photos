@@ -18,7 +18,7 @@ bytemuck = "1.24.0"
 futures = "0.3.31"
 rayon = "1.11.0"
 tokio-util = { version = "0.7.16", features = ["full"] }
-tracing = "0.1.41"
+tracing = { workspace = true }
 tracing-test = "0.2.5"
 
 [dev-dependencies]

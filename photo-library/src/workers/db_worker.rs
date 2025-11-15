@@ -34,11 +34,12 @@ CREATE TABLE IF NOT EXISTS face_detection (
     Ok(())
 }
 
+#[derive(Clone)]
 pub struct FaceDetection {
-    detection_id: u32,
-    image_id: u32,
-    bounding_box: BoundingBox,
-    face_id: u32,
+    pub detection_id: u32,
+    pub image_id: u32,
+    pub bounding_box: BoundingBox,
+    pub face_id: u32,
 }
 
 pub(crate) struct DbWorker {
@@ -195,23 +196,18 @@ impl DbWorker {
         let mut conn = self.pool.acquire().await?;
         let mut tx = conn.begin().await?;
         let mut query_builder = sqlx::QueryBuilder::new(
-            "WITH updates(detection_id, face_id) AS (VALUES "
+            "UPDATE face_detection SET face_id = CASE face_detection_id "
         );
         
-        let mut separated = query_builder.separated(", ");
+        let mut separated = query_builder.separated(" ");
         for (detection_id, face_id) in &updates {
-            separated.push("(");
+            separated.push("WHEN");
             separated.push_bind(detection_id);
-            separated.push(",");
+            separated.push("THEN");
             separated.push_bind(face_id.map(|id| id as i64));
-            separated.push(")");
         }
         
-        query_builder.push(
-            ") UPDATE face_detection \
-             SET face_id = (SELECT face_id FROM updates WHERE updates.detection_id = face_detection.face_detection_id) \
-             WHERE face_detection_id IN (SELECT detection_id FROM updates)"
-        );
+        query_builder.push("END");
         
         query_builder
             .build()
@@ -250,5 +246,41 @@ impl DbWorker {
             }
         }).collect();
         Ok(face_detections)
+    }
+
+    /// Get all face detections grouped by face_id
+    /// Returns a map from face_id to list of detections
+    pub(crate) async fn get_faces_grouped_by_id(&self) -> Result<std::collections::HashMap<u32, Vec<FaceDetection>>> {
+        let rows = sqlx::query(
+            "SELECT face_detection_id, image_id, roi_x1, roi_y1, roi_x2, roi_y2, face_id
+            FROM face_detection
+            WHERE face_id IS NOT NULL
+            ORDER BY face_id, face_detection_id"
+        )
+            .fetch_all(&self.pool)
+            .await?;
+        
+        let mut grouped: std::collections::HashMap<u32, Vec<FaceDetection>> = std::collections::HashMap::new();
+        
+        for row in rows {
+            let detection_id = row.try_get("face_detection_id")?;
+            let image_id = row.try_get("image_id")?;
+            let roi_x1 = row.try_get("roi_x1")?;
+            let roi_y1 = row.try_get("roi_y1")?;
+            let roi_x2 = row.try_get("roi_x2")?;
+            let roi_y2 = row.try_get("roi_y2")?;
+            let face_id = row.try_get("face_id")?;
+            
+            let detection = FaceDetection {
+                detection_id,
+                image_id,
+                bounding_box: BoundingBox::new(roi_x1, roi_y1, roi_x2, roi_y2),
+                face_id,
+            };
+            
+            grouped.entry(face_id).or_insert_with(Vec::new).push(detection);
+        }
+        
+        Ok(grouped)
     }
 }
