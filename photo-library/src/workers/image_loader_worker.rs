@@ -48,6 +48,7 @@ impl ImageLoader {
     }
     pub(crate) async fn get_full_image(&mut self, photo_id: u32) -> Result<DynamicImage> {
         let name = self._get_name(photo_id).await?;
+        tracing::debug!("cache size: {}", self.full_image_cache.len());
 
         let result = self.full_image_cache.get_or_insert(photo_id, || {
             tracing::debug!("getting image from disk for photo id {}", photo_id);
