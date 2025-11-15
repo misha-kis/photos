@@ -6,6 +6,7 @@ use egui::Vec2;
 pub struct GalleryView {
     pub columns: usize,
     pub thumb_size: ThumbSize,
+    desired_image_size: f32,
 }
 
 impl GalleryView {
@@ -13,6 +14,7 @@ impl GalleryView {
         Self {
             columns: 2,
             thumb_size,
+            desired_image_size: 100.0, // Desired image size in pixels
         }
     }
 
@@ -23,11 +25,20 @@ impl GalleryView {
         photo_library: &mut PhotoLibraryProxy,
         mut on_photo_selected: impl FnMut(usize),
     ) {
-        self.columns = (ui.clip_rect().width()
-            / (self.thumb_size as u32 as f32 + ui.style().spacing.item_spacing.x)
-                .max(0.0)) as usize;
+        let available_width = ui.available_width();
+        let spacing = ui.style().spacing.item_spacing.x;
+        
+        // Calculate how many columns fit with desired image size
+        self.columns = ((available_width + spacing) / (self.desired_image_size + spacing))
+            .floor()
+            .max(1.0) as usize;
+        
+        // Calculate actual image size based on available width and number of columns
+        let actual_image_size = ((available_width + spacing) / self.columns as f32 - spacing)
+            .max(200.0) // Minimum size of 200px
+            .min(500.0); // Maximum size of 500px
 
-        let thumb_height = self.thumb_size as u32 as f32;
+        let thumb_height = actual_image_size;
         let total_rows = (photo_library.get_number_of_images() + self.columns - 1)
             / self.columns;
 
@@ -76,16 +87,18 @@ impl GalleryView {
                                     ),
                                     Default::default(),
                                 );
-                                if ui
-                                    .add(egui::Button::image(&tex).frame(false))
-                                    .clicked()
-                                {
+                                let image_size = egui::Vec2::new(actual_image_size, actual_image_size);
+                                let (rect, response) = ui.allocate_exact_size(image_size, egui::Sense::click());
+                                let _ = ui.put(rect, |ui: &mut egui::Ui| {
+                                    ui.image((tex.id(), image_size))
+                                });
+                                if response.clicked() {
                                     on_photo_selected(i as usize);
                                 }
                             } else {
                                 ui.allocate_space(Vec2::new(
-                                    self.thumb_size as u32 as f32,
-                                    self.thumb_size as u32 as f32,
+                                    actual_image_size,
+                                    actual_image_size,
                                 ));
                             }
                             i += 1;

@@ -36,7 +36,7 @@ impl PhotoLibraryApp {
             photo_library: PhotoLibraryProxy::new(gallery_dir),
             state: AppState::Gallery,
             is_full_photo_requested: false,
-            gallery_view: GalleryView::new(ThumbSize::T128),
+            gallery_view: GalleryView::new(ThumbSize::T256),
             photo_viewer: PhotoViewer::new(),
             navbar: Navbar::new(),
             import_view: ImportView::new(),
