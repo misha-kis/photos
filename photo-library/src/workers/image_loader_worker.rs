@@ -4,13 +4,8 @@ use image::DynamicImage;
 use lru::LruCache;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use std::{cell::RefCell, path::PathBuf, rc::Rc};
-use tokio::sync::{Mutex, oneshot};
-
-pub(crate) enum ImageLoadCmd {
-    LoadThumbnail(u32),
-    LoadFullImage(u32),
-}
+use std::path::PathBuf;
+use tokio::sync::Mutex;
 
 pub struct ImageLoader {
     db_worker: Arc<Mutex<DbWorker>>,
@@ -97,67 +92,3 @@ impl ImageLoader {
         Ok(name)
     }
 }
-
-pub struct LoadImageCommand {
-    pub id: u32,
-    pub tx: oneshot::Sender<Result<DynamicImage>>,
-}
-
-impl LoadImageCommand {
-    pub async fn execute(self, loader: &mut Arc<Mutex<ImageLoader>>) -> Result<()> {
-        tracing::debug!("Loading full image for photo ID: {}", self.id);
-        let image = loader
-            .lock()
-            .await
-            .get_full_image(self.id)
-            .await
-            .context("Failed to load full image")?;
-        tracing::debug!("Full image loaded for photo ID: {}", self.id);
-        self.tx.send(Ok(image)).unwrap();
-        tracing::debug!("Full image sent for photo ID: {}", self.id);
-        Ok(())
-    }
-}
-
-impl std::fmt::Debug for LoadImageCommand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LoadImageCommand")
-            .field("id", &self.id)
-            .finish()
-    }
-}
-
-pub struct LoadThumbnailCommand {
-    pub id: u32,
-    pub tx: oneshot::Sender<Result<DynamicImage>>,
-}
-
-impl LoadThumbnailCommand {
-    pub async fn execute(self, loader: &mut Arc<Mutex<ImageLoader>>) -> Result<()> {
-        tracing::debug!("Loading thumbnail for photo ID: {}", self.id);
-        let image = loader
-            .lock()
-            .await
-            .get_thumbnail(self.id)
-            .await
-            .context("Failed to load thumbnail")?;
-        tracing::debug!("Thumbnail loaded for photo ID: {}", self.id);
-        self.tx.send(Ok(image)).unwrap();
-        tracing::debug!("Thumbnail sent for photo ID: {}", self.id);
-        Ok(())
-    }
-}
-
-impl std::fmt::Debug for LoadThumbnailCommand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LoadThumbnailCommand")
-            .field("id", &self.id)
-            .finish()
-    }
-}
-
-#[derive(Debug)]
-pub struct LoadImageCommandResult {}
-
-#[derive(Debug)]
-pub struct LoadThumbnailCommandResult {}

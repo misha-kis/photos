@@ -2,25 +2,17 @@ mod config;
 mod workers;
 
 use crate::workers::cv_worker::{
-    CreateEmbeddingCommand, CreateEmbeddingCommandResult, CvWorker, DetectFacesCommand,
-    DetectFacesCommandResult,
+    CreateEmbeddingCommand, CvWorker, DetectFacesCommand,
 };
 use crate::workers::db_worker::DbWorker;
-use crate::workers::image_loader_worker::{
-    ImageLoader, LoadImageCommand, LoadImageCommandResult, LoadThumbnailCommand,
-    LoadThumbnailCommandResult,
-};
+use crate::workers::image_loader_worker::ImageLoader;
 use crate::workers::import_worker::{ImportCommand, ImportCommandResult, ImportWorker};
 use anyhow::{Context, Result, anyhow};
 use image::DynamicImage;
-use rayon::ThreadPoolBuilder;
-use std::cell::RefCell;
-use std::collections::VecDeque;
 use std::fs::create_dir;
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::sync::Arc;
-use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
+use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 pub use crate::config::Config;
@@ -32,32 +24,19 @@ const DB_PATH: &str = "db.db";
 
 #[derive(Debug)]
 enum Command {
-    LoadImage(LoadImageCommand),
-    LoadThumbnail(LoadThumbnailCommand),
     Import(ImportCommand),
     DetectFaces(DetectFacesCommand),
     EmbedFace(CreateEmbeddingCommand),
 }
 
-enum CommandResult {
-    LoadImage(LoadImageCommandResult),
-    LoadThumbnail(LoadThumbnailCommandResult),
-    Import(ImportCommandResult),
-    DetectFaces(DetectFacesCommandResult),
-    EmbedFace(CreateEmbeddingCommandResult),
-}
-
 #[derive(Clone)]
 pub struct SchedulerHandle {
-    ui_tx: mpsc::Sender<Command>,
     bg_tx: mpsc::Sender<Command>,
     // cancel: CancellationToken,
 }
 
 pub struct Scheduler {
-    ui_rx: mpsc::Receiver<Command>,
     bg_rx: mpsc::Receiver<Command>,
-    image_loader: Arc<Mutex<ImageLoader>>,
     import_worker: ImportWorker,
     cv_worker: CvWorker,
     // rayon_pool: Arc<rayon::ThreadPool>,
@@ -67,11 +46,9 @@ pub struct Scheduler {
 
 impl Scheduler {
     fn new(
-        image_loader: Arc<Mutex<ImageLoader>>,
         import_worker: ImportWorker,
         cv_worker: CvWorker,
     ) -> SchedulerHandle {
-        let (ui_tx, ui_rx) = mpsc::channel(256); // priority queue
         let (bg_tx, bg_rx) = mpsc::channel(1024); // background queue
         let cancel = CancellationToken::new();
 
@@ -83,9 +60,7 @@ impl Scheduler {
         // let (progress_tx, _rx) = broadcast::channel(64);
 
         let mut sched = Scheduler {
-            ui_rx,
             bg_rx,
-            image_loader,
             import_worker,
             cv_worker,
             // rayon_pool: Arc::new(rayon_pool),
@@ -95,7 +70,6 @@ impl Scheduler {
         tracing::debug!("Scheduler initialized");
 
         let handle = SchedulerHandle {
-            ui_tx,
             bg_tx,
             // cancel,
         };
@@ -119,7 +93,6 @@ impl Scheduler {
         loop {
             tokio::select! {
                 biased;
-                Some(task) = self.ui_rx.recv() => self.handle_task(task, &handle).await.context("handling ui task")?,
                 Some(task) = self.bg_rx.recv() => self.handle_task(task, &handle).await.context("handling bg task")?,
                 _ = self.cancel.cancelled() => break,
             }
@@ -131,15 +104,6 @@ impl Scheduler {
     async fn handle_task(&mut self, cmd: Command, handle: &SchedulerHandle) -> Result<()> {
         tracing::debug!("Handling task: {:?}", cmd);
         match cmd {
-            Command::LoadThumbnail(cmd) => cmd
-                .execute(&mut self.image_loader)
-                .await
-                .context("loading thumbnail")?,
-            Command::LoadImage(cmd) => {
-                cmd.execute(&mut self.image_loader)
-                    .await
-                    .context("loading image")?;
-            }
             Command::Import(cmd) => cmd.execute(&mut self.import_worker, &handle.bg_tx).await,
             Command::DetectFaces(cmd) => cmd
                 .execute(&mut self.cv_worker, &handle.bg_tx)
@@ -185,7 +149,7 @@ impl PhotoLibrary {
             originals_path.clone(),
             config.thumbnail_sizes,
         );
-        let scheduler_handle = Scheduler::new(image_loader.clone(), import_worker, cv_worker);
+        let scheduler_handle = Scheduler::new(import_worker, cv_worker);
 
         Ok(Self {
             db_worker,
@@ -300,7 +264,11 @@ mod tests {
             .into_iter()
             .map(|result| result.unwrap());
 
-        // let face_boxes = library.get_faces(full_image).await.unwrap();
-        // assert_eq!(face_boxes.len(), 1);
+        let rxs = detect_faces_result.into_iter().flat_map(|result| result.rxs).collect::<Vec<_>>();
+        let create_embedding_result = join_all(rxs)
+            .await
+            .into_iter()
+            .map(|result| result.unwrap());
+        assert_eq!(create_embedding_result.len(), 1);
     }
 }

@@ -62,16 +62,6 @@ impl DbWorker {
         }
     }
 
-    pub(crate) async fn insert_photo(&self, photo_name: &str) -> u32 {
-        let last_inserted_id = sqlx::query("INSERT INTO image (image_name) VALUES (?)")
-            .bind(photo_name)
-            .execute(&self.pool)
-            .await
-            .expect("failed to insert")
-            .last_insert_rowid();
-        last_inserted_id as u32
-    }
-
     pub(crate) async fn insert_photos_bulk(&self, photo_names: Vec<String>) -> Vec<u32> {
         tracing::info!("Writing image info to db");
         if photo_names.is_empty() {

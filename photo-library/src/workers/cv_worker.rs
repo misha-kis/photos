@@ -4,10 +4,9 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use cv::{BoundingBox, FaceDetector, FaceEmbedder};
-use futures::future::join_all;
 use image::DynamicImage;
 use std::sync::Arc;
-use std::{cell::RefCell, path::PathBuf, rc::Rc};
+use std::path::PathBuf;
 use tokio::sync::{Mutex, mpsc, oneshot};
 
 pub struct CvConfig {

@@ -3,9 +3,8 @@ use crate::{
     Command,
     workers::{cv_worker::DetectFacesCommand, db_worker::DbWorker},
 };
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Result, anyhow};
 use futures::stream::{self, StreamExt};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::fmt::Formatter;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -85,7 +84,7 @@ impl ImportWorker {
             .collect();
 
         let image_ids = {
-            let mut db = self.db_worker.lock().await;
+            let db = self.db_worker.lock().await;
             db.insert_photos_bulk(image_names.clone()).await
         };
 
