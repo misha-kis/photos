@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use image::DynamicImage;
-use photo_library::{Config, CvConfig, FaceDetection, PhotoLibrary};
+use photo_library::{Config, CvConfig, FaceDetection, FaceThumbnail, PhotoLibrary};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use cv::ClusteringConfig;
@@ -150,6 +150,16 @@ impl PhotoLibraryProxy {
         let faces = self.rt.block_on(async {
             let library = library.lock().await;
             library.get_faces_grouped_by_id().await
+        });
+        
+        faces.ok()
+    }
+
+    pub fn get_unique_face_thumbnails(&mut self) -> Option<Vec<FaceThumbnail>> {
+        let library = self.library.clone();
+        let faces = self.rt.block_on(async {
+            let library = library.lock().await;
+            library.get_unique_face_thumbnails().await
         });
         
         faces.ok()

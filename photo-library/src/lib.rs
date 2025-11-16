@@ -18,6 +18,7 @@ use tokio_util::sync::CancellationToken;
 pub use crate::config::Config;
 pub use crate::workers::cv_worker::CvConfig;
 pub use crate::workers::db_worker::FaceDetection;
+pub use crate::workers::image_loader_worker::FaceThumbnail;
 
 const THUMBNAILS_SUBDIRECTORY: &str = "thumbnails";
 const ORIGINALS_SUBDIRECTORY: &str = "originals";
@@ -238,6 +239,15 @@ impl PhotoLibrary {
             .get_faces_grouped_by_id()
             .await
             .context("getting faces grouped by id")
+    }
+
+    pub async fn get_unique_face_thumbnails(&self) -> Result<Vec<FaceThumbnail>> {
+        self.image_loader
+            .lock()
+            .await
+            .get_unique_face_thumbnails()
+            .await
+            .context("getting unique face thumbnails")
     }
 }
 

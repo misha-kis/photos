@@ -209,13 +209,13 @@ impl DbWorker {
 
     pub(crate) async fn get_unique_face_detections(&self) -> Result<Vec<FaceDetection>> {
         let rows = sqlx::query(
-            "SELECT face_detection_id, image_id, roi_x1, roi_y1, roi_x2, roi_y2, face_id
+            "SELECT face_id, face_detection_id, roi_x1, roi_x2, roi_y1, roi_y2, image_id
             FROM face_detection
-            WHERE face_id = (
-                SELECT face_id FROM face_detection
-                GROUP BY face_id
-                HAVING COUNT(face_detection_id) > 1
-            )"
+            WHERE face_detection_id IN (
+                SELECT MIN(face_detection_id)
+                FROM face_detection GROUP BY face_id
+            )
+            AND face_id is not null"
         )
             .fetch_all(&self.pool)
             .await.expect("failed to fetch");
