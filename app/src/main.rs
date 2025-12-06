@@ -31,7 +31,8 @@ struct PhotoLibraryApp {
 
 impl PhotoLibraryApp {
     fn new() -> Self {
-        let gallery_dir = PathBuf::from("/Users/misha-kis/Pictures/picslib3");
+        let picture_dir = dirs::picture_dir().unwrap();
+        let gallery_dir = picture_dir.join("picslib3");
         Self {
             photo_library: PhotoLibraryProxy::new(gallery_dir),
             state: AppState::Gallery,
