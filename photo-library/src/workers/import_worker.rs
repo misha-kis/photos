@@ -107,10 +107,7 @@ impl ImportWorker {
                         path.extension()
                             .and_then(|ext| ext.to_str())
                             .map(|ext| {
-                                matches!(
-                                    ext.to_ascii_lowercase().as_str(),
-                                    "jpg" | "jpeg" | "png"
-                                )
+                                matches!(ext.to_ascii_lowercase().as_str(), "jpg" | "jpeg" | "png")
                             })
                             .unwrap_or(false)
                     })
@@ -143,7 +140,10 @@ impl ImportCommand {
                 commands.push(Command::DetectFaces(DetectFacesCommand::new(*id, tx)));
                 rxs.push(rx);
             }
-            commands.insert(0, Command::UpdateImageNameMap(UpdateImageNameMapCommand{new_image_name_map}));
+            commands.insert(
+                0,
+                Command::UpdateImageNameMap(UpdateImageNameMapCommand { new_image_name_map }),
+            );
 
             if let Ok(()) = bulk_add_commands(commands, cmd_tx).await {
                 Ok(ImportCommandResult { rxs })

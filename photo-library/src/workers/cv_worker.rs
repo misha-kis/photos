@@ -5,8 +5,8 @@ use crate::{
 use anyhow::{Context, Result};
 use cv::{BoundingBox, ClusteringConfig, FaceDetector, FaceEmbedder, cluster_embeddings};
 use image::DynamicImage;
-use std::sync::Arc;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc, oneshot};
 
 pub struct CvConfig {
@@ -247,7 +247,11 @@ impl ClusterFacesCommand {
         tracing::info!(
             "Clustering completed: {} clusters found, {} noise points",
             clustering_result.n_clusters,
-            clustering_result.labels.iter().filter(|&&l| l == -1).count()
+            clustering_result
+                .labels
+                .iter()
+                .filter(|&&l| l == -1)
+                .count()
         );
 
         // Prepare bulk update data

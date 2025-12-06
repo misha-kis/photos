@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use crate::components::{
-    faces_view::FacesView, gallery_view::GalleryView, import_view::ImportView, navbar::Navbar, photo_viewer::PhotoViewer,
+    faces_view::FacesView, gallery_view::GalleryView, import_view::ImportView, navbar::Navbar,
+    photo_viewer::PhotoViewer,
 };
 use crate::photo_library::PhotoLibraryProxy;
 use eframe::egui;
@@ -57,7 +58,10 @@ impl PhotoLibraryApp {
         let initial_dir = dirs::picture_dir().unwrap_or_else(|| PathBuf::from("/"));
 
         let files = rfd::FileDialog::new()
-            .add_filter("Images", &["jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff", "tif"])
+            .add_filter(
+                "Images",
+                &["jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff", "tif"],
+            )
             .set_directory(&initial_dir)
             .pick_files();
 
@@ -94,82 +98,71 @@ impl eframe::App for PhotoLibraryApp {
                 }
             });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            match self.state {
-                AppState::PhotoSelected(idx) => {
-                    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-                        self.state = AppState::Gallery;
+        egui::CentralPanel::default().show(ctx, |ui| match self.state {
+            AppState::PhotoSelected(idx) => {
+                if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    self.state = AppState::Gallery;
+                    self.is_full_photo_requested = false;
+                }
+
+                let total_images = self.photo_library.get_number_of_images();
+                if ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
+                    if idx > 1 {
+                        self.state = AppState::PhotoSelected(idx - 1);
                         self.is_full_photo_requested = false;
                     }
-                    
-                    let total_images = self.photo_library.get_number_of_images();
-                    if ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
-                        if idx > 1 {
-                            self.state = AppState::PhotoSelected(idx - 1);
-                            self.is_full_photo_requested = false;
-                        }
-                    }
-                    if ctx.input(|i| i.key_pressed(egui::Key::ArrowRight)) {
-                        if idx < total_images {
-                            self.state = AppState::PhotoSelected(idx + 1);
-                            self.is_full_photo_requested = false;
-                        }
-                    }
-                    
-                    self.photo_viewer.show(
-                        ui,
-                        ctx,
-                        &mut self.photo_library,
-                        idx,
-                        || {
-                            self.state = AppState::Gallery;
-                            self.is_full_photo_requested = false;
-                        },
-                    );
                 }
-                AppState::Gallery => {
-                    self.gallery_view.show(
-                        ui,
-                        ctx,
-                        &mut self.photo_library,
-                        |idx| {
-                            self.state = AppState::PhotoSelected(idx);
-                        },
-                    );
+                if ctx.input(|i| i.key_pressed(egui::Key::ArrowRight)) {
+                    if idx < total_images {
+                        self.state = AppState::PhotoSelected(idx + 1);
+                        self.is_full_photo_requested = false;
+                    }
                 }
-                AppState::Import => {
-                    let files_to_import = self.import_view.files().to_vec();
-                    let mut should_cancel = false;
-                    let mut should_import = false;
 
-                    self.import_view.show(
-                        ui,
-                        ctx,
-                        || {
-                            should_cancel = true;
-                        },
-                        |_files| {
-                            should_import = true;
-                        },
-                    );
+                self.photo_viewer
+                    .show(ui, ctx, &mut self.photo_library, idx, || {
+                        self.state = AppState::Gallery;
+                        self.is_full_photo_requested = false;
+                    });
+            }
+            AppState::Gallery => {
+                self.gallery_view
+                    .show(ui, ctx, &mut self.photo_library, |idx| {
+                        self.state = AppState::PhotoSelected(idx);
+                    });
+            }
+            AppState::Import => {
+                let files_to_import = self.import_view.files().to_vec();
+                let mut should_cancel = false;
+                let mut should_import = false;
 
-                    if should_cancel {
-                        self.state = AppState::Gallery;
-                        self.import_view.set_files(Vec::new());
-                    } else if should_import {
-                        for file in &files_to_import {
-                            if let Err(e) = self.photo_library.import_photo(file.clone()) {
-                                eprintln!("Failed to import {:?}: {}", file, e);
-                            }
+                self.import_view.show(
+                    ui,
+                    ctx,
+                    || {
+                        should_cancel = true;
+                    },
+                    |_files| {
+                        should_import = true;
+                    },
+                );
+
+                if should_cancel {
+                    self.state = AppState::Gallery;
+                    self.import_view.set_files(Vec::new());
+                } else if should_import {
+                    for file in &files_to_import {
+                        if let Err(e) = self.photo_library.import_photo(file.clone()) {
+                            eprintln!("Failed to import {:?}: {}", file, e);
                         }
-                        self.photo_library.refresh_image_count();
-                        self.state = AppState::Gallery;
-                        self.import_view.set_files(Vec::new());
                     }
+                    self.photo_library.refresh_image_count();
+                    self.state = AppState::Gallery;
+                    self.import_view.set_files(Vec::new());
                 }
-                AppState::Faces => {
-                    self.faces_view.show(ui, ctx, &mut self.photo_library);
-                }
+            }
+            AppState::Faces => {
+                self.faces_view.show(ui, ctx, &mut self.photo_library);
             }
         });
     }

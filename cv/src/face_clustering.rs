@@ -29,7 +29,7 @@ pub struct ClusteringResult {
     pub n_clusters: usize,
 }
 
-fn normalize_embedding(embedding: &mut [f32; 512]){
+fn normalize_embedding(embedding: &mut [f32; 512]) {
     let norm: f32 = embedding.iter().map(|&x| x * x).sum::<f32>().sqrt();
     if norm > 1e-8 {
         for i in 0..512 {
@@ -38,16 +38,26 @@ fn normalize_embedding(embedding: &mut [f32; 512]){
     }
 }
 
-fn cosine_similarity(normalized_embedding1: &[f32; 512], normalized_embedding2: &[f32; 512]) -> f32 {
-    normalized_embedding1.iter().zip(normalized_embedding2.iter()).map(|(x, y)| x * y).sum::<f32>()
+fn cosine_similarity(
+    normalized_embedding1: &[f32; 512],
+    normalized_embedding2: &[f32; 512],
+) -> f32 {
+    normalized_embedding1
+        .iter()
+        .zip(normalized_embedding2.iter())
+        .map(|(x, y)| x * y)
+        .sum::<f32>()
 }
 
 fn distance_matrix(embeddings: &[[f32; 512]]) -> Vec<Vec<f32>> {
-    let normalized_embeddings = embeddings.iter().map(|embedding| {
-        let mut normalized_embedding = *embedding;
-        normalize_embedding(&mut normalized_embedding);
-        normalized_embedding
-    }).collect::<Vec<[f32; 512]>>();
+    let normalized_embeddings = embeddings
+        .iter()
+        .map(|embedding| {
+            let mut normalized_embedding = *embedding;
+            normalize_embedding(&mut normalized_embedding);
+            normalized_embedding
+        })
+        .collect::<Vec<[f32; 512]>>();
     let mut distance_matrix = Vec::new();
     for i in 0..embeddings.len() {
         let mut row = Vec::new();
@@ -99,10 +109,7 @@ pub fn cluster_embeddings(
         .collect::<std::collections::HashSet<_>>()
         .len();
 
-    Ok(ClusteringResult {
-        labels,
-        n_clusters,
-    })
+    Ok(ClusteringResult { labels, n_clusters })
 }
 
 #[cfg(test)]
@@ -149,4 +156,3 @@ mod tests {
         assert_eq!(result.n_clusters, 0);
     }
 }
-

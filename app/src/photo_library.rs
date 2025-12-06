@@ -1,10 +1,10 @@
 use std::{collections::HashMap, path::PathBuf};
 
+use cv::ClusteringConfig;
 use image::DynamicImage;
 use photo_library::{Config, CvConfig, FaceDetection, FaceThumbnail, PhotoLibrary};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use cv::ClusteringConfig;
 
 pub(crate) struct PhotoLibraryProxy {
     rt: tokio::runtime::Runtime,
@@ -34,9 +34,7 @@ impl PhotoLibraryProxy {
         // let to_import_path = PathBuf::from("/Users/misha-kis/Pictures/pics2");
         // rt.block_on(library.import_photo(to_import_path)).unwrap();
 
-        let number_of_images = rt.block_on(async {
-            library.get_number_of_images().await.unwrap()
-        });
+        let number_of_images = rt.block_on(async { library.get_number_of_images().await.unwrap() });
 
         let library = Arc::new(Mutex::new(library));
         Self {
@@ -107,9 +105,8 @@ impl PhotoLibraryProxy {
     }
 
     pub fn is_clustering_in_progress(&self) -> bool {
-        self.rt.block_on(async {
-            *self.clustering_in_progress.lock().await
-        })
+        self.rt
+            .block_on(async { *self.clustering_in_progress.lock().await })
     }
 
     pub fn start_clusterization(&mut self) {
@@ -119,28 +116,31 @@ impl PhotoLibraryProxy {
 
         let library = self.library.clone();
         let clustering_in_progress = self.clustering_in_progress.clone();
-        
+
         self.rt.block_on(async {
             *clustering_in_progress.lock().await = true;
         });
-        
+
         self.rt.spawn(async move {
             let result = {
                 let mut library = library.lock().await;
                 let config = ClusteringConfig::default();
                 library.cluster_faces(config).await
             };
-            
+
             match result {
                 Ok(cluster_result) => {
-                    tracing::info!("Clustering completed: {} clusters, {} processed", 
-                        cluster_result.n_clusters, cluster_result.n_processed);
+                    tracing::info!(
+                        "Clustering completed: {} clusters, {} processed",
+                        cluster_result.n_clusters,
+                        cluster_result.n_processed
+                    );
                 }
                 Err(e) => {
                     tracing::error!("Clustering failed: {}", e);
                 }
             }
-            
+
             *clustering_in_progress.lock().await = false;
         });
     }
@@ -151,7 +151,7 @@ impl PhotoLibraryProxy {
             let library = library.lock().await;
             library.get_faces_grouped_by_id().await
         });
-        
+
         faces.ok()
     }
 
@@ -161,16 +161,21 @@ impl PhotoLibraryProxy {
             let library = library.lock().await;
             library.get_unique_face_thumbnails().await
         });
-        
+
         faces.ok()
     }
 
     pub fn try_get_face_thumbnail(&mut self, detection_id: u32) -> Option<DynamicImage> {
-        if let Some(thumbnail) = self.face_thumbnail_load_requests.get(&detection_id).cloned() {
+        if let Some(thumbnail) = self
+            .face_thumbnail_load_requests
+            .get(&detection_id)
+            .cloned()
+        {
             self.rt.block_on(thumbnail.lock()).clone()
         } else {
             let result = Arc::new(Mutex::new(None));
-            self.face_thumbnail_load_requests.insert(detection_id, result.clone());
+            self.face_thumbnail_load_requests
+                .insert(detection_id, result.clone());
             let library = self.library.clone();
             self.rt.spawn(async move {
                 let mut library = library.lock().await;

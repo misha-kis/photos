@@ -60,10 +60,10 @@ impl ImportView {
                                     break;
                                 }
                                 let file_path = &self.files_to_import[idx];
-                                
+
                                 ui.vertical(|ui| {
                                     ui.set_width(200.0);
-                                    
+
                                     if self.previews[idx].is_none() {
                                         if let Ok(img) = image::open(file_path) {
                                             let thumb = img.thumbnail(200, 200);
@@ -77,10 +77,7 @@ impl ImportView {
 
                                         let tex = ctx.load_texture(
                                             format!("import-preview-{}", idx),
-                                            ColorImage::from_rgba_unmultiplied(
-                                                size,
-                                                rgba.as_raw(),
-                                            ),
+                                            ColorImage::from_rgba_unmultiplied(size, rgba.as_raw()),
                                             Default::default(),
                                         );
 
@@ -90,11 +87,19 @@ impl ImportView {
                                             egui::Vec2::new(200.0, 200.0),
                                             egui::Sense::hover(),
                                         );
-                                        ui.painter().rect_filled(rect, 0.0, egui::Color32::from_gray(30));
+                                        ui.painter().rect_filled(
+                                            rect,
+                                            0.0,
+                                            egui::Color32::from_gray(30),
+                                        );
                                         let spinner_pos = rect.center();
-                                        ui.put(egui::Rect::from_center_size(spinner_pos, egui::Vec2::splat(20.0)), |ui: &mut egui::Ui| {
-                                            ui.spinner()
-                                        });
+                                        ui.put(
+                                            egui::Rect::from_center_size(
+                                                spinner_pos,
+                                                egui::Vec2::splat(20.0),
+                                            ),
+                                            |ui: &mut egui::Ui| ui.spinner(),
+                                        );
                                     }
 
                                     ui.label(
@@ -112,4 +117,3 @@ impl ImportView {
         });
     }
 }
-

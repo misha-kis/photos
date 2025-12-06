@@ -151,11 +151,14 @@ impl PhotoLibrary {
         }
         let db_worker = Arc::new(Mutex::new(DbWorker::new(&config.library_path).await?));
 
-        let image_loader = Arc::new(Mutex::new(ImageLoader::new(
-            db_worker.clone(),
-            thumbnails_path.clone(),
-            originals_path.clone(),
-        ).await));
+        let image_loader = Arc::new(Mutex::new(
+            ImageLoader::new(
+                db_worker.clone(),
+                thumbnails_path.clone(),
+                originals_path.clone(),
+            )
+            .await,
+        ));
 
         let cv_worker = CvWorker::new(&config.cv_config, db_worker.clone(), image_loader.clone())?;
         let import_worker = ImportWorker::new(
@@ -229,10 +232,13 @@ impl PhotoLibrary {
             .lock()
             .await
             .get_face_thumbnail(face_detection_id)
-            .await.context("getting face thumbnail")
+            .await
+            .context("getting face thumbnail")
     }
 
-    pub async fn get_faces_grouped_by_id(&self) -> Result<std::collections::HashMap<u32, Vec<FaceDetection>>> {
+    pub async fn get_faces_grouped_by_id(
+        &self,
+    ) -> Result<std::collections::HashMap<u32, Vec<FaceDetection>>> {
         self.db_worker
             .lock()
             .await
@@ -328,7 +334,10 @@ mod tests {
             .into_iter()
             .map(|result| result.unwrap());
 
-        let rxs = detect_faces_result.into_iter().flat_map(|result| result.rxs).collect::<Vec<_>>();
+        let rxs = detect_faces_result
+            .into_iter()
+            .flat_map(|result| result.rxs)
+            .collect::<Vec<_>>();
         let create_embedding_result = join_all(rxs)
             .await
             .into_iter()

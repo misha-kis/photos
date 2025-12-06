@@ -150,7 +150,7 @@ impl DbWorker {
     /// Only includes detections that have embeddings
     pub(crate) async fn get_all_face_embeddings(&self) -> Result<Vec<(u32, [f32; 512])>> {
         let rows = sqlx::query(
-            "SELECT face_detection_id, embedding FROM face_detection WHERE embedding IS NOT NULL"
+            "SELECT face_detection_id, embedding FROM face_detection WHERE embedding IS NOT NULL",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -159,7 +159,7 @@ impl DbWorker {
         for row in rows {
             let detection_id: i64 = row.try_get("face_detection_id")?;
             let embedding_blob: Vec<u8> = row.try_get("embedding")?;
-            
+
             if embedding_blob.len() == 512 * 4 {
                 let embedding_slice: &[f32] = bytemuck::cast_slice(&embedding_blob);
                 if embedding_slice.len() == 512 {
@@ -184,10 +184,9 @@ impl DbWorker {
 
         let mut conn = self.pool.acquire().await?;
         let mut tx = conn.begin().await?;
-        let mut query_builder = sqlx::QueryBuilder::new(
-            "UPDATE face_detection SET face_id = CASE face_detection_id "
-        );
-        
+        let mut query_builder =
+            sqlx::QueryBuilder::new("UPDATE face_detection SET face_id = CASE face_detection_id ");
+
         let mut separated = query_builder.separated(" ");
         for (detection_id, face_id) in &updates {
             separated.push("WHEN");
@@ -195,14 +194,11 @@ impl DbWorker {
             separated.push("THEN");
             separated.push_bind(face_id.map(|id| id as i64));
         }
-        
+
         query_builder.push("END");
-        
-        query_builder
-            .build()
-            .execute(&mut *tx)
-            .await?;
-        
+
+        query_builder.build().execute(&mut *tx).await?;
+
         tx.commit().await?;
         Ok(())
     }
@@ -215,42 +211,51 @@ impl DbWorker {
                 SELECT MIN(face_detection_id)
                 FROM face_detection GROUP BY face_id
             )
-            AND face_id is not null"
+            AND face_id is not null",
         )
-            .fetch_all(&self.pool)
-            .await.expect("failed to fetch");
-        let face_detections = rows.into_iter().map(|row| {
-            let detection_id = row.try_get("face_detection_id").expect("failed to get face_detection_id");
-            let image_id = row.try_get("image_id").expect("failed to get image_id");
-            let roi_x1 = row.try_get("roi_x1").expect("failed to get roi_x1");
-            let roi_y1 = row.try_get("roi_y1").expect("failed to get roi_y1");
-            let roi_x2 = row.try_get("roi_x2").expect("failed to get roi_x2");
-            let roi_y2 = row.try_get("roi_y2").expect("failed to get roi_y2");
-            let face_id = row.try_get("face_id").expect("failed to get face_id");
-            FaceDetection {
-                detection_id,
-                image_id,
-                bounding_box: BoundingBox::new(roi_x1, roi_y1, roi_x2, roi_y2),
-                face_id,
-            }
-        }).collect();
+        .fetch_all(&self.pool)
+        .await
+        .expect("failed to fetch");
+        let face_detections = rows
+            .into_iter()
+            .map(|row| {
+                let detection_id = row
+                    .try_get("face_detection_id")
+                    .expect("failed to get face_detection_id");
+                let image_id = row.try_get("image_id").expect("failed to get image_id");
+                let roi_x1 = row.try_get("roi_x1").expect("failed to get roi_x1");
+                let roi_y1 = row.try_get("roi_y1").expect("failed to get roi_y1");
+                let roi_x2 = row.try_get("roi_x2").expect("failed to get roi_x2");
+                let roi_y2 = row.try_get("roi_y2").expect("failed to get roi_y2");
+                let face_id = row.try_get("face_id").expect("failed to get face_id");
+                FaceDetection {
+                    detection_id,
+                    image_id,
+                    bounding_box: BoundingBox::new(roi_x1, roi_y1, roi_x2, roi_y2),
+                    face_id,
+                }
+            })
+            .collect();
         Ok(face_detections)
     }
 
     /// Get all face detections grouped by face_id
     /// Returns a map from face_id to list of detections
-    pub(crate) async fn get_faces_grouped_by_id(&self) -> Result<std::collections::HashMap<u32, Vec<FaceDetection>>> {
+    pub(crate) async fn get_faces_grouped_by_id(
+        &self,
+    ) -> Result<std::collections::HashMap<u32, Vec<FaceDetection>>> {
         let rows = sqlx::query(
             "SELECT face_detection_id, image_id, roi_x1, roi_y1, roi_x2, roi_y2, face_id
             FROM face_detection
             WHERE face_id IS NOT NULL
-            ORDER BY face_id, face_detection_id"
+            ORDER BY face_id, face_detection_id",
         )
-            .fetch_all(&self.pool)
-            .await?;
-        
-        let mut grouped: std::collections::HashMap<u32, Vec<FaceDetection>> = std::collections::HashMap::new();
-        
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut grouped: std::collections::HashMap<u32, Vec<FaceDetection>> =
+            std::collections::HashMap::new();
+
         for row in rows {
             let detection_id = row.try_get("face_detection_id")?;
             let image_id = row.try_get("image_id")?;
@@ -259,17 +264,20 @@ impl DbWorker {
             let roi_x2 = row.try_get("roi_x2")?;
             let roi_y2 = row.try_get("roi_y2")?;
             let face_id = row.try_get("face_id")?;
-            
+
             let detection = FaceDetection {
                 detection_id,
                 image_id,
                 bounding_box: BoundingBox::new(roi_x1, roi_y1, roi_x2, roi_y2),
                 face_id,
             };
-            
-            grouped.entry(face_id).or_insert_with(Vec::new).push(detection);
+
+            grouped
+                .entry(face_id)
+                .or_insert_with(Vec::new)
+                .push(detection);
         }
-        
+
         Ok(grouped)
     }
 
@@ -277,11 +285,14 @@ impl DbWorker {
         let rows = sqlx::query("SELECT image_id, image_name FROM image")
             .fetch_all(&self.pool)
             .await?;
-        let image_names = rows.into_iter().map(|row| {
-            let image_id = row.get("image_id");
-            let image_name = row.get("image_name");
-            (image_id, image_name)
-        }).collect();
+        let image_names = rows
+            .into_iter()
+            .map(|row| {
+                let image_id = row.get("image_id");
+                let image_name = row.get("image_name");
+                (image_id, image_name)
+            })
+            .collect();
         Ok(image_names)
     }
 }
