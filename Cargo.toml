@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["app", "cv", "photo-library"]
+members = ["crates/app", "crates/cv", "crates/photo-library"]
 exclude = ["models", "test_data", "runs"]
 
 [workspace.dependencies]
@@ -9,4 +9,3 @@ image = "0.25.8"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt"] }
 tokio = { version = "1.48.0", features = ["full"] }
-
