@@ -13,7 +13,7 @@ impl GalleryView {
     pub fn new() -> Self {
         Self {
             columns: 2,
-            desired_image_size: 100.0, // Desired image size in pixels
+            desired_image_size: 100.0,
             texture_handles: HashMap::new(),
         }
     }
@@ -28,15 +28,13 @@ impl GalleryView {
         let available_width = ui.available_width();
         let spacing = ui.style().spacing.item_spacing.x;
 
-        // Calculate how many columns fit with desired image size
         self.columns = ((available_width + spacing) / (self.desired_image_size + spacing))
             .floor()
             .max(1.0) as usize;
 
-        // Calculate actual image size based on available width and number of columns
         let actual_image_size = ((available_width + spacing) / self.columns as f32 - spacing)
-            .max(50.0) // Minimum size of 50px
-            .min(500.0); // Maximum size of 500px
+            .max(50.0)
+            .min(500.0);
 
         let thumb_height = actual_image_size;
         let total_rows = (photo_library.get_number_of_images() + self.columns - 1) / self.columns;
@@ -76,25 +74,38 @@ impl GalleryView {
                             let photo_id = i as u32;
                             let texture_id = format!("thumbnail-{}", i);
                             
-                            let try_get_image = || photo_library.try_get_thumbnail(photo_id);
                             let click_callback = || on_photo_selected(i as usize);
                             
-                            // Get cached texture handle if available
-                            let cached_handle = self.texture_handles.get(&photo_id).cloned();
+                            let try_get_texture = || -> anyhow::Result<Option<egui::TextureHandle>> {
+                                if let Some(cached_handle) = self.texture_handles.get(&photo_id) {
+                                    return Ok(Some(cached_handle.clone()));
+                                }
+                                
+                                match photo_library.try_get_thumbnail(photo_id) {
+                                    Ok(Some(image)) => {
+                                        let rgba = image.into_rgba8();
+                                        let tex = ctx.load_texture(
+                                            &texture_id,
+                                            eframe::egui::ColorImage::from_rgba_unmultiplied(
+                                                [rgba.width() as _, rgba.height() as _],
+                                                rgba.as_raw(),
+                                            ),
+                                            Default::default(),
+                                        );
+                                        self.texture_handles.insert(photo_id, tex.clone());
+                                        Ok(Some(tex))
+                                    }
+                                    Ok(None) => Ok(None),
+                                    Err(e) => Err(e),
+                                }
+                            };
                             
                             thumbnail_view(
                                 ui,
-                                ctx,
                                 is_visible,
                                 (actual_image_size, actual_image_size),
-                                &texture_id,
-                                try_get_image,
+                                try_get_texture,
                                 Some(click_callback),
-                                cached_handle,
-                                |handle| {
-                                    // Store the texture handle when first loaded
-                                    self.texture_handles.insert(photo_id, handle);
-                                },
                             );
                             i += 1;
                         }
