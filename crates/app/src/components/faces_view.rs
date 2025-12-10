@@ -40,25 +40,30 @@ impl FacesView {
 
             ui.separator();
 
-            // Display faces
-            if let Some(faces) = photo_library.get_unique_face_thumbnails() {
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false; 2])
-                    .show(ui, |ui| {
-                        for face in faces {
-                            self.show_face_thumbnail(
-                                ui,
-                                ctx,
-                                photo_library,
-                                &face,
-                                self.desired_face_size,
-                            );
-                        }
+            match photo_library.get_unique_face_thumbnails() {
+                Ok(faces) if !faces.is_empty() => {
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false; 2])
+                        .show(ui, |ui| {
+                            for face in faces {
+                                self.show_face_thumbnail(
+                                    ui,
+                                    ctx,
+                                    photo_library,
+                                    &face,
+                                    self.desired_face_size,
+                                );
+                            }
+                        });
+                }
+                Ok(_) => {
+                    ui.centered_and_justified(|ui| {
+                        ui.label("No faces clustered yet. Click 'Clusterize' to start.");
                     });
-            } else {
-                ui.centered_and_justified(|ui| {
-                    ui.label("No faces clustered yet. Click 'Clusterize' to start.");
-                });
+                }
+                Err(err) => {
+                    ui.colored_label(egui::Color32::RED, format!("Error: {}", err));
+                }
             }
         });
     }

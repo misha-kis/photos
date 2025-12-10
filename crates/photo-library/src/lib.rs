@@ -84,10 +84,9 @@ impl Scheduler {
 
         tokio::spawn(async move {
             tracing::debug!("Starting scheduler thread");
-            sched
-                .run(handle_clone)
-                .await
-                .expect("error running scheduler");
+            if let Err(err) = sched.run(handle_clone).await {
+                tracing::error!("Error running scheduler: {}", err);
+            }
             tracing::info!("Scheduler thread stopped");
         });
         tracing::info!("Scheduler started");
@@ -157,7 +156,7 @@ impl PhotoLibrary {
                 thumbnails_path.clone(),
                 originals_path.clone(),
             )
-            .await,
+            .await?,
         ));
 
         let cv_worker = CvWorker::new(&config.cv_config, db_worker.clone(), image_loader.clone())?;
@@ -295,40 +294,42 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_init_photo_library() {
-        let temp_dir = TempDir::new("photo_library").unwrap();
+    async fn test_init_photo_library() -> Result<()> {
+        let temp_dir = TempDir::new("photo_library")?;
         let config = Config::new(temp_dir.path().to_path_buf(), get_cv_config())
             .with_thumbnail_sizes(vec![32, 64]);
-        let _ = PhotoLibrary::new(config).await.unwrap();
+        let _ = PhotoLibrary::new(config).await?;
+        Ok(())
     }
 
     #[tokio::test]
     #[tracing_test::traced_test]
-    async fn test_import_photo_and_get_image() {
-        let temp_dir = TempDir::new("photo_library").unwrap();
+    async fn test_import_photo_and_get_image() -> Result<()> {
+        let temp_dir = TempDir::new("photo_library")?;
         let config = Config::new(temp_dir.path().to_path_buf(), get_cv_config())
             .with_thumbnail_sizes(vec![32]);
-        let mut library = PhotoLibrary::new(config).await.unwrap();
+        let mut library = PhotoLibrary::new(config).await?;
         let new_image_path = workspace_path().join("test_data");
         let result = library.import_photo(new_image_path).await;
         assert!(result.is_ok());
 
-        let thumbnail = library.get_thumbnail(1).await.unwrap();
+        let thumbnail = library.get_thumbnail(1).await?;
         assert_eq!(thumbnail.height(), 32);
-        let full_image = library.get_full_image(1).await.unwrap();
+        let full_image = library.get_full_image(1).await?;
         assert_eq!(full_image.height(), 1280);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_cv_worker() {
-        let temp_dir = TempDir::new("photo_library").unwrap();
+    async fn test_cv_worker() -> Result<()> {
+        let temp_dir = TempDir::new("photo_library")?;
         let config = Config::new(temp_dir.path().to_path_buf(), get_cv_config())
             .with_thumbnail_sizes(vec![32]);
-        let mut library = PhotoLibrary::new(config).await.unwrap();
+        let mut library = PhotoLibrary::new(config).await?;
         let new_image_path = workspace_path().join("test_data").join("example.jpeg");
-        let import_cmd_result = library.import_photo(new_image_path).await.unwrap();
+        let import_cmd_result = library.import_photo(new_image_path).await?;
 
-        let full_image = library.get_full_image(1).await.unwrap();
+        let full_image = library.get_full_image(1).await?;
         assert_eq!(full_image.height(), 1280);
 
         let detect_faces_result = join_all(import_cmd_result.rxs)
@@ -345,5 +346,6 @@ mod tests {
             .into_iter()
             .map(|result| result.unwrap());
         assert_eq!(create_embedding_result.len(), 1);
+        Ok(())
     }
 }

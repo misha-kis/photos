@@ -5,6 +5,7 @@ use crate::components::{
     photo_viewer::PhotoViewer,
 };
 use crate::photo_library::PhotoLibraryProxy;
+use anyhow::Context;
 use eframe::egui;
 
 mod components;
@@ -30,11 +31,11 @@ struct PhotoLibraryApp {
 }
 
 impl PhotoLibraryApp {
-    fn new() -> Self {
-        let picture_dir = dirs::picture_dir().unwrap();
+    fn new() -> anyhow::Result<Self> {
+        let picture_dir = dirs::picture_dir().context("Could not resolve pictures directory")?;
         let gallery_dir = picture_dir.join("picslib3");
-        Self {
-            photo_library: PhotoLibraryProxy::new(gallery_dir),
+        Ok(Self {
+            photo_library: PhotoLibraryProxy::new(gallery_dir)?,
             state: AppState::Gallery,
             is_full_photo_requested: false,
             gallery_view: GalleryView::new(),
@@ -43,7 +44,7 @@ impl PhotoLibraryApp {
             import_view: ImportView::new(),
             faces_view: FacesView::new(),
             pending_file_dialog: false,
-        }
+        })
     }
 
     fn open_file_dialog(&mut self) {
@@ -157,7 +158,9 @@ impl eframe::App for PhotoLibraryApp {
                             eprintln!("Failed to import {:?}: {}", file, e);
                         }
                     }
-                    self.photo_library.refresh_image_count();
+                    if let Err(e) = self.photo_library.refresh_image_count() {
+                        eprintln!("Failed to refresh image count: {}", e);
+                    }
                     self.state = AppState::Gallery;
                     self.import_view.set_files(Vec::new());
                 }
@@ -181,6 +184,9 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Photo Library (Lazy Loading)",
         options,
-        Box::new(|_| Ok(Box::new(PhotoLibraryApp::new()))),
+        Box::new(|_| {
+            let app = PhotoLibraryApp::new().unwrap();
+            Ok(Box::new(app))
+        }),
     )
 }

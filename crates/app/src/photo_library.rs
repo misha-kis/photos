@@ -1,26 +1,31 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
 
+use anyhow::{Context, Result};
 use cv::ClusteringConfig;
 use image::DynamicImage;
+use parking_lot::RwLock;
 use photo_library::{Config, CvConfig, FaceDetection, FaceThumbnail, PhotoLibrary};
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::runtime::Runtime;
+
+type SharedImage = Arc<RwLock<Option<Result<DynamicImage>>>>;
 
 pub(crate) struct PhotoLibraryProxy {
-    rt: tokio::runtime::Runtime,
-    library: Arc<Mutex<PhotoLibrary>>,
-    thumbnail_load_requests: HashMap<u32, Arc<Mutex<Option<DynamicImage>>>>,
-    image_load_requests: HashMap<u32, Arc<Mutex<Option<DynamicImage>>>>,
-    face_thumbnail_load_requests: HashMap<u32, Arc<Mutex<Option<DynamicImage>>>>,
+    library: Arc<tokio::sync::Mutex<PhotoLibrary>>,
+    runtime: Runtime,
+    thumbnail_load_requests: HashMap<u32, SharedImage>,
+    image_load_requests: HashMap<u32, SharedImage>,
+    face_thumbnail_load_requests: HashMap<u32, SharedImage>,
     number_of_images: usize,
-    clustering_in_progress: Arc<Mutex<bool>>,
+    clustering_in_progress: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl PhotoLibraryProxy {
-    pub fn new(gallery_dir: PathBuf) -> Self {
+    pub fn new(gallery_dir: PathBuf) -> Result<Self> {
         let workspace_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
+            .parent().unwrap().parent()
+            .context("missing workspace parent")?
             .to_path_buf();
         let cv_cfg = CvConfig {
             face_detector_model_path: workspace_path.join("models").join("yolov12n-face.onnx"),
@@ -29,99 +34,120 @@ impl PhotoLibraryProxy {
             face_embedder_image_size: 160,
         };
         let cfg = Config::new(gallery_dir, cv_cfg);
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let library = rt.block_on(PhotoLibrary::new(cfg)).unwrap();
-        // let to_import_path = PathBuf::from("/Users/misha-kis/Pictures/pics2");
-        // rt.block_on(library.import_photo(to_import_path)).unwrap();
+        let runtime = Runtime::new().context("Failed to start background tokio runtime for photo library")?;
+        
+        let library = runtime.block_on(PhotoLibrary::new(cfg))?;
 
-        let number_of_images = rt.block_on(async { library.get_number_of_images().await.unwrap() });
+        let number_of_images = runtime.block_on(async { library.get_number_of_images().await })?;
 
-        let library = Arc::new(Mutex::new(library));
-        Self {
-            rt,
+        let library = Arc::new(tokio::sync::Mutex::new(library));
+        Ok(Self {
             library,
+            runtime,
             thumbnail_load_requests: HashMap::new(),
             image_load_requests: HashMap::new(),
             face_thumbnail_load_requests: HashMap::new(),
             number_of_images,
-            clustering_in_progress: Arc::new(Mutex::new(false)),
-        }
+            clustering_in_progress: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        })
     }
 
     pub fn get_number_of_images(&self) -> usize {
         self.number_of_images
     }
 
-    pub fn try_get_thumbnail(&mut self, id: u32) -> Option<DynamicImage> {
-        if let Some(thumbnail) = self.thumbnail_load_requests.get(&id).cloned() {
-            self.rt.block_on(thumbnail.lock()).clone()
-        } else {
-            let result = Arc::new(Mutex::new(None));
-            self.thumbnail_load_requests.insert(id, result.clone());
-            let library = self.library.clone();
-            self.rt.spawn(async move {
-                let mut library = library.lock().await;
-                let future = library.get_thumbnail(id);
-                let thumbnail = future.await.unwrap();
-                result.lock().await.replace(thumbnail);
-            });
-            None
+    pub fn try_get_thumbnail(&mut self, id: u32) -> Result<Option<DynamicImage>> {
+        if let Some(entry) = self.thumbnail_load_requests.get(&id) {
+            let result = entry.write().take();
+            if let Some(result) = result {
+                self.thumbnail_load_requests.remove(&id);
+                return result.map(Some);
+            }
+            return Ok(None);
         }
-    }
 
-    pub fn try_get_image(&mut self, id: u32) -> Option<DynamicImage> {
-        if let Some(image) = self.image_load_requests.get(&id).cloned() {
-            self.rt.block_on(image.lock()).clone()
-        } else {
-            let result = Arc::new(Mutex::new(None));
-            self.image_load_requests.insert(id, result.clone());
-            let library = self.library.clone();
-            self.rt.spawn(async move {
-                let mut library = library.lock().await;
-                let future = library.get_full_image(id);
-                let image = future.await.unwrap();
-                result.lock().await.replace(image);
-            });
-            None
-        }
-    }
-
-    pub fn import_photo(&mut self, path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+        let entry = Arc::new(RwLock::new(None));
+        self.thumbnail_load_requests.insert(id, entry.clone());
         let library = self.library.clone();
-        self.rt.block_on(async {
+        self.runtime.handle().spawn(async move {
+            let result = async {
+                let mut library = library.lock().await;
+                library.get_thumbnail(id).await
+            }
+            .await;
+            entry.write().replace(result);
+        });
+
+        Ok(None)
+    }
+
+    pub fn try_get_image(&mut self, id: u32) -> Result<Option<DynamicImage>> {
+        if let Some(entry) = self.image_load_requests.get(&id) {
+            let result = entry.write().take();
+            if let Some(result) = result {
+                self.image_load_requests.remove(&id);
+                return result.map(Some);
+            }
+            return Ok(None);
+        }
+
+        let entry = Arc::new(RwLock::new(None));
+        self.image_load_requests.insert(id, entry.clone());
+        let library = self.library.clone();
+        self.runtime.handle().spawn(async move {
+            let result = async {
+                let mut library = library.lock().await;
+                library.get_full_image(id).await
+            }
+            .await;
+            entry.write().replace(result);
+        });
+
+        Ok(None)
+    }
+
+    pub fn import_photo(&mut self, path: PathBuf) -> Result<()> {
+        let library = self.library.clone();
+        self.runtime.block_on(async {
             let mut library = library.lock().await;
             library.import_photo(path).await?;
-            Ok::<(), Box<dyn std::error::Error>>(())
+            Ok::<(), anyhow::Error>(())
         })?;
         Ok(())
     }
 
-    pub fn refresh_image_count(&mut self) {
+    pub fn refresh_image_count(&mut self) -> Result<()> {
         let library = self.library.clone();
-        self.number_of_images = self.rt.block_on(async {
+        self.number_of_images = self.runtime.block_on(async {
             let library = library.lock().await;
-            library.get_number_of_images().await.unwrap()
-        });
+            library.get_number_of_images().await
+        })?;
+        Ok(())
     }
 
     pub fn is_clustering_in_progress(&self) -> bool {
-        self.rt
-            .block_on(async { *self.clustering_in_progress.lock().await })
+        self.clustering_in_progress
+            .load(std::sync::atomic::Ordering::Acquire)
     }
 
     pub fn start_clusterization(&mut self) {
-        if self.is_clustering_in_progress() {
+        if self
+            .clustering_in_progress
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Relaxed,
+            )
+            .is_err()
+        {
             return;
         }
 
         let library = self.library.clone();
-        let clustering_in_progress = self.clustering_in_progress.clone();
+        let flag = self.clustering_in_progress.clone();
 
-        self.rt.block_on(async {
-            *clustering_in_progress.lock().await = true;
-        });
-
-        self.rt.spawn(async move {
+        self.runtime.handle().spawn(async move {
             let result = {
                 let mut library = library.lock().await;
                 let config = ClusteringConfig::default();
@@ -141,50 +167,49 @@ impl PhotoLibraryProxy {
                 }
             }
 
-            *clustering_in_progress.lock().await = false;
+            flag.store(false, std::sync::atomic::Ordering::Release);
         });
     }
 
-    pub fn get_faces_grouped_by_id(&mut self) -> Option<HashMap<u32, Vec<FaceDetection>>> {
+    pub fn get_faces_grouped_by_id(&mut self) -> Result<HashMap<u32, Vec<FaceDetection>>> {
         let library = self.library.clone();
-        let faces = self.rt.block_on(async {
+        self.runtime.block_on(async {
             let library = library.lock().await;
             library.get_faces_grouped_by_id().await
-        });
-
-        faces.ok()
+        })
     }
 
-    pub fn get_unique_face_thumbnails(&mut self) -> Option<Vec<FaceThumbnail>> {
+    pub fn get_unique_face_thumbnails(&mut self) -> Result<Vec<FaceThumbnail>> {
         let library = self.library.clone();
-        let faces = self.rt.block_on(async {
+        self.runtime.block_on(async {
             let library = library.lock().await;
             library.get_unique_face_thumbnails().await
-        });
-
-        faces.ok()
+        })
     }
 
-    pub fn try_get_face_thumbnail(&mut self, detection_id: u32) -> Option<DynamicImage> {
-        if let Some(thumbnail) = self
-            .face_thumbnail_load_requests
-            .get(&detection_id)
-            .cloned()
-        {
-            self.rt.block_on(thumbnail.lock()).clone()
-        } else {
-            let result = Arc::new(Mutex::new(None));
-            self.face_thumbnail_load_requests
-                .insert(detection_id, result.clone());
-            let library = self.library.clone();
-            self.rt.spawn(async move {
-                let mut library = library.lock().await;
-                let future = library.get_face_thumbnail(detection_id);
-                if let Ok(thumbnail) = future.await {
-                    result.lock().await.replace(thumbnail);
-                }
-            });
-            None
+    pub fn try_get_face_thumbnail(&mut self, detection_id: u32) -> Result<Option<DynamicImage>> {
+        if let Some(entry) = self.face_thumbnail_load_requests.get(&detection_id) {
+            let result = entry.write().take();
+            if let Some(result) = result {
+                self.face_thumbnail_load_requests.remove(&detection_id);
+                return result.map(Some);
+            }
+            return Ok(None);
         }
+
+        let entry = Arc::new(RwLock::new(None));
+        self.face_thumbnail_load_requests
+            .insert(detection_id, entry.clone());
+        let library = self.library.clone();
+        self.runtime.handle().spawn(async move {
+            let result = async {
+                let mut library = library.lock().await;
+                library.get_face_thumbnail(detection_id).await
+            }
+            .await;
+            entry.write().replace(result);
+        });
+
+        Ok(None)
     }
 }

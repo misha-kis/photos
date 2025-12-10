@@ -23,27 +23,33 @@ impl PhotoViewer {
             }
             ui.add_space(10.0);
 
-            if let Some(image) = photo_library.try_get_image(photo_index as u32) {
-                let rgba = image.to_rgba8();
-                let size = [rgba.width() as usize, rgba.height() as usize];
+            match photo_library.try_get_image(photo_index as u32) {
+                Ok(Some(image)) => {
+                    let rgba = image.to_rgba8();
+                    let size = [rgba.width() as usize, rgba.height() as usize];
 
-                let tex = ctx.load_texture(
-                    format!("full-image-{}", photo_index),
-                    ColorImage::from_rgba_unmultiplied(size, rgba.as_raw()),
-                    Default::default(),
-                );
+                    let tex = ctx.load_texture(
+                        format!("full-image-{}", photo_index),
+                        ColorImage::from_rgba_unmultiplied(size, rgba.as_raw()),
+                        Default::default(),
+                    );
 
-                let available_size = ui.available_size();
-                let image_size = Vec2::new(size[0] as f32, size[1] as f32);
-                let scale = (available_size.x / image_size.x)
-                    .min(available_size.y / image_size.y)
-                    .min(1.0);
-                let display_size = image_size * scale;
+                    let available_size = ui.available_size();
+                    let image_size = Vec2::new(size[0] as f32, size[1] as f32);
+                    let scale = (available_size.x / image_size.x)
+                        .min(available_size.y / image_size.y)
+                        .min(1.0);
+                    let display_size = image_size * scale;
 
-                ui.image((tex.id(), display_size));
-            } else {
-                ui.spinner();
-                ui.label("Loading full image...");
+                    ui.image((tex.id(), display_size));
+                }
+                Ok(None) => {
+                    ui.spinner();
+                    ui.label("Loading full image...");
+                }
+                Err(err) => {
+                    ui.colored_label(eframe::egui::Color32::RED, format!("Failed to load image: {}", err));
+                }
             }
         });
     }

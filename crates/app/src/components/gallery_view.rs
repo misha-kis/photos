@@ -1,10 +1,12 @@
 use crate::components::thumbnail::thumbnail_view;
 use crate::photo_library::PhotoLibraryProxy;
 use eframe::egui;
+use std::collections::HashMap;
 
 pub struct GalleryView {
     pub columns: usize,
     desired_image_size: f32,
+    texture_handles: HashMap<u32, egui::TextureHandle>,
 }
 
 impl GalleryView {
@@ -12,6 +14,7 @@ impl GalleryView {
         Self {
             columns: 2,
             desired_image_size: 100.0, // Desired image size in pixels
+            texture_handles: HashMap::new(),
         }
     }
 
@@ -70,15 +73,28 @@ impl GalleryView {
                     ui.horizontal(|ui| {
                         for _ in 0..self.columns {
                             let is_visible = start_index <= i && i <= end_index;
-                            let try_get_image = || photo_library.try_get_thumbnail(i as u32);
+                            let photo_id = i as u32;
+                            let texture_id = format!("thumbnail-{}", i);
+                            
+                            let try_get_image = || photo_library.try_get_thumbnail(photo_id);
                             let click_callback = || on_photo_selected(i as usize);
+                            
+                            // Get cached texture handle if available
+                            let cached_handle = self.texture_handles.get(&photo_id).cloned();
+                            
                             thumbnail_view(
                                 ui,
                                 ctx,
                                 is_visible,
                                 (actual_image_size, actual_image_size),
+                                &texture_id,
                                 try_get_image,
                                 Some(click_callback),
+                                cached_handle,
+                                |handle| {
+                                    // Store the texture handle when first loaded
+                                    self.texture_handles.insert(photo_id, handle);
+                                },
                             );
                             i += 1;
                         }

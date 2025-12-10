@@ -11,7 +11,6 @@ crate-type = ["lib"]
 anyhow = { workspace = true }
 sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite"] }
 tokio = { workspace = true }
-lru = "0.16.2"
 image = { workspace = true }
 cv = { path = "../cv" }
 bytemuck = "1.24.0"

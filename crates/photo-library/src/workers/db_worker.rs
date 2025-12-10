@@ -50,8 +50,11 @@ pub(crate) struct DbWorker {
 impl DbWorker {
     pub(crate) async fn new(library_path: &PathBuf) -> Result<Self> {
         let db_path = library_path.join(DB_PATH);
+        let db_str = db_path
+            .to_str()
+            .ok_or_else(|| anyhow!("library path is not valid UTF-8"))?;
         let options = SqliteConnectOptions::new()
-            .filename(db_path.to_str().unwrap())
+            .filename(db_str)
             .create_if_missing(true);
         let db_pool = SqlitePool::connect_with(options).await?;
         let conn = db_pool.acquire().await?;
@@ -84,17 +87,17 @@ impl DbWorker {
         let rows = sqlx::query("SELECT image_id, roi_x1, roi_y1, roi_x2, roi_y2 FROM face_detection WHERE face_detection_id = ?")
             .bind(detection_id)
             .fetch_all(&self.pool)
-            .await.expect("failed to fetch");
+            .await?;
         if rows.len() != 1 {
-            Err(anyhow!("too many rows"))
+            Err(anyhow!("unexpected number of rows for detection {}", detection_id))
         } else {
             let row = &rows[0];
-            let image_id = row.try_get("image_id").expect("failed to get image_id");
-            let x1 = row.try_get("roi_x1").expect("failed to get roi_x1");
-            let y1 = row.try_get("roi_y1").expect("failed to get roi_y1");
-            let x2 = row.try_get("roi_x2").expect("failed to get roi_x2");
-            let y2 = row.try_get("roi_y2").expect("failed to get roi_y2");
-            Ok((image_id, BoundingBox::new(x1, y1, x2, y2)))
+            let image_id: i64 = row.try_get("image_id")?;
+            let x1: i64 = row.try_get("roi_x1")?;
+            let y1: i64 = row.try_get("roi_y1")?;
+            let x2: i64 = row.try_get("roi_x2")?;
+            let y2: i64 = row.try_get("roi_y2")?;
+            Ok((image_id as u32, BoundingBox::new(x1 as f32, y1 as f32, x2 as f32, y2 as f32)))
         }
     }
 
@@ -112,8 +115,7 @@ impl DbWorker {
                 .bind(face_box.x2)
                 .bind(face_box.y2)
                 .execute(&mut *conn)
-                .await
-                .expect("failed to insert")
+                .await?
                 .last_insert_rowid();
         Ok(last_inserted_id as u32)
     }
@@ -131,8 +133,7 @@ impl DbWorker {
                 .bind(embedding)
                 .bind(face_detection_id)
                 .execute(&mut *conn)
-                .await
-                .expect("cound not insert")
+                .await?
                 .last_insert_rowid();
         Ok(last_inserted_id)
     }
@@ -214,28 +215,25 @@ impl DbWorker {
             AND face_id is not null",
         )
         .fetch_all(&self.pool)
-        .await
-        .expect("failed to fetch");
+        .await?;
         let face_detections = rows
             .into_iter()
             .map(|row| {
-                let detection_id = row
-                    .try_get("face_detection_id")
-                    .expect("failed to get face_detection_id");
-                let image_id = row.try_get("image_id").expect("failed to get image_id");
-                let roi_x1 = row.try_get("roi_x1").expect("failed to get roi_x1");
-                let roi_y1 = row.try_get("roi_y1").expect("failed to get roi_y1");
-                let roi_x2 = row.try_get("roi_x2").expect("failed to get roi_x2");
-                let roi_y2 = row.try_get("roi_y2").expect("failed to get roi_y2");
-                let face_id = row.try_get("face_id").expect("failed to get face_id");
-                FaceDetection {
+                let detection_id = row.try_get("face_detection_id")?;
+                let image_id = row.try_get("image_id")?;
+                let roi_x1 = row.try_get("roi_x1")?;
+                let roi_y1 = row.try_get("roi_y1")?;
+                let roi_x2 = row.try_get("roi_x2")?;
+                let roi_y2 = row.try_get("roi_y2")?;
+                let face_id = row.try_get("face_id")?;
+                Ok::<_, anyhow::Error>(FaceDetection {
                     detection_id,
                     image_id,
                     bounding_box: BoundingBox::new(roi_x1, roi_y1, roi_x2, roi_y2),
                     face_id,
-                }
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>>>()?;
         Ok(face_detections)
     }
 

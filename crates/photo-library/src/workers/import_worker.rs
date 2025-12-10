@@ -57,7 +57,9 @@ impl ImportWorker {
                     for size in &thumbnail_sizes {
                         let thumbnail = img.thumbnail(*size, *size);
                         let thumb_path = thumbnails_path.join(format!("{size}")).join(name_str);
-                        std::fs::create_dir_all(thumb_path.parent().unwrap())?;
+                        if let Some(parent) = thumb_path.parent() {
+                            std::fs::create_dir_all(parent)?;
+                        }
                         thumbnail.save(&thumb_path)?;
                     }
                     tracing::info!("Copied image {}", path.display());
@@ -100,20 +102,16 @@ impl ImportWorker {
             self.import_many(vec![path.clone()]).await
         } else if meta.is_dir() {
             tracing::debug!("Import worker importing directory: {}", path.display());
-            self.import_many(
-                std::fs::read_dir(path)?
-                    .map(|entry| entry.unwrap().path())
-                    .filter(|path| {
-                        path.extension()
-                            .and_then(|ext| ext.to_str())
-                            .map(|ext| {
-                                matches!(ext.to_ascii_lowercase().as_str(), "jpg" | "jpeg" | "png")
-                            })
-                            .unwrap_or(false)
-                    })
-                    .collect(),
-            )
-            .await
+            let paths: Vec<PathBuf> = std::fs::read_dir(path)?
+                .filter_map(|entry| entry.ok().map(|e| e.path()))
+                .filter(|path| {
+                    path.extension()
+                        .and_then(|ext| ext.to_str())
+                        .map(|ext| matches!(ext.to_ascii_lowercase().as_str(), "jpg" | "jpeg" | "png"))
+                        .unwrap_or(false)
+                })
+                .collect();
+            self.import_many(paths).await
         } else {
             Err(anyhow!("invalid path"))
         }
@@ -153,7 +151,9 @@ impl ImportCommand {
         } else {
             Err(anyhow!("could not import image"))
         };
-        self.tx.send(resp).expect("is task cancelled?");
+        if let Err(e) = self.tx.send(resp) {
+            tracing::warn!("Import command receiver dropped: {:?}", e);
+        }
     }
 }
 
