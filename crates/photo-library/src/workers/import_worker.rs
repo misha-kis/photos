@@ -107,7 +107,9 @@ impl ImportWorker {
                 .filter(|path| {
                     path.extension()
                         .and_then(|ext| ext.to_str())
-                        .map(|ext| matches!(ext.to_ascii_lowercase().as_str(), "jpg" | "jpeg" | "png"))
+                        .map(|ext| {
+                            matches!(ext.to_ascii_lowercase().as_str(), "jpg" | "jpeg" | "png")
+                        })
                         .unwrap_or(false)
                 })
                 .collect();

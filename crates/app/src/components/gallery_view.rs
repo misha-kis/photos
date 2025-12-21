@@ -73,33 +73,35 @@ impl GalleryView {
                             let is_visible = start_index <= i && i <= end_index;
                             let photo_id = i as u32;
                             let texture_id = format!("thumbnail-{}", i);
-                            
+
                             let click_callback = || on_photo_selected(i as usize);
-                            
-                            let try_get_texture = || -> anyhow::Result<Option<egui::TextureHandle>> {
-                                if let Some(cached_handle) = self.texture_handles.get(&photo_id) {
-                                    return Ok(Some(cached_handle.clone()));
-                                }
-                                
-                                match photo_library.try_get_thumbnail(photo_id) {
-                                    Ok(Some(image)) => {
-                                        let rgba = image.into_rgba8();
-                                        let tex = ctx.load_texture(
-                                            &texture_id,
-                                            eframe::egui::ColorImage::from_rgba_unmultiplied(
-                                                [rgba.width() as _, rgba.height() as _],
-                                                rgba.as_raw(),
-                                            ),
-                                            Default::default(),
-                                        );
-                                        self.texture_handles.insert(photo_id, tex.clone());
-                                        Ok(Some(tex))
+
+                            let try_get_texture =
+                                || -> anyhow::Result<Option<egui::TextureHandle>> {
+                                    if let Some(cached_handle) = self.texture_handles.get(&photo_id)
+                                    {
+                                        return Ok(Some(cached_handle.clone()));
                                     }
-                                    Ok(None) => Ok(None),
-                                    Err(e) => Err(e),
-                                }
-                            };
-                            
+
+                                    match photo_library.try_get_thumbnail(photo_id) {
+                                        Ok(Some(image)) => {
+                                            let rgba = image.into_rgba8();
+                                            let tex = ctx.load_texture(
+                                                &texture_id,
+                                                eframe::egui::ColorImage::from_rgba_unmultiplied(
+                                                    [rgba.width() as _, rgba.height() as _],
+                                                    rgba.as_raw(),
+                                                ),
+                                                Default::default(),
+                                            );
+                                            self.texture_handles.insert(photo_id, tex.clone());
+                                            Ok(Some(tex))
+                                        }
+                                        Ok(None) => Ok(None),
+                                        Err(e) => Err(e),
+                                    }
+                                };
+
                             thumbnail_view(
                                 ui,
                                 is_visible,

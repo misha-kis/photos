@@ -24,7 +24,9 @@ pub(crate) struct PhotoLibraryProxy {
 impl PhotoLibraryProxy {
     pub fn new(gallery_dir: PathBuf) -> Result<Self> {
         let workspace_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent().unwrap().parent()
+            .parent()
+            .unwrap()
+            .parent()
             .context("missing workspace parent")?
             .to_path_buf();
         let cv_cfg = CvConfig {
@@ -34,8 +36,9 @@ impl PhotoLibraryProxy {
             face_embedder_image_size: 160,
         };
         let cfg = Config::new(gallery_dir, cv_cfg);
-        let runtime = Runtime::new().context("Failed to start background tokio runtime for photo library")?;
-        
+        let runtime =
+            Runtime::new().context("Failed to start background tokio runtime for photo library")?;
+
         let library = runtime.block_on(PhotoLibrary::new(cfg))?;
 
         let number_of_images = runtime.block_on(async { library.get_number_of_images().await })?;

@@ -34,7 +34,7 @@ impl PhotoViewer {
             let photo_id = photo_index as u32;
             let texture_id = format!("full-image-{}", photo_index);
             let available_size = ui.available_size();
-            
+
             let cached_image_size = self.image_sizes.get(&photo_id).copied();
             let placeholder_size = available_size.min(Vec2::new(800.0, 600.0));
             let display_size = if let Some(image_size_vec) = cached_image_size {
@@ -45,12 +45,12 @@ impl PhotoViewer {
             } else {
                 placeholder_size
             };
-            
+
             let try_get_texture = || -> anyhow::Result<Option<egui::TextureHandle>> {
                 if let Some(cached_handle) = self.texture_handles.get(&photo_id) {
                     return Ok(Some(cached_handle.clone()));
                 }
-                
+
                 match photo_library.try_get_image(photo_id) {
                     Ok(Some(image)) => {
                         let rgba = image.to_rgba8();
@@ -69,7 +69,7 @@ impl PhotoViewer {
                     Err(e) => Err(e),
                 }
             };
-            
+
             thumbnail_view(
                 ui,
                 true, // always visible in photo viewer

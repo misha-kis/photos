@@ -89,7 +89,10 @@ impl DbWorker {
             .fetch_all(&self.pool)
             .await?;
         if rows.len() != 1 {
-            Err(anyhow!("unexpected number of rows for detection {}", detection_id))
+            Err(anyhow!(
+                "unexpected number of rows for detection {}",
+                detection_id
+            ))
         } else {
             let row = &rows[0];
             let image_id: i64 = row.try_get("image_id")?;
@@ -97,7 +100,10 @@ impl DbWorker {
             let y1: i64 = row.try_get("roi_y1")?;
             let x2: i64 = row.try_get("roi_x2")?;
             let y2: i64 = row.try_get("roi_y2")?;
-            Ok((image_id as u32, BoundingBox::new(x1 as f32, y1 as f32, x2 as f32, y2 as f32)))
+            Ok((
+                image_id as u32,
+                BoundingBox::new(x1 as f32, y1 as f32, x2 as f32, y2 as f32),
+            ))
         }
     }
 
