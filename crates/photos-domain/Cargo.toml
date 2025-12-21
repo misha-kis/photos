@@ -1,0 +1,8 @@
+[package]
+name = "photos-domain"
+edition = "2024"
+
+[dependencies]
+thiserror = "2.0.17"
+photos-core.path = "../photos-core"
+image = { workspace = true }

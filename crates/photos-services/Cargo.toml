@@ -1,0 +1,7 @@
+[package]
+name = "photos-services"
+edition = "2024"
+
+[dependencies]
+async-trait = "0.1.89"
+photos-domain = { path = "../photos-domain" }
