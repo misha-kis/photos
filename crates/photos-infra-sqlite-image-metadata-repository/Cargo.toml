@@ -1,0 +1,10 @@
+[package]
+name = "photos-infra-sqlite-image-metadata-repository"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+async-trait = "0.1.89"
+sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite", "uuid"] }
+photos-domain = { path = "../photos-domain" }
+photos-services = { path = "../photos-services" }

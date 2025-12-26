@@ -1,6 +1,7 @@
 /target
 /models
 /runs
+/data
 /**/.DS_Store
 /**/.sqlx
 
