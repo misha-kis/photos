@@ -1,5 +1,5 @@
+use fast_image_resize::PixelType::{U8, U8x2, U8x3, U8x4};
 use fast_image_resize::{IntoImageView, Resizer};
-use fast_image_resize::PixelType::{U8x2, U8x3, U8x4, U8};
 use image::{DynamicImage, GrayAlphaImage, GrayImage, RgbImage, RgbaImage};
 use photos_services::{ResizeService, ResizeServiceError};
 
@@ -16,7 +16,12 @@ impl FastImageResizeResizer {
 }
 
 impl ResizeService for FastImageResizeResizer {
-    fn resize(&mut self, image: &DynamicImage, width: u32, height: u32) -> Result<DynamicImage, ResizeServiceError> {
+    fn resize(
+        &mut self,
+        image: &DynamicImage,
+        width: u32,
+        height: u32,
+    ) -> Result<DynamicImage, ResizeServiceError> {
         if width == 0 || height == 0 {
             return Err(ResizeServiceError::ResizeServiceError);
         }
@@ -27,15 +32,28 @@ impl ResizeService for FastImageResizeResizer {
         );
 
         self.resizer
-            .resize(image, &mut dst_image, None).map_err(|_| ResizeServiceError::ResizeServiceError)?;
+            .resize(image, &mut dst_image, None)
+            .map_err(|_| ResizeServiceError::ResizeServiceError)?;
 
         let buffer = dst_image.buffer().to_vec();
         Ok(match dst_image.pixel_type() {
-            U8 => DynamicImage::ImageLuma8(GrayImage::from_raw(width, height, buffer).ok_or(ResizeServiceError::ResizeServiceError)?),
-            U8x2 => DynamicImage::ImageLumaA8(GrayAlphaImage::from_raw(width, height, buffer).ok_or(ResizeServiceError::ResizeServiceError)?),
-            U8x3 => DynamicImage::ImageRgb8(RgbImage::from_raw(width, height, buffer).ok_or(ResizeServiceError::ResizeServiceError)?),
-            U8x4 => DynamicImage::ImageRgba8(RgbaImage::from_raw(width, height, buffer).ok_or(ResizeServiceError::ResizeServiceError)?),
-            _ => Err(ResizeServiceError::ResizeServiceError)?
+            U8 => DynamicImage::ImageLuma8(
+                GrayImage::from_raw(width, height, buffer)
+                    .ok_or(ResizeServiceError::ResizeServiceError)?,
+            ),
+            U8x2 => DynamicImage::ImageLumaA8(
+                GrayAlphaImage::from_raw(width, height, buffer)
+                    .ok_or(ResizeServiceError::ResizeServiceError)?,
+            ),
+            U8x3 => DynamicImage::ImageRgb8(
+                RgbImage::from_raw(width, height, buffer)
+                    .ok_or(ResizeServiceError::ResizeServiceError)?,
+            ),
+            U8x4 => DynamicImage::ImageRgba8(
+                RgbaImage::from_raw(width, height, buffer)
+                    .ok_or(ResizeServiceError::ResizeServiceError)?,
+            ),
+            _ => Err(ResizeServiceError::ResizeServiceError)?,
         })
     }
 }
@@ -50,11 +68,7 @@ mod tests {
 
         for x in 0..width {
             for y in 0..height {
-                let pixel = image::Rgb([
-                    (x % 255) as u8,
-                    (y % 255) as u8,
-                    ((x + y) % 255) as u8,
-                ]);
+                let pixel = image::Rgb([(x % 255) as u8, (y % 255) as u8, ((x + y) % 255) as u8]);
                 img.put_pixel(x, y, pixel);
             }
         }

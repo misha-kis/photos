@@ -10,7 +10,12 @@ pub enum ResizeServiceError {
 }
 
 pub trait ResizeService {
-    fn resize(&mut self, image: &DynamicImage, width: u32, height: u32) -> Result<DynamicImage, ResizeServiceError>;
+    fn resize(
+        &mut self,
+        image: &DynamicImage,
+        width: u32,
+        height: u32,
+    ) -> Result<DynamicImage, ResizeServiceError>;
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -21,16 +26,18 @@ pub enum ImageMetadataRepositoryError {
 
 #[async_trait::async_trait]
 pub trait ImageMetadataRepository {
-    async fn register_image(
+    async fn add_image_record(
         &mut self,
-        image_meta: ImageMeta,
-    ) -> Result<ImageRecord, ImageMetadataRepositoryError>;
-    async fn get_image(
+        image_meta: ImageRecord,
+    ) -> Result<(), ImageMetadataRepositoryError>;
+    async fn get_image_record(
         &self,
         image_id: ImageId,
     ) -> Result<ImageRecord, ImageMetadataRepositoryError>;
-    async fn delete_image(&mut self, image_id: ImageId)
-    -> Result<(), ImageMetadataRepositoryError>;
+    async fn delete_image_record(
+        &mut self,
+        image_id: ImageId,
+    ) -> Result<(), ImageMetadataRepositoryError>;
 }
 
 #[derive(thiserror::Error, Debug)]

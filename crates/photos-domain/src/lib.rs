@@ -33,7 +33,7 @@ impl TryFrom<&str> for ImageFormat {
             "jpeg" => Ok(Self::Jpeg),
             "png" => Ok(Self::Png),
             "webp" => Ok(Self::Webp),
-            _ => Err(DomainError::UnsupportedFormat)
+            _ => Err(DomainError::UnsupportedFormat),
         }
     }
 }

@@ -118,7 +118,8 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
     }
 
     fn delete_image(&mut self, image_record: &ImageRecord) -> Result<(), ImageRepositoryError> {
-        let original_path = self.original_path(image_record.id, image_record.meta.format.as_ref().as_ref());
+        let original_path =
+            self.original_path(image_record.id, image_record.meta.format.as_ref().as_ref());
         if !original_path.exists() {
             return Err(ImageRepositoryError::ImageDoesNotExist);
         }
