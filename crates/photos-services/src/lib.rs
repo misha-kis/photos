@@ -39,10 +39,12 @@ pub enum ImageRepositoryError {
     ImageRepositoryError,
     #[error("the requested thumbnail size is invalid")]
     InvalidThumbnailSize,
+    #[error("the requested image does not exist")]
+    ImageDoesNotExist,
 }
 
 pub trait ImageRepository {
-    fn insert_image(&mut self, path: &PathBuf) -> Result<(), ImageRepositoryError>;
+    fn insert_image(&mut self, path: &PathBuf) -> Result<ImageRecord, ImageRepositoryError>;
     fn delete_image(&mut self, image_record: &ImageRecord) -> Result<(), ImageRepositoryError>;
     fn get_image(&self, image_record: &ImageRecord) -> Result<DynamicImage, ImageRepositoryError>;
     fn get_thumbnail(

@@ -1,0 +1,13 @@
+[package]
+name = "photos-infra-fs-repository"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+image.workspace = true
+photos-domain = { path = "../photos-domain" }
+photos-services = { path = "../photos-services" }
+
+[dev-dependencies]
+tempfile = "3.24.0"
+photos-infra-fast-image-resize-resizer = { path = "../photos-infra-fast-image-resize-resizer" }
