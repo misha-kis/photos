@@ -6,6 +6,7 @@ members = [
     "crates/photo-library",
     "crates/photos-core",
     "crates/photos-domain",
+    "crates/photos-infra-fast-image-resize-resizer",
     "crates/photos-services",
     "crates/photos-workflow",
 ]

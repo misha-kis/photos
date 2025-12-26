@@ -3,5 +3,6 @@ name = "photos-services"
 edition = "2024"
 
 [dependencies]
+thiserror = "2.0.17"
 async-trait = "0.1.89"
 photos-domain = { path = "../photos-domain" }
