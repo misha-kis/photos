@@ -1,5 +1,5 @@
 use photos_domain::{
-    DynamicImage, FaceDetection, FaceDetectionWithEmbedding, ImageId, ImageMeta, ImageRecord,
+    DynamicImage, FaceDetection, FaceDetectionWithEmbedding, ImageId, ImageRecord,
 };
 use std::path::PathBuf;
 

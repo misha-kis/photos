@@ -1,6 +1,6 @@
 use photos_domain::{ImageId, ImageRecord};
 use photos_services::{ImageMetadataRepository, ImageMetadataRepositoryError};
-use sqlx::{FromRow, QueryBuilder};
+use sqlx::FromRow;
 use std::path::{Path, PathBuf};
 
 pub struct SqliteImageMetadataRepository {

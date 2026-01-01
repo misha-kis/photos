@@ -3401,7 +3401,6 @@ dependencies = [
  "photos-domain",
  "photos-services",
  "sqlx",
- "tracing",
 ]
 
 [[package]]
