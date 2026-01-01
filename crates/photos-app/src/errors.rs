@@ -3,7 +3,7 @@ pub enum AppError {
     #[error("bad directory")]
     BadDirectory,
     #[error("invalid database state: {err} ")]
-    InvalidDatabaseState{ err: String },
+    InvalidDatabaseState { err: String },
     #[error("something went wrong")]
     Unknown,
 }

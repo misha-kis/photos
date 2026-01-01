@@ -1,7 +1,7 @@
 use photos_domain::{
     DynamicImage, FaceDetection, FaceDetectionWithEmbedding, ImageId, ImageRecord,
 };
-use std::path::PathBuf;
+use std::path::Path;
 
 #[derive(thiserror::Error, Debug)]
 pub enum ResizeServiceError {
@@ -62,7 +62,7 @@ pub enum ImageRepositoryError {
 }
 
 pub trait ImageRepository {
-    fn insert_image(&self, path: &PathBuf) -> Result<ImageRecord, ImageRepositoryError>;
+    fn insert_image(&self, path: &Path) -> Result<ImageRecord, ImageRepositoryError>;
     fn delete_image(&self, image_record: &ImageRecord) -> Result<(), ImageRepositoryError>;
     fn get_image(&self, image_record: &ImageRecord) -> Result<DynamicImage, ImageRepositoryError>;
     fn get_thumbnail(

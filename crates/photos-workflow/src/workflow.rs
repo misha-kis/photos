@@ -89,7 +89,11 @@ impl WorkflowRunner {
     }
 }
 
-pub async fn run_workflow(workflow: Workflow, ctx: StepContext, max_parallel_steps: usize) -> Result<(), JobError> {
+pub async fn run_workflow(
+    workflow: Workflow,
+    ctx: StepContext,
+    max_parallel_steps: usize,
+) -> Result<(), JobError> {
     let _ = ctx
         .progress_reporter
         .send(WorkflowEvent::JobStarted { job_id: ctx.job_id })

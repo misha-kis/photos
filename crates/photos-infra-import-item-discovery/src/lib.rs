@@ -10,7 +10,7 @@ pub fn discover_import_items(path: PathBuf) -> Vec<PathBuf> {
         .filter_map(|p| {
             ImageFormat::try_from(p.extension()?.to_str()?)
                 .ok()
-                .and_then(|_| Some(p))
+                .map(|_| p)
         })
         .collect()
     // let mut res = Vec::new();

@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use rayon::ThreadPool;
+use std::sync::Arc;
 
 pub struct RuntimePools {
     pub cpu_pool: Arc<ThreadPool>,

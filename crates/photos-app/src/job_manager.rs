@@ -1,6 +1,6 @@
 use dashmap::DashMap;
 use photos_core::JobId;
-use photos_workflow::{run_workflow, Job, JobState, StepContext, Workflow};
+use photos_workflow::{Job, JobState, StepContext, Workflow, run_workflow};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -21,11 +21,7 @@ impl JobManager {
         }
     }
 
-    pub fn spawn_workflow(
-        &self,
-        workflow: Workflow,
-        ctx: StepContext,
-    ) -> JobId {
+    pub fn spawn_workflow(&self, workflow: Workflow, ctx: StepContext) -> JobId {
         let job_id = JobId::new_v4();
         let cancel = ctx.cancel.clone();
 

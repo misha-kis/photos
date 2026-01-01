@@ -8,10 +8,10 @@ pub struct FastImageResizeResizer {
     resizer: Mutex<Resizer>,
 }
 
-impl FastImageResizeResizer {
-    pub fn new() -> Self {
+impl Default for FastImageResizeResizer {
+    fn default() -> Self {
         Self {
-            resizer: Mutex::new(Resizer::new()),
+            resizer: Mutex::new(Resizer::default()),
         }
     }
 }
@@ -81,13 +81,13 @@ mod tests {
 
     #[test]
     fn test_new_creates_resizer() {
-        let resizer = FastImageResizeResizer::new();
+        let resizer = FastImageResizeResizer::default();
         assert_eq!(std::mem::size_of_val(&resizer.resizer) > 0, true);
     }
 
     #[test]
     fn test_resize_to_smaller_dimensions() {
-        let mut resizer = FastImageResizeResizer::new();
+        let mut resizer = FastImageResizeResizer::default();
         let original_image = create_test_image(100, 100);
 
         let result = resizer.resize(&original_image, 50, 50);
@@ -101,7 +101,7 @@ mod tests {
 
     #[test]
     fn test_resize_to_larger_dimensions() {
-        let mut resizer = FastImageResizeResizer::new();
+        let mut resizer = FastImageResizeResizer::default();
         let original_image = create_test_image(50, 50);
 
         let result = resizer.resize(&original_image, 150, 150);
@@ -114,7 +114,7 @@ mod tests {
 
     #[test]
     fn test_resize_to_same_dimensions() {
-        let mut resizer = FastImageResizeResizer::new();
+        let mut resizer = FastImageResizeResizer::default();
         let original_image = create_test_image(80, 80);
 
         let result = resizer.resize(&original_image, 80, 80);
@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     fn test_resize_preserves_aspect_ratio_not_required() {
-        let mut resizer = FastImageResizeResizer::new();
+        let mut resizer = FastImageResizeResizer::default();
         let original_image = create_test_image(100, 50);
 
         let result = resizer.resize(&original_image, 50, 50);
@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn test_resize_with_zero_width_or_height() {
-        let mut resizer = FastImageResizeResizer::new();
+        let mut resizer = FastImageResizeResizer::default();
         let original_image = create_test_image(100, 100);
 
         let result = resizer.resize(&original_image, 0, 100);
@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn test_resize_different_image_formats() {
-        let mut resizer = FastImageResizeResizer::new();
+        let mut resizer = FastImageResizeResizer::default();
 
         let gray_img = image::GrayImage::new(100, 100);
         let dynamic_gray = DynamicImage::ImageLuma8(gray_img);
@@ -172,7 +172,7 @@ mod tests {
 
     #[test]
     fn test_resizer_reuse() {
-        let mut resizer = FastImageResizeResizer::new();
+        let mut resizer = FastImageResizeResizer::default();
 
         let img1 = create_test_image(100, 100);
         let result1 = resizer.resize(&img1, 50, 50);
@@ -188,7 +188,7 @@ mod tests {
 
     #[test]
     fn test_resize_pixel_data_integrity() {
-        let mut resizer = FastImageResizeResizer::new();
+        let mut resizer = FastImageResizeResizer::default();
 
         let mut img = RgbImage::new(2, 2);
         img.put_pixel(0, 0, image::Rgb([255, 0, 0]));

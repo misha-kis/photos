@@ -68,7 +68,7 @@ impl<T: ResizeService> FSImageRepository<T> {
 }
 
 impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
-    fn insert_image(&self, image_path: &PathBuf) -> Result<ImageRecord, ImageRepositoryError> {
+    fn insert_image(&self, image_path: &Path) -> Result<ImageRecord, ImageRepositoryError> {
         let image_id = ImageId::now_v7();
         let extension = image_path
             .extension()
@@ -81,7 +81,7 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
         copy(image_path, original_path).map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
         let thumbnail_paths = self.thumbnail_paths(image_id);
         let image =
-            image::open(&image_path).map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
+            image::open(image_path).map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
         let width = image.width();
         let height = image.height();
 
@@ -213,7 +213,7 @@ mod tests {
         let base = temp.path().to_path_buf();
 
         let thumbnail_sizes = vec![512];
-        let resize_service = FastImageResizeResizer::new();
+        let resize_service = FastImageResizeResizer::default();
         let repo = FSImageRepository::new(base.clone(), thumbnail_sizes.clone(), resize_service);
 
         let source = test_image_path("example.jpeg");

@@ -80,12 +80,12 @@ impl App {
         let image_repository = FSImageRepository::new(
             path.clone(),
             config.thumbnail_sizes.clone(),
-            FastImageResizeResizer::new(),
+            FastImageResizeResizer::default(),
         );
         let image_metadata_repository = SqliteImageMetadataRepository::new(path)
             .await
             .map_err(|_| AppError::BadDirectory)?;
-        let resize_service = FastImageResizeResizer::new();
+        let resize_service = FastImageResizeResizer::default();
         let service_registry = Arc::new(AppServiceRegistry {
             image_repository: Arc::new(image_repository),
             image_metadata_repository: Arc::new(image_metadata_repository),
