@@ -11,7 +11,7 @@ pub enum ResizeServiceError {
 
 pub trait ResizeService {
     fn resize(
-        &mut self,
+        &self,
         image: &DynamicImage,
         width: u32,
         height: u32,
@@ -22,22 +22,30 @@ pub trait ResizeService {
 pub enum ImageMetadataRepositoryError {
     #[error("image metadata repository failure")]
     ImageMetadataRepositoryError,
+    #[error("cannot connect or create db")]
+    CannotConnectOrCreate,
 }
 
 #[async_trait::async_trait]
 pub trait ImageMetadataRepository {
     async fn add_image_record(
-        &mut self,
-        image_meta: ImageRecord,
+        &self,
+        image_record: ImageRecord,
+    ) -> Result<(), ImageMetadataRepositoryError>;
+    async fn add_image_record_bulk(
+        &self,
+        image_records: &[ImageRecord],
     ) -> Result<(), ImageMetadataRepositoryError>;
     async fn get_image_record(
         &self,
         image_id: ImageId,
     ) -> Result<ImageRecord, ImageMetadataRepositoryError>;
     async fn delete_image_record(
-        &mut self,
+        &self,
         image_id: ImageId,
     ) -> Result<(), ImageMetadataRepositoryError>;
+
+    async fn get_image_ids(&self) -> Result<Vec<ImageId>, ImageMetadataRepositoryError>;
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -51,12 +59,12 @@ pub enum ImageRepositoryError {
 }
 
 pub trait ImageRepository {
-    fn insert_image(&mut self, path: &PathBuf) -> Result<ImageRecord, ImageRepositoryError>;
-    fn delete_image(&mut self, image_record: &ImageRecord) -> Result<(), ImageRepositoryError>;
+    fn insert_image(&self, path: &PathBuf) -> Result<ImageRecord, ImageRepositoryError>;
+    fn delete_image(&self, image_record: &ImageRecord) -> Result<(), ImageRepositoryError>;
     fn get_image(&self, image_record: &ImageRecord) -> Result<DynamicImage, ImageRepositoryError>;
     fn get_thumbnail(
-        &mut self,
-        image_record: &ImageRecord,
+        &self,
+        image_id: &ImageId,
         thumbnail_size: u32,
     ) -> Result<DynamicImage, ImageRepositoryError>;
 }
@@ -82,6 +90,5 @@ pub trait ImageAnalysisService {
 pub trait ServiceRegistry: Send + Sync {
     fn image_repo(&self) -> &dyn ImageRepository;
     fn image_meta_repo(&self) -> &dyn ImageMetadataRepository;
-    fn thumbnail_service(&self) -> &dyn ResizeService;
-    fn image_analysis_service(&self) -> &dyn ImageAnalysisService;
+    fn resize_service(&self) -> &dyn ResizeService;
 }

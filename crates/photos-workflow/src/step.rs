@@ -5,6 +5,7 @@ use crate::progress::ProgressReporter;
 use photos_core::{JobId, Uuid};
 use photos_services::ServiceRegistry;
 use tokio_util::sync::CancellationToken;
+use crate::Workflow;
 
 pub type StepId = Uuid;
 

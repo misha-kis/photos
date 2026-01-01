@@ -32,7 +32,7 @@ impl<T: ResizeService> FSImageRepository<T> {
 
     fn thumbnail_path(
         &self,
-        image_id: ImageId,
+        image_id: &ImageId,
         thumbnail_size: u32,
     ) -> Result<PathBuf, ImageRepositoryError> {
         if !self.thumbnail_sizes.contains(&thumbnail_size) {
@@ -68,7 +68,7 @@ impl<T: ResizeService> FSImageRepository<T> {
 }
 
 impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
-    fn insert_image(&mut self, image_path: &PathBuf) -> Result<ImageRecord, ImageRepositoryError> {
+    fn insert_image(&self, image_path: &PathBuf) -> Result<ImageRecord, ImageRepositoryError> {
         let image_id = ImageId::now_v7();
         let extension = image_path
             .extension()
@@ -117,7 +117,7 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
         })
     }
 
-    fn delete_image(&mut self, image_record: &ImageRecord) -> Result<(), ImageRepositoryError> {
+    fn delete_image(&self, image_record: &ImageRecord) -> Result<(), ImageRepositoryError> {
         let original_path =
             self.original_path(image_record.id, image_record.meta.format.as_ref().as_ref());
         if !original_path.exists() {
@@ -144,11 +144,11 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
     }
 
     fn get_thumbnail(
-        &mut self,
-        image_record: &ImageRecord,
+        &self,
+        image_id: &ImageId,
         thumbnail_size: u32,
     ) -> Result<DynamicImage, ImageRepositoryError> {
-        let path = self.thumbnail_path(image_record.id, thumbnail_size)?;
+        let path = self.thumbnail_path(image_id, thumbnail_size)?;
         if !path.exists() {
             return Err(ImageRepositoryError::ImageDoesNotExist);
         }

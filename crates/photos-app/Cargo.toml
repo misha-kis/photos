@@ -1,0 +1,22 @@
+[package]
+name = "photos-app"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+photos-core = { path = "../photos-core" }
+photos-domain = { path = "../photos-domain" }
+photos-services = { path = "../photos-services" }
+photos-infra-fast-image-resize-resizer = { path = "../photos-infra-fast-image-resize-resizer" }
+photos-infra-fs-repository = { path = "../photos-infra-fs-repository" }
+photos-infra-sqlite-image-metadata-repository = { path = "../photos-infra-sqlite-image-metadata-repository" }
+photos-infra-import-item-discovery = { path = "../photos-infra-import-item-discovery" }
+photos-workflow = { path = "../photos-workflow" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = "2.0.17"
+rayon = "1.11.0"
+dashmap = "6.1.0"
+async-trait = "0.1.89"
+num_cpus = "1.17.0"
+tokio-util = "0.7.17"

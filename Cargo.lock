@@ -2805,6 +2805,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "num_cpus"
+version = "1.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91df4bbde75afed763b708b7eee1e8e7651e02d97f6d5dd763e89367e957b23b"
+dependencies = [
+ "hermit-abi",
+ "libc",
+]
+
+[[package]]
 name = "num_enum"
 version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3319,6 +3329,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "photos-app"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "dashmap",
+ "num_cpus",
+ "photos-core",
+ "photos-domain",
+ "photos-infra-fast-image-resize-resizer",
+ "photos-infra-fs-repository",
+ "photos-infra-import-item-discovery",
+ "photos-infra-sqlite-image-metadata-repository",
+ "photos-services",
+ "photos-workflow",
+ "rayon",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "photos-core"
 version = "0.0.0"
 dependencies = [
@@ -3352,6 +3384,14 @@ dependencies = [
  "photos-infra-fast-image-resize-resizer",
  "photos-services",
  "tempfile",
+]
+
+[[package]]
+name = "photos-infra-import-item-discovery"
+version = "0.1.0"
+dependencies = [
+ "photos-domain",
+ "walkdir",
 ]
 
 [[package]]
@@ -4792,9 +4832,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-util"
-version = "0.7.16"
+version = "0.7.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14307c986784f72ef81c89db7d9e28d6ac26d16213b109ea501696195e6e3ce5"
+checksum = "2efa149fe76073d6e8fd97ef4f4eca7b67f599660115591483572e406e165594"
 dependencies = [
  "bytes",
  "futures-core",

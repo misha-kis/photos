@@ -2,22 +2,23 @@ use fast_image_resize::PixelType::{U8, U8x2, U8x3, U8x4};
 use fast_image_resize::{IntoImageView, Resizer};
 use image::{DynamicImage, GrayAlphaImage, GrayImage, RgbImage, RgbaImage};
 use photos_services::{ResizeService, ResizeServiceError};
+use std::sync::Mutex;
 
 pub struct FastImageResizeResizer {
-    resizer: Resizer,
+    resizer: Mutex<Resizer>,
 }
 
 impl FastImageResizeResizer {
     pub fn new() -> Self {
         Self {
-            resizer: Resizer::new(),
+            resizer: Mutex::new(Resizer::new()),
         }
     }
 }
 
 impl ResizeService for FastImageResizeResizer {
     fn resize(
-        &mut self,
+        &self,
         image: &DynamicImage,
         width: u32,
         height: u32,
@@ -32,6 +33,8 @@ impl ResizeService for FastImageResizeResizer {
         );
 
         self.resizer
+            .lock()
+            .expect("can acquire lock")
             .resize(image, &mut dst_image, None)
             .map_err(|_| ResizeServiceError::ResizeServiceError)?;
 

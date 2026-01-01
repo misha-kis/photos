@@ -3,11 +3,11 @@ resolver = "3"
 members = [
     "crates/app",
     "crates/cv",
-    "crates/photo-library",
+    "crates/photo-library", "crates/photos-app",
     "crates/photos-core",
     "crates/photos-domain",
     "crates/photos-infra-fast-image-resize-resizer",
-    "crates/photos-infra-fs-repository",
+    "crates/photos-infra-fs-repository", "crates/photos-infra-import-item-discovery",
     "crates/photos-infra-sqlite-image-metadata-repository",
     "crates/photos-services",
     "crates/photos-workflow",

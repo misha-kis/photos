@@ -2,7 +2,7 @@ use photos_core::JobId;
 
 #[derive(Clone)]
 pub struct ProgressReporter {
-    sender: tokio::sync::mpsc::Sender<WorkflowEvent>,
+    pub sender: tokio::sync::mpsc::Sender<WorkflowEvent>,
 }
 
 impl ProgressReporter {
