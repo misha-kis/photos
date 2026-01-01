@@ -13,7 +13,6 @@ photos-infra-sqlite-image-metadata-repository = { path = "../photos-infra-sqlite
 photos-infra-import-item-discovery = { path = "../photos-infra-import-item-discovery" }
 photos-workflow = { path = "../photos-workflow" }
 tokio = { workspace = true }
-tracing = { workspace = true }
 thiserror = "2.0.17"
 rayon = "1.11.0"
 dashmap = "6.1.0"

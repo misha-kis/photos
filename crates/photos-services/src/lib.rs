@@ -20,6 +20,8 @@ pub trait ResizeService {
 
 #[derive(thiserror::Error, Debug)]
 pub enum ImageMetadataRepositoryError {
+    #[error("query failed: {err}")]
+    QueryFailed { err: String },
     #[error("image metadata repository failure")]
     ImageMetadataRepositoryError,
     #[error("cannot connect or create db")]
@@ -30,7 +32,7 @@ pub enum ImageMetadataRepositoryError {
 pub trait ImageMetadataRepository {
     async fn add_image_record(
         &self,
-        image_record: ImageRecord,
+        image_record: &ImageRecord,
     ) -> Result<(), ImageMetadataRepositoryError>;
     async fn add_image_record_bulk(
         &self,
@@ -46,6 +48,7 @@ pub trait ImageMetadataRepository {
     ) -> Result<(), ImageMetadataRepositoryError>;
 
     async fn get_image_ids(&self) -> Result<Vec<ImageId>, ImageMetadataRepositoryError>;
+    async fn get_number_of_images(&self) -> Result<u64, ImageMetadataRepositoryError>;
 }
 
 #[derive(thiserror::Error, Debug)]

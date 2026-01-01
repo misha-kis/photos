@@ -16,7 +16,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-mod config;
+pub mod config;
 mod errors;
 mod job_manager;
 mod runtime;
@@ -74,6 +74,9 @@ pub struct App {
 
 impl App {
     pub async fn new(path: PathBuf, config: config::Config) -> Result<Self, AppError> {
+        if !path.exists() {
+            std::fs::create_dir(&path).map_err(|_| AppError::BadDirectory)?;
+        }
         let image_repository = FSImageRepository::new(
             path.clone(),
             config.thumbnail_sizes.clone(),
@@ -92,12 +95,11 @@ impl App {
     }
 
     pub async fn get_image_ids(&self) -> Result<Vec<ImageId>, AppError> {
-        Ok(self
-            .service_registry
+        self.service_registry
             .image_metadata_repository
             .get_image_ids()
             .await
-            .map_err(|_| AppError::InvalidDatabaseState)?)
+            .map_err(|e| AppError::InvalidDatabaseState { err: e.to_string() })
     }
 
     pub async fn discover_import_items(&self, path: PathBuf) -> Result<Vec<PathBuf>, AppError> {
@@ -106,7 +108,7 @@ impl App {
             .map_err(|_| AppError::Unknown)
     }
 
-    pub async fn import_items(
+    pub fn import_items(
         &self,
         paths: Vec<PathBuf>,
     ) -> (

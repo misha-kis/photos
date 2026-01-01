@@ -29,8 +29,8 @@ impl TryFrom<&str> for ImageFormat {
     type Error = DomainError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "jpeg" => Ok(Self::Jpeg),
+        match value.to_lowercase().as_ref() {
+            "jpeg" | "jpg" => Ok(Self::Jpeg),
             "png" => Ok(Self::Png),
             "webp" => Ok(Self::Webp),
             _ => Err(DomainError::UnsupportedFormat),

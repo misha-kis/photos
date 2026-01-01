@@ -3347,7 +3347,6 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tokio-util",
- "tracing",
 ]
 
 [[package]]
@@ -3402,6 +3401,7 @@ dependencies = [
  "photos-domain",
  "photos-services",
  "sqlx",
+ "tracing",
 ]
 
 [[package]]
@@ -3411,6 +3411,21 @@ dependencies = [
  "async-trait",
  "photos-domain",
  "thiserror 2.0.17",
+]
+
+[[package]]
+name = "photos-ui"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dashmap",
+ "dirs",
+ "eframe",
+ "image",
+ "parking_lot",
+ "photos-app",
+ "photos-domain",
+ "tokio",
 ]
 
 [[package]]

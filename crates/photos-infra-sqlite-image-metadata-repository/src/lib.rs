@@ -1,8 +1,7 @@
 use photos_domain::{ImageId, ImageRecord};
 use photos_services::{ImageMetadataRepository, ImageMetadataRepositoryError};
-use sqlx::types::Uuid;
 use sqlx::{FromRow, QueryBuilder};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub struct SqliteImageMetadataRepository {
     pool: sqlx::SqlitePool,
@@ -17,6 +16,15 @@ impl SqliteImageMetadataRepository {
         let pool = sqlx::SqlitePool::connect_with(opts)
             .await
             .map_err(|_| ImageMetadataRepositoryError::CannotConnectOrCreate)?;
+        let migrator = sqlx::migrate::Migrator::new(Path::new(
+            "./crates/photos-infra-sqlite-image-metadata-repository/migrations",
+        ))
+        .await
+        .map_err(|_| ImageMetadataRepositoryError::CannotConnectOrCreate)?;
+        migrator
+            .run(&pool)
+            .await
+            .map_err(|_| ImageMetadataRepositoryError::CannotConnectOrCreate)?;
         Ok(Self { pool })
     }
 }
@@ -25,7 +33,7 @@ impl SqliteImageMetadataRepository {
 impl ImageMetadataRepository for SqliteImageMetadataRepository {
     async fn add_image_record(
         &self,
-        image_record: ImageRecord,
+        image_record: &ImageRecord,
     ) -> Result<(), ImageMetadataRepositoryError> {
         sqlx::query(r#"INSERT INTO image(uuid) VALUES ($1)"#)
             .bind(image_record.id)
@@ -39,15 +47,19 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         &self,
         image_records: &[ImageRecord],
     ) -> Result<(), ImageMetadataRepositoryError> {
-        QueryBuilder::new(r#"INSERT INTO image(uuid) "#)
-            .push_values(image_records, |mut b, image_record| {
-                b.push(image_record.id);
-            })
-            .build()
-            .execute(&self.pool)
-            .await
-            .map_err(|_| ImageMetadataRepositoryError::ImageMetadataRepositoryError)
-            .map(|_| ())
+        for record in image_records {
+            self.add_image_record(record).await?;
+        }
+        Ok(())
+        // QueryBuilder::new(r#"INSERT INTO image(uuid) "#)
+        //     .push_values(image_records, |mut b, image_record| {
+        //         b.push(image_record.id);
+        //     })
+        //     .build()
+        //     .execute(&self.pool)
+        //     .await
+        //     .map_err(|_| ImageMetadataRepositoryError::ImageMetadataRepositoryError)
+        //     .map(|_| ())
     }
 
     async fn get_image_record(
@@ -67,15 +79,27 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
     async fn get_image_ids(&self) -> Result<Vec<ImageId>, ImageMetadataRepositoryError> {
         #[derive(FromRow)]
         struct Row {
-            uuid: String,
+            uuid: ImageId,
         }
 
         Ok(sqlx::query_as::<_, Row>(r#"SELECT uuid FROM image"#)
             .fetch_all(&self.pool)
             .await
-            .map_err(|_| ImageMetadataRepositoryError::ImageMetadataRepositoryError)?
+            .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?
             .iter()
-            .map(|row| ImageId::parse_str(&row.uuid).unwrap())
+            .map(|row| row.uuid)
             .collect())
+    }
+
+    async fn get_number_of_images(&self) -> Result<u64, ImageMetadataRepositoryError> {
+        #[derive(FromRow)]
+        struct Row {
+            uuid_count: u64,
+        }
+        sqlx::query_as::<_, Row>(r#"SELECT COUNT(uuid) AS uuid_count FROM image"#)
+            .fetch_one(&self.pool)
+            .await
+            .map(|row| row.uuid_count)
+            .map_err(|_| ImageMetadataRepositoryError::ImageMetadataRepositoryError)
     }
 }

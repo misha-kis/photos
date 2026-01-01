@@ -214,8 +214,7 @@ mod tests {
 
         let thumbnail_sizes = vec![512];
         let resize_service = FastImageResizeResizer::new();
-        let mut repo =
-            FSImageRepository::new(base.clone(), thumbnail_sizes.clone(), resize_service);
+        let repo = FSImageRepository::new(base.clone(), thumbnail_sizes.clone(), resize_service);
 
         let source = test_image_path("example.jpeg");
         let record = repo.insert_image(&source).unwrap();
@@ -239,7 +238,7 @@ mod tests {
 
         assert!(thumbnail_path.exists());
 
-        let thumb = repo.get_thumbnail(&record, 512).unwrap();
+        let thumb = repo.get_thumbnail(&record.id, 512).unwrap();
         let (w, h) = thumb.dimensions();
 
         assert!(w == 512 || h == 512);
