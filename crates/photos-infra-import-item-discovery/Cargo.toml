@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 photos-domain = { path = "../photos-domain" }
 walkdir = "2.5.0"
+tracing = { workspace = true }

@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use walkdir::WalkDir;
 
 pub fn discover_import_items(path: PathBuf) -> Vec<PathBuf> {
-    WalkDir::new(path)
+    tracing::info!("discovering import items");
+    let items = WalkDir::new(path)
         .into_iter()
         .filter_map(|e| e.ok())
         .map(|e| e.into_path())
@@ -12,7 +13,9 @@ pub fn discover_import_items(path: PathBuf) -> Vec<PathBuf> {
                 .ok()
                 .map(|_| p)
         })
-        .collect()
+        .collect();
+    tracing::info!("discovering import items done");
+    items
     // let mut res = Vec::new();
     // for path in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
     //     let p = path.into_path();

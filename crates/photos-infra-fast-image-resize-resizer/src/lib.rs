@@ -23,6 +23,7 @@ impl ResizeService for FastImageResizeResizer {
         width: u32,
         height: u32,
     ) -> Result<DynamicImage, ResizeServiceError> {
+        tracing::info!("resizing image");
         if width == 0 || height == 0 {
             return Err(ResizeServiceError::ResizeServiceError);
         }
@@ -39,7 +40,7 @@ impl ResizeService for FastImageResizeResizer {
             .map_err(|_| ResizeServiceError::ResizeServiceError)?;
 
         let buffer = dst_image.buffer().to_vec();
-        Ok(match dst_image.pixel_type() {
+        let image = match dst_image.pixel_type() {
             U8 => DynamicImage::ImageLuma8(
                 GrayImage::from_raw(width, height, buffer)
                     .ok_or(ResizeServiceError::ResizeServiceError)?,
@@ -57,7 +58,9 @@ impl ResizeService for FastImageResizeResizer {
                     .ok_or(ResizeServiceError::ResizeServiceError)?,
             ),
             _ => Err(ResizeServiceError::ResizeServiceError)?,
-        })
+        };
+        tracing::debug!("resizing image done");
+        Ok(image)
     }
 }
 

@@ -7,4 +7,4 @@ edition = "2024"
 fast_image_resize = { version = "5.4.0", features = ["image"] }
 image.workspace = true
 photos-services = { path = "../photos-services" }
-
+tracing = { workspace = true }

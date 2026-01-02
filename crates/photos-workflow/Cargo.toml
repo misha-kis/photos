@@ -12,3 +12,4 @@ photos-services = { path = "../photos-services" }
 thiserror = "2.0.17"
 tokio = { workspace = true }
 tokio-util = { version = "0.7.16", features = ["full"] }
+tracing = { workspace = true }

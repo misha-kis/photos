@@ -9,22 +9,27 @@ pub struct SqliteImageMetadataRepository {
 
 impl SqliteImageMetadataRepository {
     pub async fn new(path: PathBuf) -> Result<Self, ImageMetadataRepositoryError> {
+        tracing::info!("sqlite init");
         let db_path = path.join("db.sqlite");
         let opts = sqlx::sqlite::SqliteConnectOptions::new()
             .filename(db_path)
             .create_if_missing(true);
+        tracing::debug!("sqlite connecting");
         let pool = sqlx::SqlitePool::connect_with(opts)
             .await
             .map_err(|_| ImageMetadataRepositoryError::CannotConnectOrCreate)?;
+        tracing::debug!("sqlite loading migrations");
         let migrator = sqlx::migrate::Migrator::new(Path::new(
             "./crates/photos-infra-sqlite-image-metadata-repository/migrations",
         ))
         .await
         .map_err(|_| ImageMetadataRepositoryError::CannotConnectOrCreate)?;
+        tracing::debug!("sqlite migrating");
         migrator
             .run(&pool)
             .await
             .map_err(|_| ImageMetadataRepositoryError::CannotConnectOrCreate)?;
+        tracing::info!("sqlite init done");
         Ok(Self { pool })
     }
 }
@@ -35,11 +40,13 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         &self,
         image_record: &ImageRecord,
     ) -> Result<(), ImageMetadataRepositoryError> {
+        tracing::info!("sqlite inserting image record");
         sqlx::query(r#"INSERT INTO image(uuid) VALUES ($1)"#)
             .bind(image_record.id)
             .execute(&self.pool)
             .await
             .map_err(|_| ImageMetadataRepositoryError::ImageMetadataRepositoryError)?;
+        tracing::info!("sqlite inserting image record done");
         Ok(())
     }
 
@@ -77,29 +84,35 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
     }
 
     async fn get_image_ids(&self) -> Result<Vec<ImageId>, ImageMetadataRepositoryError> {
+        tracing::info!("sqlite getting image ids");
         #[derive(FromRow)]
         struct Row {
             uuid: ImageId,
         }
 
-        Ok(sqlx::query_as::<_, Row>(r#"SELECT uuid FROM image"#)
+        let result = sqlx::query_as::<_, Row>(r#"SELECT uuid FROM image"#)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?
             .iter()
             .map(|row| row.uuid)
-            .collect())
+            .collect();
+        tracing::info!("sqlite getting image ids done");
+        Ok(result)
     }
 
     async fn get_number_of_images(&self) -> Result<u64, ImageMetadataRepositoryError> {
+        tracing::info!("sqlite getting number of images");
         #[derive(FromRow)]
         struct Row {
             uuid_count: u64,
         }
-        sqlx::query_as::<_, Row>(r#"SELECT COUNT(uuid) AS uuid_count FROM image"#)
+        let result = sqlx::query_as::<_, Row>(r#"SELECT COUNT(uuid) AS uuid_count FROM image"#)
             .fetch_one(&self.pool)
             .await
             .map(|row| row.uuid_count)
-            .map_err(|_| ImageMetadataRepositoryError::ImageMetadataRepositoryError)
+            .map_err(|_| ImageMetadataRepositoryError::ImageMetadataRepositoryError);
+        tracing::info!("sqlite getting number of images done");
+        result
     }
 }

@@ -85,6 +85,10 @@ impl eframe::App for UiApp {
 }
 
 pub fn main() -> eframe::Result<()> {
+    tracing_subscriber::fmt()
+        .with_level(true)
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
     eframe::run_native(
         "Photo Library",
         eframe::NativeOptions::default(),

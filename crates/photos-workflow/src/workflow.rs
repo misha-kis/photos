@@ -94,6 +94,7 @@ pub async fn run_workflow(
     ctx: StepContext,
     max_parallel_steps: usize,
 ) -> Result<(), JobError> {
+    tracing::info!("running workflow");
     let _ = ctx
         .progress_reporter
         .send(WorkflowEvent::JobStarted { job_id: ctx.job_id })
@@ -102,12 +103,14 @@ pub async fn run_workflow(
     let semaphore = Arc::new(Semaphore::new(max_parallel_steps));
     let mut futures = FuturesUnordered::new();
 
+    tracing::debug!("workflow: creating tasks");
     for step in workflow.steps {
         let name = step.name();
         let permit = semaphore.clone().acquire_owned().await.unwrap();
         let step_ctx = ctx.clone();
 
         futures.push(tokio::spawn(async move {
+            tracing::debug!("workflow: starting step: {name}");
             let _ = step_ctx
                 .progress_reporter
                 .send(WorkflowEvent::StepStarted {
@@ -117,11 +120,13 @@ pub async fn run_workflow(
                 .await;
 
             if step_ctx.cancel.is_cancelled() {
+                tracing::debug!("workflow: step cancelled: {name}");
                 return Err(StepError::Cancelled);
             }
 
             let step_ctx = step_ctx.clone();
             let res = step.execute(&step_ctx).await;
+            tracing::debug!("workflow: step done: {name}");
 
             drop(permit);
 
@@ -147,6 +152,7 @@ pub async fn run_workflow(
         }
     }
 
+    tracing::info!("workflow finished");
     let _ = ctx
         .progress_reporter
         .send(WorkflowEvent::JobFinished { job_id: ctx.job_id })

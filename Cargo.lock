@@ -3410,6 +3410,7 @@ dependencies = [
  "fast_image_resize",
  "image",
  "photos-services",
+ "tracing",
 ]
 
 [[package]]
@@ -3421,6 +3422,7 @@ dependencies = [
  "photos-infra-fast-image-resize-resizer",
  "photos-services",
  "tempfile",
+ "tracing",
 ]
 
 [[package]]
@@ -3428,6 +3430,7 @@ name = "photos-infra-import-item-discovery"
 version = "0.1.0"
 dependencies = [
  "photos-domain",
+ "tracing",
  "walkdir",
 ]
 
@@ -3439,6 +3442,7 @@ dependencies = [
  "photos-domain",
  "photos-services",
  "sqlx",
+ "tracing",
 ]
 
 [[package]]
@@ -3466,6 +3470,7 @@ dependencies = [
  "photos-workflow",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -3481,6 +3486,7 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tokio-util",
+ "tracing",
 ]
 
 [[package]]

@@ -7,6 +7,7 @@ edition = "2024"
 image.workspace = true
 photos-domain = { path = "../photos-domain" }
 photos-services = { path = "../photos-services" }
+tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3.24.0"
