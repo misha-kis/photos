@@ -39,7 +39,7 @@ impl UiApp {
 impl eframe::App for UiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::SidePanel::left("navbar")
-            .resizable(true)
+            .resizable(false)
             .default_width(150.0)
             .min_width(20.0)
             .show(ctx, |ui| {
