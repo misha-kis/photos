@@ -1,4 +1,3 @@
-use crate::AppState;
 use std::path::PathBuf;
 
 use crate::app_proxy::AppProxy;
@@ -6,7 +5,6 @@ use crate::components::dynamic_grid::DynamicGrid;
 use crate::components::image::image_view;
 use anyhow::Context;
 use eframe::egui::{self, ColorImage};
-use image::DynamicImage;
 use std::collections::HashMap;
 
 enum ImportState {
@@ -51,8 +49,7 @@ impl ImportView {
                 if ui.button("Cancel").clicked() {
                     on_cancel_or_done();
                 }
-                if let Ok(Some(items)) = app_proxy.try_discover_import_items(&dir_to_import) {
-                    let n_items = items.len();
+                if let Ok(Some(items)) = app_proxy.try_discover_import_items(dir_to_import) {
                     self.import_state = ImportState::Preview {
                         files_to_import: items,
                         dynamic_grid: DynamicGrid::new(128.0),
@@ -89,14 +86,14 @@ impl ImportView {
                     ui.add_space(10.0);
 
                     let get_item_data = |import_image_id: &usize| -> Option<egui::TextureHandle> {
-                        if let Some(cached_handle) = texture_handles.get(&import_image_id) {
+                        if let Some(cached_handle) = texture_handles.get(import_image_id) {
                             return Some(cached_handle.clone());
                         }
                         let path = files_to_import
                             .get(*import_image_id)
                             .context("invalid id")
                             .ok()?;
-                        match app_proxy.try_render_import_thumbnail(&path) {
+                        match app_proxy.try_render_import_thumbnail(path) {
                             Ok(Some(image)) => {
                                 let rgba = image.into_rgba8();
                                 let texture_id = format!("import-{}", import_image_id);
@@ -148,14 +145,14 @@ impl ImportView {
                     ui.add_space(10.0);
 
                     let get_item_data = |import_image_id: &usize| -> Option<egui::TextureHandle> {
-                        if let Some(cached_handle) = texture_handles.get(&import_image_id) {
+                        if let Some(cached_handle) = texture_handles.get(import_image_id) {
                             return Some(cached_handle.clone());
                         }
                         let path = files_to_import
                             .get(*import_image_id)
                             .context("invalid id")
                             .ok()?;
-                        match app_proxy.try_render_import_thumbnail(&path) {
+                        match app_proxy.try_render_import_thumbnail(path) {
                             Ok(Some(image)) => {
                                 let rgba = image.into_rgba8();
                                 let texture_id = format!("import-{}", import_image_id);

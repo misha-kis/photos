@@ -77,6 +77,7 @@ impl eframe::App for UiApp {
                 });
                 if let Some(state) = new_state {
                     self.state = state;
+                    self.app_proxy.refresh_images();
                 }
             }
         });

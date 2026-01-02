@@ -5,7 +5,7 @@ use parking_lot::RwLock;
 use photos_domain::ImageId;
 use photos_workflow::WorkflowEvent;
 use photos_workflow::errors::JobError;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::Receiver;
@@ -137,7 +137,7 @@ impl AppProxy {
 
     pub fn try_discover_import_items(
         &mut self,
-        path: &PathBuf,
+        path: &Path,
     ) -> anyhow::Result<Option<Vec<PathBuf>>> {
         if let Some(shared) = self
             .import_item_discovery_request
@@ -151,7 +151,7 @@ impl AppProxy {
         } else {
             let shared = Arc::new(RwLock::new(None));
             self.import_item_discovery_request = Some(shared.clone());
-            let path = path.clone();
+            let path = path.to_path_buf();
             let app = self.app.clone();
             self.runtime.handle().spawn(async move {
                 let result = app
@@ -192,6 +192,14 @@ impl AppProxy {
             None
         };
         ret_val
+    }
+
+    pub fn refresh_images(&mut self) {
+        let app = self.app.clone();
+        self.image_ids = self
+            .runtime
+            .handle()
+            .block_on(async move { app.lock().await.get_image_ids().await.unwrap() })
     }
 }
 

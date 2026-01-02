@@ -31,8 +31,7 @@ impl Step for RegisterImagesStep {
     async fn execute(&self, ctx: &StepContext) -> Result<(), StepError> {
         let mut image_records = Vec::new();
         let total_images = self.image_paths.len() as u64;
-        let mut processed_images = 0;
-        for path in &self.image_paths {
+        for (processed_images, path) in self.image_paths.iter().enumerate() {
             if ctx.cancel.is_cancelled() {
                 return Err(StepError::Cancelled);
             }
@@ -42,12 +41,11 @@ impl Step for RegisterImagesStep {
                 .insert_image(path)
                 .map_err(|e| StepError::Failed(e.to_string()))?;
             image_records.push(image_record);
-            processed_images += 1;
             ctx.progress_reporter
                 .send(WorkflowEvent::StepProgress {
                     job_id: Uuid::nil(),
                     step: self.name(),
-                    current: processed_images,
+                    current: processed_images as u64 + 1,
                     total: total_images,
                 })
                 .await;

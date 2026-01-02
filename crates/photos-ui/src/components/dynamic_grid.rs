@@ -1,5 +1,4 @@
 use eframe::egui;
-use std::collections::HashMap;
 
 /// dynamic grid
 pub struct DynamicGrid<ItemId, ItemData> {
@@ -54,7 +53,7 @@ impl<ItemId: Copy + std::hash::Hash + Eq, ItemData> DynamicGrid<ItemId, ItemData
             ((available_width + spacing) / self.n_columns as f32 - spacing).clamp(50.0, 500.0);
 
         let item_height = actual_size;
-        let total_rows = (items.len() + self.n_columns - 1) / self.n_columns;
+        let total_rows = items.len().div_ceil(self.n_columns);
 
         egui::ScrollArea::vertical()
             .auto_shrink([false; 2])
@@ -77,9 +76,7 @@ impl<ItemId: Copy + std::hash::Hash + Eq, ItemData> DynamicGrid<ItemId, ItemData
                 let mut end_index = (end_row * self.n_columns).min(items.len());
 
                 if start_index > end_index {
-                    let x = start_index;
-                    start_index = end_index;
-                    end_index = x;
+                    std::mem::swap(&mut start_index, &mut end_index);
                 }
 
                 let mut i = 0;

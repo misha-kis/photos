@@ -26,7 +26,7 @@ impl GalleryView {
         on_item_clicked: impl FnMut(usize),
     ) {
         let get_item_data = |image_id: &ImageId| -> Option<egui::TextureHandle> {
-            if let Some(cached_handle) = self.texture_handles.get(&image_id) {
+            if let Some(cached_handle) = self.texture_handles.get(image_id) {
                 return Some(cached_handle.clone());
             }
 
