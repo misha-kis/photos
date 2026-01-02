@@ -10,7 +10,7 @@ use photos_services::{ImageMetadataRepository, ServiceRegistry};
 use photos_workflow::errors::JobError;
 use photos_workflow::{ProgressReporter, Workflow, WorkflowEvent, run_workflow};
 use photos_workflow::{Step, StepContext, errors::StepError};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -141,6 +141,17 @@ impl App {
         self.service_registry
             .image_repo()
             .get_thumbnail(image_id, thumbnail_size)
+            .map_err(|_| AppError::Unknown)
+    }
+
+    pub async fn get_thumbnail_from_file(
+        &self,
+        path: &Path,
+        thumbnail_size: u32,
+    ) -> Result<DynamicImage, AppError> {
+        self.service_registry
+            .image_repo()
+            .get_thumbnail_from_file(path, thumbnail_size)
             .map_err(|_| AppError::Unknown)
     }
 }

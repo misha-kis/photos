@@ -149,6 +149,14 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
         thumbnail_size: u32,
     ) -> Result<DynamicImage, ImageRepositoryError> {
         let path = self.thumbnail_path(image_id, thumbnail_size)?;
+        self.get_thumbnail_from_file(&path, thumbnail_size)
+    }
+
+    fn get_thumbnail_from_file(
+        &self,
+        path: &Path,
+        thumbnail_size: u32,
+    ) -> Result<DynamicImage, ImageRepositoryError> {
         if !path.exists() {
             return Err(ImageRepositoryError::ImageDoesNotExist);
         }

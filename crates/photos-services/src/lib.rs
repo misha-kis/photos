@@ -70,6 +70,11 @@ pub trait ImageRepository {
         image_id: &ImageId,
         thumbnail_size: u32,
     ) -> Result<DynamicImage, ImageRepositoryError>;
+    fn get_thumbnail_from_file(
+        &self,
+        path: &Path,
+        thumbnail_size: u32,
+    ) -> Result<DynamicImage, ImageRepositoryError>;
 }
 
 #[derive(thiserror::Error, Debug)]

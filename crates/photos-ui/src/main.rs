@@ -1,14 +1,25 @@
-use crate::components::gallery::GalleryView;
+use crate::components::navbar::{NavAction, show_navbar};
+use crate::views::import_selection::ImportSelection;
 use anyhow::Context;
 use eframe::egui;
 use photos_app::config::Config;
+use views::gallery::GalleryView;
+use views::import::ImportView;
 
 mod app_proxy;
 mod components;
+mod views;
+
+pub enum AppState {
+    Gallery(GalleryView),
+    Faces,
+    PreImportDialog(ImportSelection),
+    Import(ImportView),
+}
 
 struct UiApp {
     app_proxy: app_proxy::AppProxy,
-    gallery_view: GalleryView,
+    state: AppState,
 }
 
 impl UiApp {
@@ -19,19 +30,55 @@ impl UiApp {
             thumbnail_sizes: vec![128],
         };
         let app_proxy = app_proxy::AppProxy::new(gallery_dir, config)?;
-        let gallery_view = GalleryView::new();
+        let state = AppState::Gallery(GalleryView::new());
 
-        Ok(Self {
-            app_proxy,
-            gallery_view,
-        })
+        Ok(Self { app_proxy, state })
     }
 }
 
 impl eframe::App for UiApp {
-    fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            self.gallery_view.show(ui, ctx, &mut self.app_proxy, |_| {});
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        egui::SidePanel::left("navbar")
+            .resizable(true)
+            .default_width(150.0)
+            .min_width(20.0)
+            .show(ctx, |ui| {
+                if let Some(action) = show_navbar(ui) {
+                    match action {
+                        NavAction::Gallery => {
+                            self.state = AppState::Gallery(GalleryView::new());
+                        }
+                        NavAction::Faces => {
+                            self.state = AppState::Faces;
+                        }
+                        NavAction::Import => {
+                            self.state = AppState::PreImportDialog(ImportSelection::new())
+                        }
+                    }
+                }
+            });
+
+        egui::CentralPanel::default().show(ctx, |ui| match &mut self.state {
+            AppState::Gallery(view) => view.show(ui, ctx, &mut self.app_proxy, |_| {}),
+            AppState::Faces => {}
+            AppState::PreImportDialog(view) => {
+                let mut new_state = None;
+                view.show(ctx, |path| {
+                    new_state = Some(AppState::Import(ImportView::new(path)))
+                });
+                if let Some(state) = new_state {
+                    self.state = state;
+                }
+            }
+            AppState::Import(view) => {
+                let mut new_state = None;
+                view.show(ui, ctx, &mut self.app_proxy, || {
+                    new_state = Some(AppState::Gallery(GalleryView::new()))
+                });
+                if let Some(state) = new_state {
+                    self.state = state;
+                }
+            }
         });
     }
 }
