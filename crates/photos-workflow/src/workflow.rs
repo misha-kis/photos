@@ -37,7 +37,15 @@ impl WorkflowRunner {
 
         for step in workflow.steps {
             let name = step.name();
-            let permit = semaphore.clone().acquire_owned().await.unwrap();
+            let permit = match semaphore.clone().acquire_owned().await {
+                Ok(p) => p,
+                Err(_) => {
+                    return Err(JobError::StepFailed {
+                        step: name,
+                        error: StepError::Failed("semaphore closed".to_string()),
+                    });
+                }
+            };
             let step_ctx = ctx.clone();
 
             futures.push(tokio::spawn(async move {
@@ -106,7 +114,15 @@ pub async fn run_workflow(
     tracing::debug!("workflow: creating tasks");
     for step in workflow.steps {
         let name = step.name();
-        let permit = semaphore.clone().acquire_owned().await.unwrap();
+        let permit = match semaphore.clone().acquire_owned().await {
+            Ok(p) => p,
+            Err(_) => {
+                return Err(JobError::StepFailed {
+                    step: name,
+                    error: StepError::Failed("semaphore closed".to_string()),
+                });
+            }
+        };
         let step_ctx = ctx.clone();
 
         futures.push(tokio::spawn(async move {

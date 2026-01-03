@@ -41,9 +41,13 @@ impl AppProxy {
     pub fn new(gallery_dir: PathBuf, config: photos_app::config::Config) -> anyhow::Result<Self> {
         let thumbnail_size = config.thumbnail_sizes[0];
         let runtime = tokio::runtime::Runtime::new()?;
-        let app = runtime.block_on(photos_app::App::new(gallery_dir, config))?;
+        let app = runtime.block_on(async {
+            photos_app::App::new(gallery_dir, config).await
+        })?;
         // runtime.block_on(example_import(&mut app));
-        let image_ids = runtime.block_on(app.get_image_ids())?;
+        let image_ids = runtime.block_on(async {
+            app.get_image_ids().await
+        })?;
         Ok(Self {
             runtime,
             app: Arc::new(Mutex::new(app)),
@@ -168,10 +172,9 @@ impl AppProxy {
 
     pub fn start_import(&mut self, paths: Vec<PathBuf>) {
         let app = self.app.clone();
-        let (evt_rx, handle) = self
-            .runtime
-            .handle()
-            .block_on(async move { app.lock().await.import_items(paths) });
+        let (evt_rx, handle) = self.runtime.block_on(async move {
+            app.lock().await.import_items(paths)
+        });
         self.import_job = Some((evt_rx, handle));
     }
 
@@ -196,10 +199,9 @@ impl AppProxy {
 
     pub fn refresh_images(&mut self) {
         let app = self.app.clone();
-        self.image_ids = self
-            .runtime
-            .handle()
-            .block_on(async move { app.lock().await.get_image_ids().await.unwrap() })
+        self.image_ids = self.runtime.block_on(async move {
+            app.lock().await.get_image_ids().await.unwrap()
+        })
     }
 }
 

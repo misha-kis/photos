@@ -37,11 +37,14 @@ impl Step for RegisterImagesStep {
                 tracing::warn!("import workflow cancelled");
                 return Err(StepError::Cancelled);
             }
-            let image_record = ctx
-                .services
-                .image_repo()
-                .insert_image(path)
-                .map_err(|e| StepError::Failed(e.to_string()))?;
+            let services = ctx.services.clone();
+            let path = path.clone();
+            let image_record = tokio::task::spawn_blocking(move || {
+                services.image_repo().insert_image(&path)
+            })
+            .await
+            .map_err(|e| StepError::Failed(format!("spawn_blocking failed: {}", e)))?
+            .map_err(|e| StepError::Failed(e.to_string()))?;
             image_records.push(image_record);
             ctx.progress_reporter
                 .send(WorkflowEvent::StepProgress {
@@ -138,10 +141,14 @@ impl App {
         image_id: &ImageId,
         thumbnail_size: u32,
     ) -> Result<DynamicImage, AppError> {
-        self.service_registry
-            .image_repo()
-            .get_thumbnail(image_id, thumbnail_size)
-            .map_err(|_| AppError::Unknown)
+        let service_registry = self.service_registry.clone();
+        let image_id = *image_id;
+        tokio::task::spawn_blocking(move || {
+            service_registry.image_repo().get_thumbnail(&image_id, thumbnail_size)
+        })
+        .await
+        .map_err(|_| AppError::Unknown)?
+        .map_err(|_| AppError::Unknown)
     }
 
     pub async fn get_thumbnail_from_file(
@@ -149,9 +156,13 @@ impl App {
         path: &Path,
         thumbnail_size: u32,
     ) -> Result<DynamicImage, AppError> {
-        self.service_registry
-            .image_repo()
-            .get_thumbnail_from_file(path, thumbnail_size)
-            .map_err(|_| AppError::Unknown)
+        let service_registry = self.service_registry.clone();
+        let path = path.to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            service_registry.image_repo().get_thumbnail_from_file(&path, thumbnail_size)
+        })
+        .await
+        .map_err(|_| AppError::Unknown)?
+        .map_err(|_| AppError::Unknown)
     }
 }
