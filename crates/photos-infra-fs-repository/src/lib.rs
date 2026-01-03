@@ -111,14 +111,9 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
                 .map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
 
             tracing::debug!("writing resized image");
-            let rgb_image = resized_image.to_rgb8();
+            let rgba_image = resized_image.to_rgba8();
             JpegEncoder::new(&mut out_file)
-                .write_image(
-                    &rgb_image,
-                    width,
-                    height,
-                    image::ExtendedColorType::Rgb8.into(),
-                )
+                .write_image(&rgba_image, width, height, image::ExtendedColorType::Rgba8)
                 .map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
         }
 
