@@ -1,6 +1,4 @@
-use photos_domain::{
-    DynamicImage, FaceDetection, FaceDetectionWithEmbedding, ImageId, ImageRecord,
-};
+use photos_domain::{DynamicImage, ImageId, ImageRecord};
 use std::path::Path;
 
 #[derive(thiserror::Error, Debug)]
@@ -75,24 +73,6 @@ pub trait ImageRepository {
         path: &Path,
         thumbnail_size: u32,
     ) -> Result<DynamicImage, ImageRepositoryError>;
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum ImageAnalysisServiceError {
-    #[error("image metadata repository failure")]
-    ImageAnalysisServiceError,
-}
-
-pub trait ImageAnalysisService {
-    fn detect_faces(
-        &self,
-        image: &DynamicImage,
-    ) -> Result<Vec<FaceDetection>, ImageAnalysisServiceError>;
-    fn get_embedding(
-        &self,
-        image: &DynamicImage,
-        face_detection: FaceDetection,
-    ) -> Result<FaceDetectionWithEmbedding, ImageAnalysisServiceError>;
 }
 
 pub trait ServiceRegistry: Send + Sync {

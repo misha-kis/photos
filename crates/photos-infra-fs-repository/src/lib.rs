@@ -177,7 +177,7 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
             return Err(ImageRepositoryError::ImageDoesNotExist);
         }
         tracing::debug!("opening image");
-        let image = image::open(&path).map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
+        let image = image::open(path).map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
         let width = image.width();
         let height = image.height();
         let (width, height) = thumbnail_width_height(width, height, thumbnail_size);

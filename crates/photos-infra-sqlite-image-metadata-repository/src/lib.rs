@@ -54,33 +54,83 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         &self,
         image_records: &[ImageRecord],
     ) -> Result<(), ImageMetadataRepositoryError> {
-        for record in image_records {
-            self.add_image_record(record).await?;
+        if image_records.is_empty() {
+            return Ok(());
         }
+
+        tracing::info!(
+            "sqlite bulk inserting {} image records",
+            image_records.len()
+        );
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
+
+        for record in image_records {
+            sqlx::query(r#"INSERT INTO image(uuid) VALUES ($1)"#)
+                .bind(record.id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
+        }
+
+        tx.commit()
+            .await
+            .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
+
+        tracing::info!("sqlite bulk insert done");
         Ok(())
-        // QueryBuilder::new(r#"INSERT INTO image(uuid) "#)
-        //     .push_values(image_records, |mut b, image_record| {
-        //         b.push(image_record.id);
-        //     })
-        //     .build()
-        //     .execute(&self.pool)
-        //     .await
-        //     .map_err(|_| ImageMetadataRepositoryError::ImageMetadataRepositoryError)
-        //     .map(|_| ())
     }
 
     async fn get_image_record(
         &self,
         image_id: ImageId,
     ) -> Result<ImageRecord, ImageMetadataRepositoryError> {
-        todo!()
+        tracing::info!("sqlite getting image record for {}", image_id);
+        let exists =
+            sqlx::query_scalar::<_, bool>(r#"SELECT EXISTS(SELECT 1 FROM image WHERE uuid = $1)"#)
+                .bind(image_id)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
+
+        if exists {
+            // Note: The database only stores UUIDs, not full metadata.
+            // Full ImageRecord with metadata should be retrieved via ImageRepository.
+            Err(ImageMetadataRepositoryError::QueryFailed {
+                err: format!(
+                    "Image metadata not stored in database for id {}. Use ImageRepository to get full record.",
+                    image_id
+                ),
+            })
+        } else {
+            Err(ImageMetadataRepositoryError::QueryFailed {
+                err: format!("Image with id {} not found", image_id),
+            })
+        }
     }
 
     async fn delete_image_record(
         &self,
         image_id: ImageId,
     ) -> Result<(), ImageMetadataRepositoryError> {
-        todo!()
+        tracing::info!("sqlite deleting image record for {}", image_id);
+        let rows_affected = sqlx::query(r#"DELETE FROM image WHERE uuid = $1"#)
+            .bind(image_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
+
+        if rows_affected.rows_affected() == 0 {
+            return Err(ImageMetadataRepositoryError::QueryFailed {
+                err: format!("Image with id {} not found", image_id),
+            });
+        }
+
+        tracing::info!("sqlite delete done");
+        Ok(())
     }
 
     async fn get_image_ids(&self) -> Result<Vec<ImageId>, ImageMetadataRepositoryError> {

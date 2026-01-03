@@ -16,17 +16,4 @@ pub fn discover_import_items(path: PathBuf) -> Vec<PathBuf> {
         .collect();
     tracing::info!("discovering import items done");
     items
-    // let mut res = Vec::new();
-    // for path in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
-    //     let p = path.into_path();
-    //     let ext = p.extension();
-    //     if let Some(ext) = ext {
-    //         let ext = ext.to_str().unwrap();
-    //         let format = ImageFormat::try_from(ext);
-    //         if format.is_ok() {
-    //             res.push(p);
-    //         }
-    //     }
-    // }
-    // res
 }

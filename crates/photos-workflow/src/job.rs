@@ -13,13 +13,6 @@ pub enum JobState {
     Cancelled,
 }
 
-#[derive(Clone, Debug)]
-pub enum JobResult {
-    Success,
-    Cancelled,
-    Fail,
-}
-
 pub struct Job {
     pub id: JobId,
     pub state: Arc<Mutex<JobState>>,

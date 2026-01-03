@@ -24,30 +24,12 @@ pub struct AppProxy {
     import_job: Option<(Receiver<WorkflowEvent>, JoinHandle<Result<(), JobError>>)>,
 }
 
-async fn example_import(app: &mut photos_app::App) {
-    let to_import = dirs::picture_dir()
-        .unwrap()
-        .join("picslib3")
-        .join("originals");
-    let items = app.discover_import_items(to_import).await.unwrap();
-    let (mut rx, handle) = app.import_items(items);
-    while let Some(evt) = rx.recv().await {
-        println!("{:?}", evt);
-    }
-    handle.await.unwrap().unwrap();
-}
-
 impl AppProxy {
     pub fn new(gallery_dir: PathBuf, config: photos_app::config::Config) -> anyhow::Result<Self> {
         let thumbnail_size = config.thumbnail_sizes[0];
         let runtime = tokio::runtime::Runtime::new()?;
-        let app = runtime.block_on(async {
-            photos_app::App::new(gallery_dir, config).await
-        })?;
-        // runtime.block_on(example_import(&mut app));
-        let image_ids = runtime.block_on(async {
-            app.get_image_ids().await
-        })?;
+        let app = runtime.block_on(async { photos_app::App::new(gallery_dir, config).await })?;
+        let image_ids = runtime.block_on(async { app.get_image_ids().await })?;
         Ok(Self {
             runtime,
             app: Arc::new(Mutex::new(app)),
@@ -172,9 +154,9 @@ impl AppProxy {
 
     pub fn start_import(&mut self, paths: Vec<PathBuf>) {
         let app = self.app.clone();
-        let (evt_rx, handle) = self.runtime.block_on(async move {
-            app.lock().await.import_items(paths)
-        });
+        let (_job_id, evt_rx, handle) = self
+            .runtime
+            .block_on(async move { app.lock().await.import_items(paths) });
         self.import_job = Some((evt_rx, handle));
     }
 
@@ -199,9 +181,9 @@ impl AppProxy {
 
     pub fn refresh_images(&mut self) {
         let app = self.app.clone();
-        self.image_ids = self.runtime.block_on(async move {
-            app.lock().await.get_image_ids().await.unwrap()
-        })
+        self.image_ids = self
+            .runtime
+            .block_on(async move { app.lock().await.get_image_ids().await.unwrap() })
     }
 }
 

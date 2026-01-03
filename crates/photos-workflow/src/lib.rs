@@ -4,7 +4,7 @@ mod progress;
 mod step;
 mod workflow;
 
-pub use job::{Job, JobResult, JobState};
+pub use job::{Job, JobState};
 pub use progress::{ProgressReporter, WorkflowEvent};
 pub use step::{Step, StepContext};
-pub use workflow::{Workflow, WorkflowRunner, run_workflow};
+pub use workflow::{Workflow, run_workflow};

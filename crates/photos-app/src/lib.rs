@@ -1,15 +1,16 @@
 use crate::errors::AppError;
 use crate::service_registry::AppServiceRegistry;
-use photos_core::Uuid;
+use crate::steps::RegisterImagesStep;
+use photos_core::JobId;
 use photos_domain::{DynamicImage, ImageId};
 use photos_infra_fast_image_resize_resizer::FastImageResizeResizer;
 use photos_infra_fs_repository::FSImageRepository;
 use photos_infra_import_item_discovery::discover_import_items;
 use photos_infra_sqlite_image_metadata_repository::SqliteImageMetadataRepository;
 use photos_services::{ImageMetadataRepository, ServiceRegistry};
+use photos_workflow::StepContext;
 use photos_workflow::errors::JobError;
-use photos_workflow::{ProgressReporter, Workflow, WorkflowEvent, run_workflow};
-use photos_workflow::{Step, StepContext, errors::StepError};
+use photos_workflow::{ProgressReporter, Workflow, run_workflow};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -18,58 +19,8 @@ use tokio_util::sync::CancellationToken;
 
 pub mod config;
 mod errors;
-mod job_manager;
-mod runtime;
 mod service_registry;
-
-struct RegisterImagesStep {
-    pub image_paths: Vec<PathBuf>,
-}
-
-#[async_trait::async_trait]
-impl Step for RegisterImagesStep {
-    async fn execute(&self, ctx: &StepContext) -> Result<(), StepError> {
-        let mut image_records = Vec::new();
-        let total_images = self.image_paths.len() as u64;
-        tracing::info!("importing {total_images} images");
-        for (processed_images, path) in self.image_paths.iter().enumerate() {
-            if ctx.cancel.is_cancelled() {
-                tracing::warn!("import workflow cancelled");
-                return Err(StepError::Cancelled);
-            }
-            let services = ctx.services.clone();
-            let path = path.clone();
-            let image_record = tokio::task::spawn_blocking(move || {
-                services.image_repo().insert_image(&path)
-            })
-            .await
-            .map_err(|e| StepError::Failed(format!("spawn_blocking failed: {}", e)))?
-            .map_err(|e| StepError::Failed(e.to_string()))?;
-            image_records.push(image_record);
-            ctx.progress_reporter
-                .send(WorkflowEvent::StepProgress {
-                    job_id: Uuid::nil(),
-                    step: self.name(),
-                    current: processed_images as u64 + 1,
-                    total: total_images,
-                })
-                .await;
-        }
-        if ctx.cancel.is_cancelled() {
-            return Err(StepError::Cancelled);
-        }
-        ctx.services
-            .image_meta_repo()
-            .add_image_record_bulk(&image_records)
-            .await
-            .map_err(|e| StepError::Failed(e.to_string()))?;
-        Ok(())
-    }
-
-    fn name(&self) -> &'static str {
-        "RegisterImagesStep"
-    }
-}
+mod steps;
 
 pub struct App {
     service_registry: Arc<AppServiceRegistry>,
@@ -108,32 +59,33 @@ impl App {
     pub async fn discover_import_items(&self, path: PathBuf) -> Result<Vec<PathBuf>, AppError> {
         tokio::task::spawn_blocking(move || discover_import_items(path))
             .await
-            .map_err(|_| AppError::Unknown)
+            .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })
     }
 
     pub fn import_items(
         &self,
         paths: Vec<PathBuf>,
     ) -> (
-        mpsc::Receiver<WorkflowEvent>,
+        JobId,
+        mpsc::Receiver<photos_workflow::WorkflowEvent>,
         JoinHandle<Result<(), JobError>>,
     ) {
+        let job_id = JobId::new_v4();
         let (sender, receiver) = tokio::sync::mpsc::channel(16);
         let workflow = Workflow {
             steps: vec![Box::new(RegisterImagesStep { image_paths: paths })],
-            done: 0,
         };
         let cancel = CancellationToken::new();
         let progress_reporter = ProgressReporter { sender };
         let services = self.service_registry.clone();
         let ctx = StepContext {
-            job_id: Uuid::nil(),
+            job_id,
             cancel: cancel.clone(),
             progress_reporter,
             services,
         };
         let join = tokio::spawn(async move { run_workflow(workflow, ctx, 1).await });
-        (receiver, join)
+        (job_id, receiver, join)
     }
 
     pub async fn get_thumbnail(
@@ -144,11 +96,13 @@ impl App {
         let service_registry = self.service_registry.clone();
         let image_id = *image_id;
         tokio::task::spawn_blocking(move || {
-            service_registry.image_repo().get_thumbnail(&image_id, thumbnail_size)
+            service_registry
+                .image_repo()
+                .get_thumbnail(&image_id, thumbnail_size)
         })
         .await
-        .map_err(|_| AppError::Unknown)?
-        .map_err(|_| AppError::Unknown)
+        .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?
+        .map_err(|e| AppError::ImageRepositoryError { err: e.to_string() })
     }
 
     pub async fn get_thumbnail_from_file(
@@ -159,10 +113,12 @@ impl App {
         let service_registry = self.service_registry.clone();
         let path = path.to_path_buf();
         tokio::task::spawn_blocking(move || {
-            service_registry.image_repo().get_thumbnail_from_file(&path, thumbnail_size)
+            service_registry
+                .image_repo()
+                .get_thumbnail_from_file(&path, thumbnail_size)
         })
         .await
-        .map_err(|_| AppError::Unknown)?
-        .map_err(|_| AppError::Unknown)
+        .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?
+        .map_err(|e| AppError::ImageRepositoryError { err: e.to_string() })
     }
 }
