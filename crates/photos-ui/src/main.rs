@@ -1,5 +1,4 @@
 use crate::components::navbar::{NavAction, show_navbar};
-use crate::views::import_selection::ImportSelection;
 use anyhow::Context;
 use eframe::egui;
 use photos_app::config::Config;
@@ -13,7 +12,6 @@ mod views;
 pub enum AppState {
     Gallery(GalleryView),
     Faces,
-    PreImportDialog(ImportSelection),
     Import(ImportView),
 }
 
@@ -52,7 +50,7 @@ impl eframe::App for UiApp {
                             self.state = AppState::Faces;
                         }
                         NavAction::Import => {
-                            self.state = AppState::PreImportDialog(ImportSelection::new())
+                            self.state = AppState::Import(ImportView::new())
                         }
                     }
                 }
@@ -61,15 +59,6 @@ impl eframe::App for UiApp {
         egui::CentralPanel::default().show(ctx, |ui| match &mut self.state {
             AppState::Gallery(view) => view.show(ui, ctx, &mut self.app_proxy, |_| {}),
             AppState::Faces => {}
-            AppState::PreImportDialog(view) => {
-                let mut new_state = None;
-                view.show(ctx, |path| {
-                    new_state = Some(AppState::Import(ImportView::new(path)))
-                });
-                if let Some(state) = new_state {
-                    self.state = state;
-                }
-            }
             AppState::Import(view) => {
                 let mut new_state = None;
                 view.show(ui, ctx, &mut self.app_proxy, || {
