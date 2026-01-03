@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::cell::Cell;
 
 use crate::app_proxy::AppProxy;
 use crate::components::dynamic_grid::DynamicGrid;
@@ -17,6 +18,7 @@ enum ImportState {
         files_to_import: Vec<PathBuf>,
         dynamic_grid: DynamicGrid<usize, egui::TextureHandle>,
         texture_handles: HashMap<usize, egui::TextureHandle>,
+        cancelled: Cell<bool>,
     },
     Importing {
         files_to_import: Vec<PathBuf>,
@@ -64,6 +66,7 @@ impl ImportView {
                         files_to_import: items,
                         dynamic_grid: DynamicGrid::new(128.0),
                         texture_handles: Default::default(),
+                        cancelled: Cell::new(false),
                     };
                 }
             }
@@ -71,31 +74,38 @@ impl ImportView {
                 files_to_import,
                 dynamic_grid,
                 texture_handles,
+                cancelled,
             } => {
-                let ids: Vec<usize> = files_to_import.iter().enumerate().map(|(i, _)| i).collect();
-                let mut new_state = None;
+                if cancelled.get() {
+                    app_proxy.cancel_import_thumbnail_requests();
+                    on_cancel_or_done();
+                    self.import_state = ImportState::Done;
+                    return;
+                }
+
+                let mut should_import = false;
+                
                 ui.vertical(|ui| {
                     ui.horizontal(|ui| {
                         if ui.button("Cancel").clicked() {
-                            on_cancel_or_done();
-                            new_state = Some(ImportState::Done);
+                            cancelled.set(true);
+                            return;
                         }
                         if ui.button("Import").clicked() {
-                            app_proxy.start_import(files_to_import.clone());
-                            new_state = Some(ImportState::Importing {
-                                files_to_import: files_to_import.clone(),
-                                dynamic_grid: DynamicGrid::new(128.0),
-                                texture_handles: texture_handles.clone(),
-                                done: 0,
-                                total: 0,
-                            });
+                            should_import = true;
                         }
                     });
 
                     ui.separator();
                     ui.add_space(10.0);
 
+                    let ids: Vec<usize> = files_to_import.iter().enumerate().map(|(i, _)| i).collect();
+
                     let get_item_data = |import_image_id: &usize| -> Option<egui::TextureHandle> {
+                        if cancelled.get() {
+                            return None;
+                        }
+                        
                         if let Some(cached_handle) = texture_handles.get(import_image_id) {
                             return Some(cached_handle.clone());
                         }
@@ -137,8 +147,20 @@ impl ImportView {
                         |_| {},
                     );
                 });
-                if let Some(new_state) = new_state {
-                    self.import_state = new_state;
+                
+                if cancelled.get() {
+                    app_proxy.cancel_import_thumbnail_requests();
+                    on_cancel_or_done();
+                    self.import_state = ImportState::Done;
+                } else if should_import {
+                    app_proxy.start_import(files_to_import.clone());
+                    self.import_state = ImportState::Importing {
+                        files_to_import: files_to_import.clone(),
+                        dynamic_grid: DynamicGrid::new(128.0),
+                        texture_handles: texture_handles.clone(),
+                        done: 0,
+                        total: 0,
+                    };
                 }
             }
             ImportState::Importing {

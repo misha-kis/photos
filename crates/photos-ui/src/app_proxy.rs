@@ -13,13 +13,18 @@ use tokio::task::JoinHandle;
 
 type SharedImage = Arc<RwLock<Option<anyhow::Result<DynamicImage>>>>;
 
+struct ImportThumbnailRequest {
+    shared: SharedImage,
+    handle: JoinHandle<()>,
+}
+
 pub struct AppProxy {
     runtime: tokio::runtime::Runtime,
     app: Arc<Mutex<photos_app::App>>,
     thumbnail_load_requests: DashMap<ImageId, SharedImage>,
     thumbnail_size: u32,
     pub image_ids: Vec<ImageId>,
-    render_import_thumbnail_requests: DashMap<PathBuf, SharedImage>,
+    render_import_thumbnail_requests: DashMap<PathBuf, ImportThumbnailRequest>,
     import_item_discovery_request: Option<Arc<RwLock<Option<anyhow::Result<Vec<PathBuf>>>>>>,
     import_job: Option<(Receiver<WorkflowEvent>, JoinHandle<Result<(), JobError>>)>,
 }
@@ -85,11 +90,11 @@ impl AppProxy {
         &self,
         path: &PathBuf,
     ) -> anyhow::Result<Option<DynamicImage>> {
-        if let Some((_, shared)) = self
+        if let Some((_, request)) = self
             .render_import_thumbnail_requests
-            .remove_if(path, |_, shared| shared.read().is_some())
+            .remove_if(path, |_, request| request.shared.read().is_some())
         {
-            if let Some(result) = shared.write().take() {
+            if let Some(result) = request.shared.write().take() {
                 return result.map(Some);
             }
             return Ok(None);
@@ -100,25 +105,42 @@ impl AppProxy {
         }
 
         let shared = Arc::new(RwLock::new(None));
-        self.render_import_thumbnail_requests
-            .insert(path.clone(), shared.clone());
-
+        let shared_clone = shared.clone();
         let thumbnail_size = self.thumbnail_size;
         let app = self.app.clone();
-        let path = path.clone();
+        let path_clone = path.clone();
 
-        self.runtime.handle().spawn(async move {
+        let handle = self.runtime.handle().spawn(async move {
             let result = async {
                 let app = app.lock().await;
-                app.get_thumbnail_from_file(&path, thumbnail_size).await
+                app.get_thumbnail_from_file(&path_clone, thumbnail_size).await
             }
             .await
             .context("getting thumbnail");
 
-            shared.write().replace(result);
+            shared_clone.write().replace(result);
         });
 
+        self.render_import_thumbnail_requests.insert(
+            path.clone(),
+            ImportThumbnailRequest {
+                shared,
+                handle,
+            },
+        );
+
         Ok(None)
+    }
+
+    pub fn cancel_import_thumbnail_requests(&mut self) {
+        // Abort all pending thumbnail tasks
+        self.render_import_thumbnail_requests
+            .iter()
+            .for_each(|entry| {
+                entry.value().handle.abort();
+            });
+        // Clear all requests
+        self.render_import_thumbnail_requests.clear();
     }
 
     pub fn try_discover_import_items(
