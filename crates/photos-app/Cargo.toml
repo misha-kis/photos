@@ -19,3 +19,4 @@ dashmap = "6.1.0"
 async-trait = "0.1.89"
 num_cpus = "1.17.0"
 tokio-util = "0.7.17"
+tracing = { workspace = true }

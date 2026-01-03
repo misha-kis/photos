@@ -86,6 +86,7 @@ impl eframe::App for UiApp {
 
 pub fn main() -> eframe::Result<()> {
     tracing_subscriber::fmt()
+        .without_time()
         .with_level(true)
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();

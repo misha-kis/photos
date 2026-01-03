@@ -31,8 +31,10 @@ impl Step for RegisterImagesStep {
     async fn execute(&self, ctx: &StepContext) -> Result<(), StepError> {
         let mut image_records = Vec::new();
         let total_images = self.image_paths.len() as u64;
+        tracing::info!("importing {total_images} images");
         for (processed_images, path) in self.image_paths.iter().enumerate() {
             if ctx.cancel.is_cancelled() {
+                tracing::warn!("import workflow cancelled");
                 return Err(StepError::Cancelled);
             }
             let image_record = ctx
