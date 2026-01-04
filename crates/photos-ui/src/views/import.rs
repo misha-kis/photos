@@ -196,16 +196,14 @@ impl ImportView {
                 let mut should_finish = false;
                 if let Some(receiver) = app_proxy.get_import_workflow_receiver() {
                     while let Ok(event) = receiver.try_recv() {
-                        if let photos_app::AppEvent::WorkflowEvent { event: workflow_event } = event {
-                            if let Some(progress) = crate::app_proxy::ImportProgress::from_workflow_event(&workflow_event) {
-                                match progress {
-                                    crate::app_proxy::ImportProgress::Progress(new_done, new_total) => {
-                                        *done = new_done;
-                                        *total = new_total;
-                                    }
-                                    crate::app_proxy::ImportProgress::Done => {
-                                        should_finish = true;
-                                    }
+                        if let Some(progress) = crate::app_proxy::ImportProgress::from_app_event(&event) {
+                            match progress {
+                                crate::app_proxy::ImportProgress::Progress(new_done, new_total) => {
+                                    *done = new_done;
+                                    *total = new_total;
+                                }
+                                crate::app_proxy::ImportProgress::Done => {
+                                    should_finish = true;
                                 }
                             }
                         }

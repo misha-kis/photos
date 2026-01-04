@@ -1,6 +1,6 @@
 use crate::errors::AppError;
+use photos_core::JobId;
 use photos_domain::{DynamicImage, ImageId};
-use photos_workflow::WorkflowEvent;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
@@ -20,8 +20,14 @@ pub enum AppEvent {
         path: PathBuf,
         result: Result<Vec<PathBuf>, AppError>,
     },
-    WorkflowEvent {
-        event: WorkflowEvent,
+    ImportProgress {
+        job_id: JobId,
+        current: u64,
+        total: u64,
+    },
+    ImportFinished {
+        job_id: JobId,
+        success: bool,
     },
 }
 

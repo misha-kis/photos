@@ -1,34 +1,41 @@
 use crate::errors::AppError;
 use crate::service_registry::AppServiceRegistry;
-use crate::steps::RegisterImagesStep;
 use photos_core::JobId;
-use photos_domain::ImageId;
+use photos_domain::{ImageId, ImageRecord};
 use photos_infra_fast_image_resize_resizer::FastImageResizeResizer;
 use photos_infra_fs_repository::FSImageRepository;
 use photos_infra_import_item_discovery::discover_import_items;
 use photos_infra_sqlite_image_metadata_repository::SqliteImageMetadataRepository;
 use photos_services::{ImageMetadataRepository, ServiceRegistry};
 use photos_task_queue::{TaskPriority, TaskQueue};
-use photos_workflow::StepContext;
-use photos_workflow::{ProgressReporter, Workflow, run_workflow};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
+use tokio::sync::Mutex;
 
 pub mod config;
 mod errors;
 pub mod events;
 mod service_registry;
-mod steps;
 
 pub use events::AppEvent;
+
+struct ImportJobState {
+    job_id: JobId,
+    total: u64,
+    completed: u64,
+    image_records: Vec<ImageRecord>,
+    event_sender: mpsc::UnboundedSender<AppEvent>,
+    result_sender: mpsc::Sender<AppEvent>,
+}
 
 pub struct App {
     service_registry: Arc<AppServiceRegistry>,
     task_queue: Arc<TaskQueue>,
     event_sender: mpsc::UnboundedSender<AppEvent>,
+    import_jobs: Arc<Mutex<HashMap<JobId, Arc<Mutex<ImportJobState>>>>>,
     _runtime: Runtime,
 }
 
@@ -67,6 +74,7 @@ impl App {
             service_registry,
             task_queue,
             event_sender,
+            import_jobs: Arc::new(Mutex::new(HashMap::new())),
             _runtime: runtime,
         })
     }
@@ -132,47 +140,233 @@ impl App {
 
     pub fn import_items(&self, paths: Vec<PathBuf>) -> mpsc::Receiver<AppEvent> {
         let (tx, rx) = mpsc::channel(16);
+        let job_id = JobId::new_v4();
+        let total = paths.len() as u64;
         let service_registry = self.service_registry.clone();
         let event_sender = self.event_sender.clone();
+        let import_jobs = self.import_jobs.clone();
+        let task_queue = self.task_queue.clone();
         let handle = self._runtime.handle().clone();
         
-        let task = Box::new(move || {
-            let service_registry = service_registry.clone();
-            let event_sender = event_sender.clone();
-            let tx = tx.clone();
-            let paths = paths.clone();
-            let handle = handle.clone();
+        let job_state = Arc::new(Mutex::new(ImportJobState {
+            job_id,
+            total,
+            completed: 0,
+            image_records: Vec::new(),
+            event_sender: event_sender.clone(),
+            result_sender: tx.clone(),
+        }));
+        
+        {
+            let mut jobs = self._runtime.block_on(async {
+                import_jobs.lock().await
+            });
+            jobs.insert(job_id, job_state.clone());
+        }
+        
+        // Send initial progress event
+        let initial_event = AppEvent::ImportProgress {
+            job_id,
+            current: 0,
+            total,
+        };
+        let _ = event_sender.send(initial_event.clone());
+        let _ = self._runtime.block_on(async { tx.send(initial_event).await });
+        
+        // Submit individual task for each image
+        for path in paths.into_iter() {
+            let job_state_clone = job_state.clone();
+            let service_registry_clone = service_registry.clone();
+            let event_sender_clone = event_sender.clone();
+            let tx_clone = tx.clone();
+            let task_queue_clone = task_queue.clone();
+            let handle_clone = handle.clone();
+            let import_jobs_clone = import_jobs.clone();
+            let job_id_clone = job_id;
             
-            handle.spawn(async move {
-                let job_id = JobId::new_v4();
-                let (workflow_sender, mut workflow_receiver) = tokio::sync::mpsc::channel(16);
-                let workflow = Workflow {
-                    steps: vec![Box::new(RegisterImagesStep { image_paths: paths })],
-                };
-                let cancel = CancellationToken::new();
-                let progress_reporter = ProgressReporter { sender: workflow_sender };
-                let ctx = StepContext {
-                    job_id,
-                    cancel: cancel.clone(),
-                    progress_reporter,
-                    services: service_registry,
-                };
+            let task = Box::new(move || {
+                let job_state = job_state_clone.clone();
+                let service_registry = service_registry_clone.clone();
+                let event_sender = event_sender_clone.clone();
+                let tx = tx_clone.clone();
+                let path = path.clone();
+                let handle = handle_clone.clone();
+                let import_jobs = import_jobs_clone.clone();
+                let job_id = job_id_clone;
                 
-                let event_sender_clone = event_sender.clone();
-                let tx_clone = tx.clone();
-                tokio::spawn(async move {
-                    while let Some(workflow_event) = workflow_receiver.recv().await {
-                        let app_event = AppEvent::WorkflowEvent { event: workflow_event };
-                        let _ = event_sender_clone.send(app_event.clone());
-                        let _ = tx_clone.send(app_event).await;
+                handle.spawn(async move {
+                    // Process single image
+                    let image_record_result = tokio::task::spawn_blocking({
+                        let service_registry = service_registry.clone();
+                        let path = path.clone();
+                        move || service_registry.image_repo().insert_image(&path)
+                    })
+                    .await
+                    .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() });
+                    
+                    let mut job_state_guard = job_state.lock().await;
+                    
+                    match image_record_result {
+                        Ok(Ok(image_record)) => {
+                            job_state_guard.image_records.push(image_record);
+                            job_state_guard.completed += 1;
+                            
+                            // Send progress event
+                            let progress_event = AppEvent::ImportProgress {
+                                job_id,
+                                current: job_state_guard.completed,
+                                total: job_state_guard.total,
+                            };
+                            let _ = event_sender.send(progress_event.clone());
+                            let _ = tx.send(progress_event).await;
+                            
+                            // Check if all images are processed
+                            if job_state_guard.completed == job_state_guard.total {
+                                // All images processed, save to metadata repository
+                                let image_records = std::mem::take(&mut job_state_guard.image_records);
+                                let service_registry_clone = service_registry.clone();
+                                let event_sender_final = event_sender.clone();
+                                let tx_final = tx.clone();
+                                let job_id_final = job_id;
+                                let import_jobs_final = import_jobs.clone();
+                                
+                                drop(job_state_guard);
+                                
+                                // Save all records in bulk
+                                match service_registry_clone
+                                    .image_metadata_repository
+                                    .add_image_record_bulk(&image_records)
+                                    .await
+                                {
+                                    Ok(_) => {
+                                        // Send completion event
+                                        let finish_event = AppEvent::ImportFinished {
+                                            job_id: job_id_final,
+                                            success: true,
+                                        };
+                                        let _ = event_sender_final.send(finish_event.clone());
+                                        let _ = tx_final.send(finish_event).await;
+                                        
+                                        // Remove job from tracking
+                                        let mut jobs = import_jobs_final.lock().await;
+                                        jobs.remove(&job_id_final);
+                                    }
+                                    Err(e) => {
+                                        // Send failure event
+                                        let finish_event = AppEvent::ImportFinished {
+                                            job_id: job_id_final,
+                                            success: false,
+                                        };
+                                        let _ = event_sender_final.send(finish_event.clone());
+                                        let _ = tx_final.send(finish_event).await;
+                                        
+                                        // Remove job from tracking
+                                        let mut jobs = import_jobs_final.lock().await;
+                                        jobs.remove(&job_id_final);
+                                        
+                                        tracing::error!("Failed to save image records: {}", e);
+                                    }
+                                }
+                            }
+                        }
+                        Ok(Err(e)) => {
+                            job_state_guard.completed += 1;
+                            tracing::error!("Failed to import image {}: {}", path.display(), e);
+                            
+                            // Still send progress even on failure
+                            let progress_event = AppEvent::ImportProgress {
+                                job_id,
+                                current: job_state_guard.completed,
+                                total: job_state_guard.total,
+                            };
+                            let _ = event_sender.send(progress_event.clone());
+                            let _ = tx.send(progress_event).await;
+                            
+                            // Check if all done (even with failures)
+                            if job_state_guard.completed == job_state_guard.total {
+                                let image_records = std::mem::take(&mut job_state_guard.image_records);
+                                let service_registry_clone = service_registry.clone();
+                                let event_sender_final = event_sender.clone();
+                                let tx_final = tx.clone();
+                                let job_id_final = job_id;
+                                let import_jobs_final = import_jobs.clone();
+                                
+                                drop(job_state_guard);
+                                
+                                // Try to save what we have
+                                if !image_records.is_empty() {
+                                    let _ = service_registry_clone
+                                        .image_metadata_repository
+                                        .add_image_record_bulk(&image_records)
+                                        .await;
+                                }
+                                
+                                // Send completion event (with partial success)
+                                let finish_event = AppEvent::ImportFinished {
+                                    job_id: job_id_final,
+                                    success: !image_records.is_empty(),
+                                };
+                                let _ = event_sender_final.send(finish_event.clone());
+                                let _ = tx_final.send(finish_event).await;
+                                
+                                // Remove job from tracking
+                                let mut jobs = import_jobs_final.lock().await;
+                                jobs.remove(&job_id_final);
+                            }
+                        }
+                        Err(e) => {
+                            job_state_guard.completed += 1;
+                            tracing::error!("Failed to spawn blocking task for {}: {}", path.display(), e);
+                            
+                            // Still send progress even on failure
+                            let progress_event = AppEvent::ImportProgress {
+                                job_id,
+                                current: job_state_guard.completed,
+                                total: job_state_guard.total,
+                            };
+                            let _ = event_sender.send(progress_event.clone());
+                            let _ = tx.send(progress_event).await;
+                            
+                            // Check if all done
+                            if job_state_guard.completed == job_state_guard.total {
+                                let image_records = std::mem::take(&mut job_state_guard.image_records);
+                                let service_registry_clone = service_registry.clone();
+                                let event_sender_final = event_sender.clone();
+                                let tx_final = tx.clone();
+                                let job_id_final = job_id;
+                                let import_jobs_final = import_jobs.clone();
+                                
+                                drop(job_state_guard);
+                                
+                                // Try to save what we have
+                                if !image_records.is_empty() {
+                                    let _ = service_registry_clone
+                                        .image_metadata_repository
+                                        .add_image_record_bulk(&image_records)
+                                        .await;
+                                }
+                                
+                                // Send completion event
+                                let finish_event = AppEvent::ImportFinished {
+                                    job_id: job_id_final,
+                                    success: !image_records.is_empty(),
+                                };
+                                let _ = event_sender_final.send(finish_event.clone());
+                                let _ = tx_final.send(finish_event).await;
+                                
+                                // Remove job from tracking
+                                let mut jobs = import_jobs_final.lock().await;
+                                jobs.remove(&job_id_final);
+                            }
+                        }
                     }
                 });
-                
-                let _ = run_workflow(workflow, ctx, 1).await;
             });
-        });
+            
+            // Submit each image import as a separate low-priority task
+            let _ = task_queue_clone.submit(task, TaskPriority::Low);
+        }
         
-        let _ = self.task_queue.submit(task, TaskPriority::Low);
         rx
     }
 

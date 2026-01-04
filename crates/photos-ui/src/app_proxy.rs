@@ -1,7 +1,6 @@
 use image::DynamicImage;
 use photos_app::AppEvent;
 use photos_domain::ImageId;
-use photos_workflow::WorkflowEvent;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -175,12 +174,12 @@ pub enum ImportProgress {
 }
 
 impl ImportProgress {
-    pub fn from_workflow_event(event: &WorkflowEvent) -> Option<Self> {
+    pub fn from_app_event(event: &photos_app::AppEvent) -> Option<Self> {
         match event {
-            WorkflowEvent::StepProgress { current, total, .. } => {
+            photos_app::AppEvent::ImportProgress { current, total, .. } => {
                 Some(ImportProgress::Progress(*current, *total))
             }
-            WorkflowEvent::JobFinished { .. } => Some(ImportProgress::Done),
+            photos_app::AppEvent::ImportFinished { .. } => Some(ImportProgress::Done),
             _ => None,
         }
     }
