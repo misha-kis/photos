@@ -2,16 +2,32 @@ use fast_image_resize::PixelType::{U8, U8x2, U8x3, U8x4};
 use fast_image_resize::{IntoImageView, Resizer};
 use image::{DynamicImage, GrayAlphaImage, GrayImage, RgbImage, RgbaImage};
 use photos_services::{ResizeService, ResizeServiceError};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 pub struct FastImageResizeResizer {
-    resizer: Mutex<Resizer>,
+    pool: Arc<Vec<Mutex<Resizer>>>,
+    next_index: Arc<AtomicUsize>,
 }
 
 impl Default for FastImageResizeResizer {
     fn default() -> Self {
+        let pool_size = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+            .max(1);
+        Self::with_pool_size(pool_size)
+    }
+}
+
+impl FastImageResizeResizer {
+    pub fn with_pool_size(pool_size: usize) -> Self {
+        let pool: Vec<Mutex<Resizer>> = (0..pool_size.max(1))
+            .map(|_| Mutex::new(Resizer::default()))
+            .collect();
         Self {
-            resizer: Mutex::new(Resizer::default()),
+            pool: Arc::new(pool),
+            next_index: Arc::new(AtomicUsize::new(0)),
         }
     }
 }
@@ -33,7 +49,13 @@ impl ResizeService for FastImageResizeResizer {
             image.pixel_type().expect("has pixel type"),
         );
 
-        self.resizer
+        let index = self
+            .next_index
+            .fetch_add(1, Ordering::Relaxed)
+            % self.pool.len();
+        let resizer = &self.pool[index];
+
+        resizer
             .lock()
             .expect("can acquire lock")
             .resize(image, &mut dst_image, None)
@@ -85,7 +107,7 @@ mod tests {
     #[test]
     fn test_new_creates_resizer() {
         let resizer = FastImageResizeResizer::default();
-        assert_eq!(std::mem::size_of_val(&resizer.resizer) > 0, true);
+        assert!(!resizer.pool.is_empty());
     }
 
     #[test]
