@@ -25,14 +25,13 @@ impl GalleryView {
         app_proxy: &mut AppProxy,
         on_item_clicked: impl FnMut(usize),
     ) {
-        let get_item_data = |image_id: &ImageId| -> Option<egui::TextureHandle> {
-            if let Some(cached_handle) = self.texture_handles.get(image_id) {
-                return Some(cached_handle.clone());
-            }
-
-            match app_proxy.try_get_thumbnail(*image_id) {
-                Ok(Some(image)) => {
-                    let rgba = image.into_rgba8();
+        app_proxy.process_events();
+        
+        let image_ids = app_proxy.image_ids.clone();
+        for image_id in &image_ids {
+            if !self.texture_handles.contains_key(image_id) {
+                if let Some(image) = app_proxy.get_cached_thumbnail(image_id) {
+                    let rgba = image.clone().into_rgba8();
                     let texture_id = format!("thumbnail-{}", image_id);
                     let tex = ctx.load_texture(
                         &texture_id,
@@ -42,21 +41,24 @@ impl GalleryView {
                         ),
                         Default::default(),
                     );
-                    self.texture_handles.insert(*image_id, tex.clone());
-                    Some(tex)
-                }
-                Ok(None) => None,
-                Err(e) => {
-                    tracing::error!("could not fetch item: {e:?}");
-                    None
+                    self.texture_handles.insert(*image_id, tex);
                 }
             }
+        }
+
+        let get_item_data = |image_id: &ImageId| -> Option<egui::TextureHandle> {
+            if let Some(cached_handle) = self.texture_handles.get(image_id) {
+                return Some(cached_handle.clone());
+            }
+
+            app_proxy.request_thumbnail(*image_id);
+            None
         };
 
         self.dynamic_grid.show(
             ui,
             ctx,
-            &app_proxy.image_ids,
+            &image_ids,
             get_item_data,
             |ui, visible, size, texture_opt, click| {
                 image_view(ui, visible, size, || Ok(texture_opt.clone()), Some(click));

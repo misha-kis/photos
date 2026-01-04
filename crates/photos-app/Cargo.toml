@@ -12,6 +12,7 @@ photos-infra-fs-repository = { path = "../photos-infra-fs-repository" }
 photos-infra-sqlite-image-metadata-repository = { path = "../photos-infra-sqlite-image-metadata-repository" }
 photos-infra-import-item-discovery = { path = "../photos-infra-import-item-discovery" }
 photos-workflow = { path = "../photos-workflow" }
+photos-task-queue = { path = "../photos-task-queue" }
 tokio = { workspace = true }
 thiserror = "2.0.17"
 async-trait = "0.1.89"

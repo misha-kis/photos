@@ -9,6 +9,7 @@ members = [
     "crates/photos-infra-import-item-discovery",
     "crates/photos-infra-sqlite-image-metadata-repository",
     "crates/photos-services",
+    "crates/photos-task-queue",
     "crates/photos-ui",
     "crates/photos-workflow",
 ]

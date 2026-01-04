@@ -11,7 +11,7 @@ impl ProgressReporter {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum WorkflowEvent {
     JobStarted {
         job_id: JobId,

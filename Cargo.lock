@@ -2973,6 +2973,7 @@ dependencies = [
  "photos-infra-import-item-discovery",
  "photos-infra-sqlite-image-metadata-repository",
  "photos-services",
+ "photos-task-queue",
  "photos-workflow",
  "thiserror 2.0.17",
  "tokio",
@@ -3045,6 +3046,14 @@ dependencies = [
  "async-trait",
  "photos-domain",
  "thiserror 2.0.17",
+]
+
+[[package]]
+name = "photos-task-queue"
+version = "0.1.0"
+dependencies = [
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

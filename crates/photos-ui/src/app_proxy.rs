@@ -1,216 +1,187 @@
-use anyhow::Context;
-use dashmap::DashMap;
 use image::DynamicImage;
-use parking_lot::RwLock;
+use photos_app::AppEvent;
 use photos_domain::ImageId;
 use photos_workflow::WorkflowEvent;
-use photos_workflow::errors::JobError;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tokio::sync::mpsc::Receiver;
-use tokio::task::JoinHandle;
-
-type SharedImage = Arc<RwLock<Option<anyhow::Result<DynamicImage>>>>;
-
-struct ImportThumbnailRequest {
-    shared: SharedImage,
-    handle: JoinHandle<()>,
-}
 
 pub struct AppProxy {
-    runtime: tokio::runtime::Runtime,
-    app: Arc<Mutex<photos_app::App>>,
-    thumbnail_load_requests: DashMap<ImageId, SharedImage>,
+    app: Arc<photos_app::App>,
     thumbnail_size: u32,
     pub image_ids: Vec<ImageId>,
-    render_import_thumbnail_requests: DashMap<PathBuf, ImportThumbnailRequest>,
-    import_item_discovery_request: Option<Arc<RwLock<Option<anyhow::Result<Vec<PathBuf>>>>>>,
-    import_job: Option<(Receiver<WorkflowEvent>, JoinHandle<Result<(), JobError>>)>,
+    thumbnail_receivers: HashMap<ImageId, Receiver<AppEvent>>,
+    import_thumbnail_receivers: HashMap<PathBuf, Receiver<AppEvent>>,
+    import_discovery_receiver: Option<Receiver<AppEvent>>,
+    import_workflow_receiver: Option<Receiver<AppEvent>>,
+    thumbnail_cache: HashMap<ImageId, DynamicImage>,
+    import_thumbnail_cache: HashMap<PathBuf, DynamicImage>,
+    discovered_items: Option<Vec<PathBuf>>,
 }
 
 impl AppProxy {
     pub fn new(gallery_dir: PathBuf, config: photos_app::config::Config) -> anyhow::Result<Self> {
         let thumbnail_size = config.thumbnail_sizes[0];
-        let runtime = tokio::runtime::Runtime::new()?;
-        let app = runtime.block_on(async { photos_app::App::new(gallery_dir, config).await })?;
-        let image_ids = runtime.block_on(async { app.get_image_ids().await })?;
+        let app = Arc::new(photos_app::App::new(gallery_dir, config)?);
+        
+        let mut receiver = app.get_image_ids();
+        let mut image_ids = Vec::new();
+        
+        let rt = tokio::runtime::Runtime::new()?;
+        rt.block_on(async {
+            if let Some(event) = receiver.recv().await {
+                if let AppEvent::ImageIdsReady { result } = event {
+                    if let Ok(ids) = result {
+                        image_ids = ids;
+                    }
+                }
+            }
+        });
+        
         Ok(Self {
-            runtime,
-            app: Arc::new(Mutex::new(app)),
-            thumbnail_load_requests: DashMap::new(),
+            app,
             thumbnail_size,
             image_ids,
-            render_import_thumbnail_requests: DashMap::new(),
-            import_item_discovery_request: None,
-            import_job: None,
+            thumbnail_receivers: HashMap::new(),
+            import_thumbnail_receivers: HashMap::new(),
+            import_discovery_receiver: None,
+            import_workflow_receiver: None,
+            thumbnail_cache: HashMap::new(),
+            import_thumbnail_cache: HashMap::new(),
+            discovered_items: None,
         })
-    }
-
-    pub fn try_get_thumbnail(&self, id: ImageId) -> anyhow::Result<Option<DynamicImage>> {
-        if let Some((_, shared)) = self
-            .thumbnail_load_requests
-            .remove_if(&id, |_, shared| shared.read().is_some())
-        {
-            if let Some(result) = shared.write().take() {
-                return result.map(Some);
-            }
-            return Ok(None);
-        }
-
-        if self.thumbnail_load_requests.contains_key(&id) {
-            return Ok(None);
-        }
-
-        let shared = Arc::new(RwLock::new(None));
-        self.thumbnail_load_requests.insert(id, shared.clone());
-
-        let thumbnail_size = self.thumbnail_size;
-        let app = self.app.clone();
-
-        self.runtime.handle().spawn(async move {
-            let result = async {
-                let app = app.lock().await;
-                app.get_thumbnail(&id, thumbnail_size).await
-            }
-            .await
-            .context("getting thumbnail");
-
-            shared.write().replace(result);
-        });
-
-        Ok(None)
     }
 
     pub fn number_of_images(&self) -> usize {
         self.image_ids.len()
     }
 
-    pub fn try_render_import_thumbnail(
-        &self,
-        path: &PathBuf,
-    ) -> anyhow::Result<Option<DynamicImage>> {
-        if let Some((_, request)) = self
-            .render_import_thumbnail_requests
-            .remove_if(path, |_, request| request.shared.read().is_some())
-        {
-            if let Some(result) = request.shared.write().take() {
-                return result.map(Some);
-            }
-            return Ok(None);
+    pub fn request_thumbnail(&mut self, id: ImageId) -> &mut Receiver<AppEvent> {
+        if !self.thumbnail_receivers.contains_key(&id) && !self.thumbnail_cache.contains_key(&id) {
+            let receiver = self.app.get_thumbnail(id, self.thumbnail_size);
+            self.thumbnail_receivers.insert(id, receiver);
         }
-
-        if self.render_import_thumbnail_requests.contains_key(path) {
-            return Ok(None);
-        }
-
-        let shared = Arc::new(RwLock::new(None));
-        let shared_clone = shared.clone();
-        let thumbnail_size = self.thumbnail_size;
-        let app = self.app.clone();
-        let path_clone = path.clone();
-
-        let handle = self.runtime.handle().spawn(async move {
-            let result = async {
-                let app = app.lock().await;
-                app.get_thumbnail_from_file(&path_clone, thumbnail_size).await
-            }
-            .await
-            .context("getting thumbnail");
-
-            shared_clone.write().replace(result);
-        });
-
-        self.render_import_thumbnail_requests.insert(
-            path.clone(),
-            ImportThumbnailRequest {
-                shared,
-                handle,
-            },
-        );
-
-        Ok(None)
+        self.thumbnail_receivers.get_mut(&id).unwrap()
     }
 
-    pub fn cancel_import_thumbnail_requests(&mut self) {
-        // Abort all pending thumbnail tasks
-        self.render_import_thumbnail_requests
-            .iter()
-            .for_each(|entry| {
-                entry.value().handle.abort();
-            });
-        // Clear all requests
-        self.render_import_thumbnail_requests.clear();
+    pub fn get_cached_thumbnail(&self, id: &ImageId) -> Option<&DynamicImage> {
+        self.thumbnail_cache.get(id)
     }
 
-    pub fn try_discover_import_items(
-        &mut self,
-        path: &Path,
-    ) -> anyhow::Result<Option<Vec<PathBuf>>> {
-        if let Some(shared) = self
-            .import_item_discovery_request
-            .take_if(|shared| shared.read().is_some())
-        {
-            if let Some(shared) = shared.write().take() {
-                shared.map(Some)
-            } else {
-                Ok(None)
-            }
-        } else {
-            let shared = Arc::new(RwLock::new(None));
-            self.import_item_discovery_request = Some(shared.clone());
-            let path = path.to_path_buf();
-            let app = self.app.clone();
-            self.runtime.handle().spawn(async move {
-                let result = app
-                    .lock()
-                    .await
-                    .discover_import_items(path)
-                    .await
-                    .context("discovering import items");
-                shared.write().replace(result);
-            });
-            Ok(None)
+    pub fn request_import_thumbnail(&mut self, path: &PathBuf) -> &mut Receiver<AppEvent> {
+        if !self.import_thumbnail_receivers.contains_key(path) && !self.import_thumbnail_cache.contains_key(path) {
+            let receiver = self.app.get_thumbnail_from_file(path.clone(), self.thumbnail_size);
+            self.import_thumbnail_receivers.insert(path.clone(), receiver);
         }
+        self.import_thumbnail_receivers.get_mut(path).unwrap()
+    }
+
+    pub fn get_cached_import_thumbnail(&self, path: &PathBuf) -> Option<&DynamicImage> {
+        self.import_thumbnail_cache.get(path)
+    }
+
+    pub fn request_discover_import_items(&mut self, path: &Path) {
+        if self.import_discovery_receiver.is_none() {
+            let receiver = self.app.discover_import_items(path.to_path_buf());
+            self.import_discovery_receiver = Some(receiver);
+        }
+    }
+
+    pub fn get_discovered_items(&self) -> Option<&Vec<PathBuf>> {
+        self.discovered_items.as_ref()
     }
 
     pub fn start_import(&mut self, paths: Vec<PathBuf>) {
-        let app = self.app.clone();
-        let (_job_id, evt_rx, handle) = self
-            .runtime
-            .block_on(async move { app.lock().await.import_items(paths) });
-        self.import_job = Some((evt_rx, handle));
+        let receiver = self.app.import_items(paths);
+        self.import_workflow_receiver = Some(receiver);
     }
 
-    pub fn check_import_progress(&mut self) -> ImportProgress {
-        let mut ret_val = ImportProgress::None;
-        self.import_job = if let Some((mut evt_rx, handle)) = self.import_job.take() {
-            while let Ok(evt) = evt_rx.try_recv() {
-                ret_val = match evt {
-                    WorkflowEvent::StepProgress { current, total, .. } => {
-                        ImportProgress::Progress(current, total)
+    pub fn get_import_workflow_receiver(&mut self) -> Option<&mut Receiver<AppEvent>> {
+        self.import_workflow_receiver.as_mut()
+    }
+
+    pub fn get_discovery_receiver(&mut self) -> Option<&mut Receiver<AppEvent>> {
+        self.import_discovery_receiver.as_mut()
+    }
+
+    pub fn process_events(&mut self) {
+        let mut completed_thumbnails = Vec::new();
+        for (id, receiver) in &mut self.thumbnail_receivers {
+            if let Ok(event) = receiver.try_recv() {
+                if let AppEvent::ThumbnailReady { image_id, result } = event {
+                    if let Ok(image) = result {
+                        self.thumbnail_cache.insert(image_id, image);
                     }
-                    WorkflowEvent::JobFinished { .. } => ImportProgress::Done,
-                    _ => ret_val,
-                };
+                    completed_thumbnails.push(*id);
+                }
             }
-            Some((evt_rx, handle))
-        } else {
-            None
-        };
-        ret_val
+        }
+        for id in completed_thumbnails {
+            self.thumbnail_receivers.remove(&id);
+        }
+
+        let mut completed_import_thumbnails = Vec::new();
+        for (_path, receiver) in &mut self.import_thumbnail_receivers {
+            if let Ok(event) = receiver.try_recv() {
+                if let AppEvent::ThumbnailFromFileReady { path, result } = event {
+                    if let Ok(image) = result {
+                        self.import_thumbnail_cache.insert(path.clone(), image);
+                    }
+                    completed_import_thumbnails.push(path);
+                }
+            }
+        }
+        for path in completed_import_thumbnails {
+            self.import_thumbnail_receivers.remove(&path);
+        }
+
+        if let Some(receiver) = &mut self.import_discovery_receiver {
+            if let Ok(event) = receiver.try_recv() {
+                if let AppEvent::ImportItemsDiscovered { result, .. } = event {
+                    if let Ok(items) = result {
+                        self.discovered_items = Some(items);
+                    }
+                    self.import_discovery_receiver = None;
+                }
+            }
+        }
+
     }
 
     pub fn refresh_images(&mut self) {
-        let app = self.app.clone();
-        self.image_ids = self
-            .runtime
-            .block_on(async move { app.lock().await.get_image_ids().await.unwrap() })
+        let mut receiver = self.app.get_image_ids();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            if let Some(event) = receiver.recv().await {
+                if let AppEvent::ImageIdsReady { result } = event {
+                    if let Ok(ids) = result {
+                        self.image_ids = ids;
+                    }
+                }
+            }
+        });
+    }
+
+    pub fn cancel_import_thumbnail_requests(&mut self) {
+        self.import_thumbnail_receivers.clear();
+        self.import_thumbnail_cache.clear();
     }
 }
 
 pub enum ImportProgress {
-    None,
     Progress(u64, u64),
     Done,
+}
+
+impl ImportProgress {
+    pub fn from_workflow_event(event: &WorkflowEvent) -> Option<Self> {
+        match event {
+            WorkflowEvent::StepProgress { current, total, .. } => {
+                Some(ImportProgress::Progress(*current, *total))
+            }
+            WorkflowEvent::JobFinished { .. } => Some(ImportProgress::Done),
+            _ => None,
+        }
+    }
 }

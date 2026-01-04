@@ -61,9 +61,11 @@ impl ImportView {
                 if ui.button("Cancel").clicked() {
                     on_cancel_or_done();
                 }
-                if let Ok(Some(items)) = app_proxy.try_discover_import_items(dir_to_import) {
+                app_proxy.request_discover_import_items(dir_to_import);
+                app_proxy.process_events();
+                if let Some(items) = app_proxy.get_discovered_items() {
                     self.import_state = ImportState::Preview {
-                        files_to_import: items,
+                        files_to_import: items.clone(),
                         dynamic_grid: DynamicGrid::new(128.0),
                         texture_handles: Default::default(),
                         cancelled: Cell::new(false),
@@ -81,6 +83,26 @@ impl ImportView {
                     on_cancel_or_done();
                     self.import_state = ImportState::Done;
                     return;
+                }
+
+                app_proxy.process_events();
+                
+                for (idx, path) in files_to_import.iter().enumerate() {
+                    if !texture_handles.contains_key(&idx) {
+                        if let Some(image) = app_proxy.get_cached_import_thumbnail(path) {
+                            let rgba = image.clone().into_rgba8();
+                            let texture_id = format!("import-{}", idx);
+                            let tex = ctx.load_texture(
+                                &texture_id,
+                                ColorImage::from_rgba_unmultiplied(
+                                    [rgba.width() as _, rgba.height() as _],
+                                    rgba.as_raw(),
+                                ),
+                                Default::default(),
+                            );
+                            texture_handles.insert(idx, tex);
+                        }
+                    }
                 }
 
                 let mut should_import = false;
@@ -113,27 +135,8 @@ impl ImportView {
                             .get(*import_image_id)
                             .context("invalid id")
                             .ok()?;
-                        match app_proxy.try_render_import_thumbnail(path) {
-                            Ok(Some(image)) => {
-                                let rgba = image.into_rgba8();
-                                let texture_id = format!("import-{}", import_image_id);
-                                let tex = ctx.load_texture(
-                                    &texture_id,
-                                    ColorImage::from_rgba_unmultiplied(
-                                        [rgba.width() as _, rgba.height() as _],
-                                        rgba.as_raw(),
-                                    ),
-                                    Default::default(),
-                                );
-                                texture_handles.insert(*import_image_id, tex.clone());
-                                Some(tex)
-                            }
-                            Ok(None) => None,
-                            Err(e) => {
-                                tracing::error!("could not fetch item: {e:?}");
-                                None
-                            }
-                        }
+                        app_proxy.request_import_thumbnail(path);
+                        None
                     };
 
                     dynamic_grid.show(
@@ -170,6 +173,50 @@ impl ImportView {
                 done,
                 total,
             } => {
+                app_proxy.process_events();
+                
+                for (idx, path) in files_to_import.iter().enumerate() {
+                    if !texture_handles.contains_key(&idx) {
+                        if let Some(image) = app_proxy.get_cached_import_thumbnail(path) {
+                            let rgba = image.clone().into_rgba8();
+                            let texture_id = format!("import-{}", idx);
+                            let tex = ctx.load_texture(
+                                &texture_id,
+                                ColorImage::from_rgba_unmultiplied(
+                                    [rgba.width() as _, rgba.height() as _],
+                                    rgba.as_raw(),
+                                ),
+                                Default::default(),
+                            );
+                            texture_handles.insert(idx, tex);
+                        }
+                    }
+                }
+                
+                let mut should_finish = false;
+                if let Some(receiver) = app_proxy.get_import_workflow_receiver() {
+                    while let Ok(event) = receiver.try_recv() {
+                        if let photos_app::AppEvent::WorkflowEvent { event: workflow_event } = event {
+                            if let Some(progress) = crate::app_proxy::ImportProgress::from_workflow_event(&workflow_event) {
+                                match progress {
+                                    crate::app_proxy::ImportProgress::Progress(new_done, new_total) => {
+                                        *done = new_done;
+                                        *total = new_total;
+                                    }
+                                    crate::app_proxy::ImportProgress::Done => {
+                                        should_finish = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                if should_finish {
+                    self.import_state = ImportState::Done;
+                    return;
+                }
+                
                 let ids: Vec<usize> = files_to_import.iter().enumerate().map(|(i, _)| i).collect();
                 ui.vertical(|ui| {
                     ui.label(format!("Importing: {done} / {total}"));
@@ -184,27 +231,8 @@ impl ImportView {
                             .get(*import_image_id)
                             .context("invalid id")
                             .ok()?;
-                        match app_proxy.try_render_import_thumbnail(path) {
-                            Ok(Some(image)) => {
-                                let rgba = image.into_rgba8();
-                                let texture_id = format!("import-{}", import_image_id);
-                                let tex = ctx.load_texture(
-                                    &texture_id,
-                                    ColorImage::from_rgba_unmultiplied(
-                                        [rgba.width() as _, rgba.height() as _],
-                                        rgba.as_raw(),
-                                    ),
-                                    Default::default(),
-                                );
-                                texture_handles.insert(*import_image_id, tex.clone());
-                                Some(tex)
-                            }
-                            Ok(None) => None,
-                            Err(e) => {
-                                tracing::error!("could not fetch item: {e:?}");
-                                None
-                            }
-                        }
+                        app_proxy.request_import_thumbnail(path);
+                        None
                     };
 
                     dynamic_grid.show(
@@ -218,16 +246,6 @@ impl ImportView {
                         |_| {},
                     );
                 });
-                match app_proxy.check_import_progress() {
-                    crate::app_proxy::ImportProgress::None => {}
-                    crate::app_proxy::ImportProgress::Progress(new_done, new_total) => {
-                        *done = new_done;
-                        *total = new_total
-                    }
-                    crate::app_proxy::ImportProgress::Done => {
-                        self.import_state = ImportState::Done;
-                    }
-                }
             }
             ImportState::Done => {
                 on_cancel_or_done();
