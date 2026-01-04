@@ -19,5 +19,9 @@ exclude = ["models", "test_data"]
 anyhow = "1.0.100"
 image = "0.25.8"
 tracing = "0.1.41"
-tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "ansi"] }
 tokio = { version = "1.48.0", features = ["full"] }
+
+[profile.release-debug]
+inherits = "release"
+debug = true
