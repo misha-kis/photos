@@ -87,6 +87,10 @@ impl ImportView {
 
                 app_proxy.process_events();
                 
+                let has_pending_thumbnails = files_to_import.iter().enumerate().any(|(idx, _)| {
+                    !texture_handles.contains_key(&idx)
+                });
+                
                 for (idx, path) in files_to_import.iter().enumerate() {
                     if !texture_handles.contains_key(&idx) {
                         if let Some(image) = app_proxy.get_cached_import_thumbnail(path) {
@@ -103,6 +107,10 @@ impl ImportView {
                             texture_handles.insert(idx, tex);
                         }
                     }
+                }
+                
+                if has_pending_thumbnails {
+                    ctx.request_repaint();
                 }
 
                 let mut should_import = false;
@@ -208,6 +216,10 @@ impl ImportView {
                             }
                         }
                     }
+                }
+                
+                if !should_finish && *done < *total {
+                    ctx.request_repaint();
                 }
                 
                 if should_finish {
