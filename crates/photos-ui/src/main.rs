@@ -24,9 +24,7 @@ impl UiApp {
     fn new() -> anyhow::Result<Self> {
         let picture_dir = dirs::picture_dir().context("Could not resolve pictures directory")?;
         let gallery_dir = picture_dir.join("picslib4");
-        let config = Config {
-            thumbnail_sizes: vec![128],
-        };
+        let config = Config::default();
         let app_proxy = app_proxy::AppProxy::new(gallery_dir, config)?;
         let state = AppState::Gallery(GalleryView::new());
 
