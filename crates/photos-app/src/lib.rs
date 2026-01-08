@@ -180,24 +180,16 @@ impl App {
             .block_on(async { tx.send(initial_event).await });
 
         for path in paths.into_iter() {
-            let job_state_clone = job_state.clone();
-            let service_registry_clone = service_registry.clone();
-            let event_sender_clone = event_sender.clone();
-            let tx_clone = tx.clone();
-            let import_jobs_clone = import_jobs.clone();
-            let job_id_clone = job_id;
+            let job_state = job_state.clone();
+            let service_registry = service_registry.clone();
+            let event_sender = event_sender.clone();
+            let tx = tx.clone();
+            let import_jobs = import_jobs.clone();
+            let task_queue = self.task_queue.clone();
 
             let task: Box<
                 dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
             > = Box::new(move || {
-                let job_state = job_state_clone.clone();
-                let service_registry = service_registry_clone.clone();
-                let event_sender = event_sender_clone.clone();
-                let tx = tx_clone.clone();
-                let path = path.clone();
-                let import_jobs = import_jobs_clone.clone();
-                let job_id = job_id_clone;
-
                 Box::pin(import_item_task_function(
                     service_registry,
                     path,
@@ -206,6 +198,7 @@ impl App {
                     tx,
                     job_id,
                     import_jobs,
+                    task_queue,
                 )) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
             });
 
@@ -321,6 +314,7 @@ async fn import_item_task_function(
     tx: mpsc::Sender<AppEvent>,
     job_id: JobId,
     import_jobs: Arc<Mutex<HashMap<JobId, Arc<Mutex<ImportJobState>>>>>,
+    task_queue: Arc<Mutex<TaskQueue>>,
 ) {
     let image_record_result = service_registry
         .image_repo()
