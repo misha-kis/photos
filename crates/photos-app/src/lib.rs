@@ -12,8 +12,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc;
 use tokio::sync::Mutex;
+use tokio::sync::mpsc;
 
 pub mod config;
 mod errors;
@@ -33,10 +33,10 @@ struct ImportJobState {
 
 pub struct App {
     service_registry: Arc<AppServiceRegistry>,
-    task_queue: Arc<TaskQueue>,
+    task_queue: Arc<Mutex<TaskQueue>>,
     event_sender: mpsc::UnboundedSender<AppEvent>,
     import_jobs: Arc<Mutex<HashMap<JobId, Arc<Mutex<ImportJobState>>>>>,
-    _runtime: Runtime,
+    runtime: Runtime,
 }
 
 impl App {
@@ -44,38 +44,42 @@ impl App {
         if !path.exists() {
             std::fs::create_dir(&path).map_err(|_| AppError::BadDirectory)?;
         }
-        
-        let runtime = Runtime::new().map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?;
-        
+
+        let runtime =
+            Runtime::new().map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?;
+
         let image_repository = FSImageRepository::new(
             path.clone(),
             config.thumbnail_sizes.clone(),
             FastImageResizeResizer::default(),
         );
-        
+
         let image_metadata_repository = runtime.block_on(async {
             SqliteImageMetadataRepository::new(path)
                 .await
                 .map_err(|_| AppError::BadDirectory)
         })?;
-        
+
         let resize_service = FastImageResizeResizer::default();
         let service_registry = Arc::new(AppServiceRegistry {
             image_repository: Arc::new(image_repository),
             image_metadata_repository: Arc::new(image_metadata_repository),
             resize_service: Arc::new(resize_service),
         });
-        
+
         let (event_sender, _event_receiver) = mpsc::unbounded_channel();
-        
-        let task_queue = Arc::new(TaskQueue::new(runtime.handle().clone(), config.max_blocking_tasks));
-        
+
+        let task_queue = Arc::new(Mutex::new(TaskQueue::new(
+            runtime.handle().clone(),
+            config.max_blocking_tasks,
+        )));
+
         Ok(Self {
             service_registry,
             task_queue,
             event_sender,
             import_jobs: Arc::new(Mutex::new(HashMap::new())),
-            _runtime: runtime,
+            runtime,
         })
     }
 
@@ -83,53 +87,63 @@ impl App {
         let (tx, rx) = mpsc::channel(1);
         let service_registry = self.service_registry.clone();
         let event_sender = self.event_sender.clone();
-        
-        let task: Box<dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static> = Box::new(move || {
+
+        let task: Box<
+            dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
+        > = Box::new(move || {
             let service_registry = service_registry.clone();
             let event_sender = event_sender.clone();
             let tx = tx;
-            
+
             Box::pin(async move {
                 let result = service_registry
                     .image_metadata_repository
                     .get_image_ids()
                     .await
                     .map_err(|e| AppError::InvalidDatabaseState { err: e.to_string() });
-                
+
                 let event = events::AppEvent::ImageIdsReady { result };
                 let _ = event_sender.send(event.clone());
                 let _ = tx.send(event).await;
             }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
         });
-        
-        let _ = self.task_queue.submit(task, TaskPriority::High);
+        let _ = self.runtime.block_on(async {
+            self.task_queue
+                .lock()
+                .await
+                .submit(task, TaskPriority::High)
+        });
         rx
     }
 
     pub fn discover_import_items(&self, path: PathBuf) -> mpsc::Receiver<AppEvent> {
         let (tx, rx) = mpsc::channel(1);
         let event_sender = self.event_sender.clone();
-        
-        let task: Box<dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static> = Box::new(move || {
+
+        let task: Box<
+            dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
+        > = Box::new(move || {
             let event_sender = event_sender.clone();
             let tx = tx;
             let path_clone = path.clone();
-            
+
             Box::pin(async move {
                 let result = tokio::task::spawn_blocking(move || discover_import_items(path_clone))
                     .await
                     .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() });
-                
-                let event = AppEvent::ImportItemsDiscovered {
-                    path,
-                    result,
-                };
+
+                let event = AppEvent::ImportItemsDiscovered { path, result };
                 let _ = event_sender.send(event.clone());
                 let _ = tx.send(event).await;
             }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
         });
-        
-        let _ = self.task_queue.submit(task, TaskPriority::High);
+
+        let _ = self.runtime.block_on(async {
+            self.task_queue
+                .lock()
+                .await
+                .submit(task, TaskPriority::High)
+        });
         rx
     }
 
@@ -140,8 +154,7 @@ impl App {
         let service_registry = self.service_registry.clone();
         let event_sender = self.event_sender.clone();
         let import_jobs = self.import_jobs.clone();
-        let task_queue = self.task_queue.clone();
-        
+
         let job_state = Arc::new(Mutex::new(ImportJobState {
             job_id,
             total,
@@ -150,32 +163,33 @@ impl App {
             event_sender: event_sender.clone(),
             result_sender: tx.clone(),
         }));
-        
+
         {
-            let mut jobs = self._runtime.block_on(async {
-                import_jobs.lock().await
-            });
+            let mut jobs = self.runtime.block_on(async { import_jobs.lock().await });
             jobs.insert(job_id, job_state.clone());
         }
-        
+
         let initial_event = AppEvent::ImportProgress {
             job_id,
             current: 0,
             total,
         };
         let _ = event_sender.send(initial_event.clone());
-        let _ = self._runtime.block_on(async { tx.send(initial_event).await });
-        
+        let _ = self
+            .runtime
+            .block_on(async { tx.send(initial_event).await });
+
         for path in paths.into_iter() {
             let job_state_clone = job_state.clone();
             let service_registry_clone = service_registry.clone();
             let event_sender_clone = event_sender.clone();
             let tx_clone = tx.clone();
-            let task_queue_clone = task_queue.clone();
             let import_jobs_clone = import_jobs.clone();
             let job_id_clone = job_id;
-            
-            let task: Box<dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static> = Box::new(move || {
+
+            let task: Box<
+                dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
+            > = Box::new(move || {
                 let job_state = job_state_clone.clone();
                 let service_registry = service_registry_clone.clone();
                 let event_sender = event_sender_clone.clone();
@@ -183,7 +197,7 @@ impl App {
                 let path = path.clone();
                 let import_jobs = import_jobs_clone.clone();
                 let job_id = job_id_clone;
-                
+
                 Box::pin(async move {
                     let image_record_result = tokio::task::spawn_blocking({
                         let service_registry = service_registry.clone();
@@ -192,14 +206,14 @@ impl App {
                     })
                     .await
                     .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() });
-                    
+
                     let mut job_state_guard = job_state.lock().await;
-                    
+
                     match image_record_result {
                         Ok(Ok(image_record)) => {
                             job_state_guard.image_records.push(image_record);
                             job_state_guard.completed += 1;
-                            
+
                             let progress_event = AppEvent::ImportProgress {
                                 job_id,
                                 current: job_state_guard.completed,
@@ -207,17 +221,18 @@ impl App {
                             };
                             let _ = event_sender.send(progress_event.clone());
                             let _ = tx.send(progress_event).await;
-                            
+
                             if job_state_guard.completed == job_state_guard.total {
-                                let image_records = std::mem::take(&mut job_state_guard.image_records);
+                                let image_records =
+                                    std::mem::take(&mut job_state_guard.image_records);
                                 let service_registry_clone = service_registry.clone();
                                 let event_sender_final = event_sender.clone();
                                 let tx_final = tx.clone();
                                 let job_id_final = job_id;
                                 let import_jobs_final = import_jobs.clone();
-                                
+
                                 drop(job_state_guard);
-                                
+
                                 match service_registry_clone
                                     .image_metadata_repository
                                     .add_image_record_bulk(&image_records)
@@ -230,7 +245,7 @@ impl App {
                                         };
                                         let _ = event_sender_final.send(finish_event.clone());
                                         let _ = tx_final.send(finish_event).await;
-                                        
+
                                         let mut jobs = import_jobs_final.lock().await;
                                         jobs.remove(&job_id_final);
                                     }
@@ -241,10 +256,10 @@ impl App {
                                         };
                                         let _ = event_sender_final.send(finish_event.clone());
                                         let _ = tx_final.send(finish_event).await;
-                                        
+
                                         let mut jobs = import_jobs_final.lock().await;
                                         jobs.remove(&job_id_final);
-                                        
+
                                         tracing::error!("Failed to save image records: {}", e);
                                     }
                                 }
@@ -253,7 +268,7 @@ impl App {
                         Ok(Err(e)) => {
                             job_state_guard.completed += 1;
                             tracing::error!("Failed to import image {}: {}", path.display(), e);
-                            
+
                             let progress_event = AppEvent::ImportProgress {
                                 job_id,
                                 current: job_state_guard.completed,
@@ -261,39 +276,44 @@ impl App {
                             };
                             let _ = event_sender.send(progress_event.clone());
                             let _ = tx.send(progress_event).await;
-                            
+
                             if job_state_guard.completed == job_state_guard.total {
-                                let image_records = std::mem::take(&mut job_state_guard.image_records);
+                                let image_records =
+                                    std::mem::take(&mut job_state_guard.image_records);
                                 let service_registry_clone = service_registry.clone();
                                 let event_sender_final = event_sender.clone();
                                 let tx_final = tx.clone();
                                 let job_id_final = job_id;
                                 let import_jobs_final = import_jobs.clone();
-                                
+
                                 drop(job_state_guard);
-                                
+
                                 if !image_records.is_empty() {
                                     let _ = service_registry_clone
                                         .image_metadata_repository
                                         .add_image_record_bulk(&image_records)
                                         .await;
                                 }
-                                
+
                                 let finish_event = AppEvent::ImportFinished {
                                     job_id: job_id_final,
                                     success: !image_records.is_empty(),
                                 };
                                 let _ = event_sender_final.send(finish_event.clone());
                                 let _ = tx_final.send(finish_event).await;
-                                
+
                                 let mut jobs = import_jobs_final.lock().await;
                                 jobs.remove(&job_id_final);
                             }
                         }
                         Err(e) => {
                             job_state_guard.completed += 1;
-                            tracing::error!("Failed to spawn blocking task for {}: {}", path.display(), e);
-                            
+                            tracing::error!(
+                                "Failed to spawn blocking task for {}: {}",
+                                path.display(),
+                                e
+                            );
+
                             let progress_event = AppEvent::ImportProgress {
                                 job_id,
                                 current: job_state_guard.completed,
@@ -301,31 +321,32 @@ impl App {
                             };
                             let _ = event_sender.send(progress_event.clone());
                             let _ = tx.send(progress_event).await;
-                            
+
                             if job_state_guard.completed == job_state_guard.total {
-                                let image_records = std::mem::take(&mut job_state_guard.image_records);
+                                let image_records =
+                                    std::mem::take(&mut job_state_guard.image_records);
                                 let service_registry_clone = service_registry.clone();
                                 let event_sender_final = event_sender.clone();
                                 let tx_final = tx.clone();
                                 let job_id_final = job_id;
                                 let import_jobs_final = import_jobs.clone();
-                                
+
                                 drop(job_state_guard);
-                                
+
                                 if !image_records.is_empty() {
                                     let _ = service_registry_clone
                                         .image_metadata_repository
                                         .add_image_record_bulk(&image_records)
                                         .await;
                                 }
-                                
+
                                 let finish_event = AppEvent::ImportFinished {
                                     job_id: job_id_final,
                                     success: !image_records.is_empty(),
                                 };
                                 let _ = event_sender_final.send(finish_event.clone());
                                 let _ = tx_final.send(finish_event).await;
-                                
+
                                 let mut jobs = import_jobs_final.lock().await;
                                 jobs.remove(&job_id_final);
                             }
@@ -333,24 +354,32 @@ impl App {
                     }
                 }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
             });
-            
-            let _ = task_queue_clone.submit(task, TaskPriority::Low);
+
+            let _ = self
+                .runtime
+                .block_on(async { self.task_queue.lock().await.submit(task, TaskPriority::Low) });
         }
-        
+
         rx
     }
 
-    pub fn get_thumbnail(&self, image_id: ImageId, thumbnail_size: u32) -> mpsc::Receiver<AppEvent> {
+    pub fn get_thumbnail(
+        &self,
+        image_id: ImageId,
+        thumbnail_size: u32,
+    ) -> mpsc::Receiver<AppEvent> {
         let (tx, rx) = mpsc::channel(1);
         let service_registry = self.service_registry.clone();
         let event_sender = self.event_sender.clone();
-        
-        let task: Box<dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static> = Box::new(move || {
+
+        let task: Box<
+            dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
+        > = Box::new(move || {
             let service_registry = service_registry.clone();
             let event_sender = event_sender.clone();
             let tx = tx;
             let image_id = image_id;
-            
+
             Box::pin(async move {
                 let result = match tokio::task::spawn_blocking({
                     let service_registry = service_registry.clone();
@@ -367,31 +396,36 @@ impl App {
                     Ok(Err(e)) => Err(AppError::ImageRepositoryError { err: e.to_string() }),
                     Err(e) => Err(AppError::TaskSpawnFailed { err: e.to_string() }),
                 };
-                
-                let event = AppEvent::ThumbnailReady {
-                    image_id,
-                    result,
-                };
+
+                let event = AppEvent::ThumbnailReady { image_id, result };
                 let _ = event_sender.send(event.clone());
                 let _ = tx.send(event).await;
             }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
         });
-        
-        let _ = self.task_queue.submit(task, TaskPriority::High);
+
+        let _ = self
+            .runtime
+            .block_on(async { self.task_queue.lock().await.submit(task, TaskPriority::Low) });
         rx
     }
 
-    pub fn get_thumbnail_from_file(&self, path: PathBuf, thumbnail_size: u32) -> mpsc::Receiver<AppEvent> {
+    pub fn get_thumbnail_from_file(
+        &self,
+        path: PathBuf,
+        thumbnail_size: u32,
+    ) -> mpsc::Receiver<AppEvent> {
         let (tx, rx) = mpsc::channel(1);
         let service_registry = self.service_registry.clone();
         let event_sender = self.event_sender.clone();
-        
-        let task: Box<dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static> = Box::new(move || {
+
+        let task: Box<
+            dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
+        > = Box::new(move || {
             let service_registry = service_registry.clone();
             let event_sender = event_sender.clone();
             let tx = tx;
             let path_clone = path.clone();
-            
+
             Box::pin(async move {
                 let result = match tokio::task::spawn_blocking({
                     let service_registry = service_registry.clone();
@@ -408,7 +442,7 @@ impl App {
                     Ok(Err(e)) => Err(AppError::ImageRepositoryError { err: e.to_string() }),
                     Err(e) => Err(AppError::TaskSpawnFailed { err: e.to_string() }),
                 };
-                
+
                 let event = AppEvent::ThumbnailFromFileReady {
                     path: path_clone,
                     result,
@@ -417,8 +451,10 @@ impl App {
                 let _ = tx.send(event).await;
             }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
         });
-        
-        let _ = self.task_queue.submit(task, TaskPriority::High);
+
+        let _ = self
+            .runtime
+            .block_on(async { self.task_queue.lock().await.submit(task, TaskPriority::Low) });
         rx
     }
 }
