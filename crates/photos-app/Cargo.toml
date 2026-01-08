@@ -15,4 +15,3 @@ photos-task-queue = { path = "../photos-task-queue" }
 tokio = { workspace = true }
 thiserror = "2.0.17"
 tracing = { workspace = true }
-tokio-util = "0.7.17"
