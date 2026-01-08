@@ -1,4 +1,6 @@
-use photos_domain::{DynamicImage, ImageId, ImageRecord};
+use photos_domain::{
+    DynamicImage, FaceDetection, FaceDetectionWithEmbedding, ImageId, ImageRecord,
+};
 use std::path::Path;
 
 #[derive(thiserror::Error, Debug)]
@@ -73,6 +75,30 @@ pub trait ImageRepository {
         path: &Path,
         thumbnail_size: u32,
     ) -> Result<DynamicImage, ImageRepositoryError>;
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum ImageAnalysisServiceError {
+    #[error("could not initialize model")]
+    CouldNotInitialize,
+    #[error("could not infer")]
+    CouldNotInfer,
+    #[error("?")]
+    Unknown,
+}
+
+pub trait ImageAnalysisService {
+    fn get_face_detections(
+        &self,
+        image: &DynamicImage,
+        resize_service: &dyn ResizeService,
+    ) -> Result<Vec<FaceDetection>, ImageAnalysisServiceError>;
+    fn get_face_embedding(
+        &self,
+        image: &DynamicImage,
+        face_detection: FaceDetection,
+        resize_service: &dyn ResizeService,
+    ) -> Result<FaceDetectionWithEmbedding, ImageAnalysisServiceError>;
 }
 
 pub trait ServiceRegistry: Send + Sync {
