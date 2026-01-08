@@ -84,7 +84,7 @@ impl App {
         let service_registry = self.service_registry.clone();
         let event_sender = self.event_sender.clone();
         
-        let task: Box<dyn FnOnce() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + 'static> = Box::new(move || {
+        let task: Box<dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static> = Box::new(move || {
             let service_registry = service_registry.clone();
             let event_sender = event_sender.clone();
             let tx = tx;
@@ -99,7 +99,7 @@ impl App {
                 let event = events::AppEvent::ImageIdsReady { result };
                 let _ = event_sender.send(event.clone());
                 let _ = tx.send(event).await;
-            }) as std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+            }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
         });
         
         let _ = self.task_queue.submit(task, TaskPriority::High);
@@ -110,7 +110,7 @@ impl App {
         let (tx, rx) = mpsc::channel(1);
         let event_sender = self.event_sender.clone();
         
-        let task: Box<dyn FnOnce() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + 'static> = Box::new(move || {
+        let task: Box<dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static> = Box::new(move || {
             let event_sender = event_sender.clone();
             let tx = tx;
             let path_clone = path.clone();
@@ -126,7 +126,7 @@ impl App {
                 };
                 let _ = event_sender.send(event.clone());
                 let _ = tx.send(event).await;
-            }) as std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+            }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
         });
         
         let _ = self.task_queue.submit(task, TaskPriority::High);
@@ -175,7 +175,7 @@ impl App {
             let import_jobs_clone = import_jobs.clone();
             let job_id_clone = job_id;
             
-            let task: Box<dyn FnOnce() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + 'static> = Box::new(move || {
+            let task: Box<dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static> = Box::new(move || {
                 let job_state = job_state_clone.clone();
                 let service_registry = service_registry_clone.clone();
                 let event_sender = event_sender_clone.clone();
@@ -331,7 +331,7 @@ impl App {
                             }
                         }
                     }
-                }) as std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+                }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
             });
             
             let _ = task_queue_clone.submit(task, TaskPriority::Low);
@@ -345,7 +345,7 @@ impl App {
         let service_registry = self.service_registry.clone();
         let event_sender = self.event_sender.clone();
         
-        let task: Box<dyn FnOnce() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + 'static> = Box::new(move || {
+        let task: Box<dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static> = Box::new(move || {
             let service_registry = service_registry.clone();
             let event_sender = event_sender.clone();
             let tx = tx;
@@ -374,7 +374,7 @@ impl App {
                 };
                 let _ = event_sender.send(event.clone());
                 let _ = tx.send(event).await;
-            }) as std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+            }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
         });
         
         let _ = self.task_queue.submit(task, TaskPriority::High);
@@ -386,7 +386,7 @@ impl App {
         let service_registry = self.service_registry.clone();
         let event_sender = self.event_sender.clone();
         
-        let task: Box<dyn FnOnce() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + 'static> = Box::new(move || {
+        let task: Box<dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static> = Box::new(move || {
             let service_registry = service_registry.clone();
             let event_sender = event_sender.clone();
             let tx = tx;
@@ -415,7 +415,7 @@ impl App {
                 };
                 let _ = event_sender.send(event.clone());
                 let _ = tx.send(event).await;
-            }) as std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+            }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
         });
         
         let _ = self.task_queue.submit(task, TaskPriority::High);
