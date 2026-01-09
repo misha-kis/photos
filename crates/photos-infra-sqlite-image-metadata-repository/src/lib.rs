@@ -5,6 +5,7 @@ use photos_domain::{
 };
 use photos_services::{ImageMetadataRepository, ImageMetadataRepositoryError};
 use sqlx::FromRow;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 pub struct SqliteImageMetadataRepository {
@@ -50,7 +51,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
             .bind(image_record.meta.format.as_u8())
             .execute(&self.pool)
             .await
-            .map_err(|_| ImageMetadataRepositoryError::ImageMetadataRepositoryError)?;
+            .map_err(|e| ImageMetadataRepositoryError::ImageMetadataRepositoryError { err: e.to_string() })?;
         tracing::info!("sqlite inserting image record done");
         Ok(())
     }
@@ -164,7 +165,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
             .fetch_one(&self.pool)
             .await
             .map(|row| row.uuid_count)
-            .map_err(|_| ImageMetadataRepositoryError::ImageMetadataRepositoryError);
+            .map_err(|e| ImageMetadataRepositoryError::ImageMetadataRepositoryError { err: e.to_string() });
         tracing::info!("sqlite getting number of images done");
         result
     }
@@ -315,7 +316,7 @@ WHERE uuid = ?
         .bind(face_detection_with_embedding.detection.uuid)
         .execute(&self.pool)
         .await
-        .map_err(|_| ImageMetadataRepositoryError::ImageMetadataRepositoryError)?;
+            .map_err(|e| ImageMetadataRepositoryError::ImageMetadataRepositoryError { err: e.to_string() })?;
         tracing::info!("sqlite udpating detection with embedding done");
         Ok(())
     }
@@ -375,22 +376,35 @@ WHERE embedding IS NOT NULL
             .await
             .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
 
+        let unique_cluster_ids: HashSet<u32> = clustered_face_detections
+            .iter()
+            .filter_map(|d| d.cluster_id)
+            .collect();
+        let cluster_uuids: HashMap<u32, Uuid> = unique_cluster_ids
+            .into_iter()
+            .map(|id| (id, Uuid::now_v7()))
+            .collect();
+
         for detection in clustered_face_detections {
-            let cluster_id = if let Some(cluster_id) = detection.cluster_id {
-                cluster_id as i32
+            let cluster_uuid = if let Some(cluster_id) = detection.cluster_id {
+                cluster_uuids[&cluster_id]
             } else {
-                -1
+                Uuid::nil()
             };
-            sqlx::query(r#"UPDATE face_detection SET face_uuid = ? WHERE uuid = ?"#)
-                .bind(cluster_id)
+            sqlx::query(r#"
+INSERT INTO face (uuid) VALUES (?) ON CONFLICT DO NOTHING;
+UPDATE face_detection SET face_uuid = ? WHERE uuid = ?
+"#)
+                .bind(cluster_uuid)
+                .bind(cluster_uuid)
                 .bind(detection.detection.detection.uuid)
                 .execute(&mut *tx)
                 .await
-                .map_err(|_| ImageMetadataRepositoryError::ImageMetadataRepositoryError)?;
+                .map_err(|e| ImageMetadataRepositoryError::ImageMetadataRepositoryError { err: e.to_string() })?;
         }
         tx.commit()
             .await
-            .map_err(|_| ImageMetadataRepositoryError::ImageMetadataRepositoryError)?;
+            .map_err(|e| ImageMetadataRepositoryError::ImageMetadataRepositoryError { err: e.to_string() })?;
         tracing::info!("sqlite updating clusters done");
         Ok(())
     }

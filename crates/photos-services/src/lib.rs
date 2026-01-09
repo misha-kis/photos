@@ -21,8 +21,8 @@ pub trait ResizeService {
 pub enum ImageMetadataRepositoryError {
     #[error("query failed: {err}")]
     QueryFailed { err: String },
-    #[error("image metadata repository failure")]
-    ImageMetadataRepositoryError,
+    #[error("image metadata repository failure: {err}")]
+    ImageMetadataRepositoryError { err: String },
     #[error("cannot connect or create db")]
     CannotConnectOrCreate,
     #[error("invalid image format")]
@@ -76,7 +76,7 @@ pub trait ImageMetadataRepository {
 
 #[derive(thiserror::Error, Debug)]
 pub enum ImageRepositoryError {
-    #[error("image metadata repository failure")]
+    #[error("image repository failure")]
     ImageRepositoryError,
     #[error("the requested thumbnail size is invalid")]
     InvalidThumbnailSize,
