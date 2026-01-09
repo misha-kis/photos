@@ -5,7 +5,7 @@ mod image_features;
 pub use errors::DomainError;
 
 pub use image::DynamicImage;
-pub use image_features::{BoundingBox, FaceDetection, FaceDetectionWithEmbedding};
+pub use image_features::{BoundingBox, FaceDetection, FaceDetectionWithEmbedding, ClusteredFaceDetection};
 
 pub type ImageId = photos_core::Uuid;
 

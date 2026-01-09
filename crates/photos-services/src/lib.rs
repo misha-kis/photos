@@ -1,7 +1,6 @@
-use photos_domain::{
-    DynamicImage, FaceDetection, FaceDetectionWithEmbedding, ImageId, ImageRecord,
-};
+use photos_domain::{ClusteredFaceDetection, DynamicImage, FaceDetection, FaceDetectionWithEmbedding, ImageId, ImageRecord};
 use std::path::Path;
+use photos_core::Uuid;
 
 #[derive(thiserror::Error, Debug)]
 pub enum ResizeServiceError {
@@ -66,12 +65,12 @@ pub trait ImageMetadataRepository {
         &self,
         face_detection_with_embedding: FaceDetectionWithEmbedding,
     ) -> Result<(), ImageMetadataRepositoryError>;
-    async fn get_all_detections_with_embedding(
+    async fn get_detections_with_embeddings(
         &self,
-    ) -> Result<Vec<(u32, [f32; 512])>, ImageMetadataRepositoryError>;
+    ) -> Result<Vec<FaceDetectionWithEmbedding>, ImageMetadataRepositoryError>;
     async fn update_detections_with_clusters(
         &self,
-        clustered_ids: &[(u32, Option<u32>)],
+        clustered_face_detections: &[ClusteredFaceDetection],
     ) -> Result<(), ImageMetadataRepositoryError>;
 }
 
@@ -128,8 +127,8 @@ pub trait ImageAnalysisService {
 
     fn cluster_embeddings(
         &self,
-        detections_with_embeddings: Vec<(u32, [f32; 512])>,
-    ) -> Result<Vec<(u32, Option<u32>)>, ImageAnalysisServiceError>;
+        detections_with_embeddings: Vec<FaceDetectionWithEmbedding>,
+    ) -> Result<Vec<ClusteredFaceDetection>, ImageAnalysisServiceError>;
 }
 
 pub trait ServiceRegistry: Send + Sync {

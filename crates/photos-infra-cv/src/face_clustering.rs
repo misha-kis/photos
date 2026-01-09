@@ -20,7 +20,7 @@ impl Default for ClusteringConfig {
 }
 
 /// Result of clustering operation
-pub struct ClusteringResult {
+pub(crate) struct ClusteringResult {
     /// Cluster labels for each embedding
     /// -1 indicates noise/outlier
     /// Non-negative values indicate cluster IDs
@@ -69,7 +69,7 @@ fn distance_matrix(embeddings: &[[f32; 512]]) -> Vec<Vec<f32>> {
     distance_matrix
 }
 
-pub fn cluster_embeddings(
+pub(crate) fn cluster_embeddings(
     embeddings: &[[f32; 512]],
     config: ClusteringConfig,
 ) -> Result<ClusteringResult> {

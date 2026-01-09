@@ -9,5 +9,6 @@ ort = "2.0.0-rc.10"
 image = { workspace = true }
 anyhow = { workspace = true }
 hdbscan = "0.12.0"
+photos-core = { path = "../photos-core" }
 photos-domain = { path = "../photos-domain" }
 photos-services = { path = "../photos-services" }

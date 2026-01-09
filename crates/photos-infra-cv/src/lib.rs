@@ -4,10 +4,11 @@ mod face_embedding;
 
 use std::{path::PathBuf, sync::Mutex};
 
-pub use face_clustering::{ClusteringConfig, ClusteringResult, cluster_embeddings};
-pub use face_detection::FaceDetector;
-pub use face_embedding::FaceEmbedder;
+use face_clustering::{ClusteringConfig, cluster_embeddings};
+use face_detection::FaceDetector;
+use face_embedding::FaceEmbedder;
 use image::DynamicImage;
+use photos_domain::{ClusteredFaceDetection, FaceDetectionWithEmbedding};
 use photos_services::{ImageAnalysisService, ImageAnalysisServiceError, ResizeService};
 
 pub struct ImageAnalysisConfig {
@@ -47,6 +48,15 @@ impl ImageAnalysisService for ImageAnalysis {
             .lock()
             .map_err(|_| ImageAnalysisServiceError::CouldNotInfer)?
             .detect(image, resize_service)
+            .map(|v| {
+                v.into_iter()
+                    .map(|d| photos_domain::FaceDetection {
+                        uuid: photos_core::Uuid::now_v7(),
+                        bounding_box: d.bounding_box,
+                        confidence: d.confidence,
+                    })
+                    .collect()
+            })
     }
 
     fn get_face_embedding(
@@ -54,7 +64,7 @@ impl ImageAnalysisService for ImageAnalysis {
         image: &DynamicImage,
         face_detection: photos_domain::FaceDetection,
         resize_service: &dyn ResizeService,
-    ) -> Result<photos_domain::FaceDetectionWithEmbedding, ImageAnalysisServiceError> {
+    ) -> Result<FaceDetectionWithEmbedding, ImageAnalysisServiceError> {
         self.face_embedder
             .lock()
             .map_err(|_| ImageAnalysisServiceError::CouldNotInfer)?
@@ -63,15 +73,21 @@ impl ImageAnalysisService for ImageAnalysis {
 
     fn cluster_embeddings(
         &self,
-        detections_with_embeddings: Vec<(u32, [f32; 512])>,
-    ) -> Result<Vec<(u32, Option<u32>)>, ImageAnalysisServiceError> {
-        let embeddings: Vec<_> = detections_with_embeddings.iter().map(|(_, e)| *e).collect();
+        detections_with_embeddings: Vec<FaceDetectionWithEmbedding>,
+    ) -> Result<Vec<ClusteredFaceDetection>, ImageAnalysisServiceError> {
+        let embeddings: Vec<_> = detections_with_embeddings
+            .iter()
+            .map(|d| d.embedding)
+            .collect();
         let clustered_embeddings = cluster_embeddings(&embeddings, ClusteringConfig::default())
             .map_err(|_| ImageAnalysisServiceError::CouldNotInfer)?;
         let result = detections_with_embeddings
-            .iter()
-            .map(|(id, _)| *id)
-            .zip(clustered_embeddings.labels.iter().copied())
+            .into_iter()
+            .zip(clustered_embeddings.labels.into_iter())
+            .map(|(detection, cluster_id)| ClusteredFaceDetection {
+                detection,
+                cluster_id,
+            })
             .collect();
         Ok(result)
     }

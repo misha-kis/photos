@@ -1,6 +1,7 @@
+use photos_core::Uuid;
 use photos_domain::{
-    BoundingBox, FaceDetection, FaceDetectionWithEmbedding, ImageFormat, ImageId, ImageMeta,
-    ImageRecord,
+    BoundingBox, ClusteredFaceDetection, FaceDetection, FaceDetectionWithEmbedding, ImageFormat,
+    ImageId, ImageMeta, ImageRecord,
 };
 use photos_services::{ImageMetadataRepository, ImageMetadataRepositoryError};
 use sqlx::FromRow;
@@ -214,7 +215,8 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
             .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
 
         for detection in face_detections {
-            sqlx::query(r#"INSERT INTO face_detection(image_uuid, roi_x, roi_y, roi_w, roi_h, confidence) VALUES (?, ?, ?, ?, ?, ?)"#)
+            sqlx::query(r#"INSERT INTO face_detection(uuid, image_uuid, roi_x, roi_y, roi_w, roi_h, confidence) VALUES (?, ?, ?, ?, ?, ?, ?)"#)
+                .bind(detection.uuid)
                 .bind(image_id)
                 .bind(detection.bounding_box.x)
                 .bind(detection.bounding_box.y)
@@ -245,6 +247,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         tracing::info!("sqlite getting detections without embeddings");
         #[derive(FromRow)]
         struct Row {
+            uuid: Uuid,
             image_uuid: ImageId,
             format_id: i64,
             roi_x: f32,
@@ -256,7 +259,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
 
         let result = sqlx::query_as::<_, Row>(
             r#"
-SELECT image_uuid, format_id, roi_x, roi_y, roi_w, roi_h, confidence
+SELECT face_detection.uuid, image_uuid, format_id, roi_x, roi_y, roi_w, roi_h, confidence
 FROM face_detection
 JOIN image i on i.uuid = face_detection.image_uuid
 WHERE embedding IS NULL
@@ -273,6 +276,7 @@ WHERE embedding IS NULL
                     meta: ImageMeta { format },
                 };
                 let detection = FaceDetection {
+                    uuid: row.uuid,
                     bounding_box: BoundingBox {
                         x: row.roi_x,
                         y: row.roi_y,
@@ -319,38 +323,54 @@ WHERE roi_x = ? AND roi_y = ? AND roi_w = ? AND roi_h = ? AND confidence = ?
         tracing::info!("sqlite udpating detection with embedding done");
         Ok(())
     }
-
-    async fn get_all_detections_with_embedding(
+    async fn get_detections_with_embeddings(
         &self,
-    ) -> Result<Vec<(u32, [f32; 512])>, ImageMetadataRepositoryError> {
+    ) -> Result<Vec<FaceDetectionWithEmbedding>, ImageMetadataRepositoryError> {
         tracing::info!("sqlite getting detections with embeddings");
         #[derive(FromRow)]
         struct Row {
-            face_detection_id: i64,
+            uuid: Uuid,
+            roi_x: f32,
+            roi_y: f32,
+            roi_w: f32,
+            roi_h: f32,
+            confidence: f64,
             embedding: Vec<u8>,
         }
 
         let result = sqlx::query_as::<_, Row>(
-            r#"SELECT face_detection_id, embedding FROM face_detection WHERE embedding IS NOT NULL"#
+            r#"
+SELECT uuid, roi_x, roi_y, roi_w, roi_h, confidence, embedding
+FROM face_detection
+WHERE embedding IS NOT NULL
+"#,
         )
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?
-            .iter()
-            .map(|row| {
-                let bytes: &[f32] = bytemuck::cast_slice(&row.embedding);
-                let embedding: [f32; 512] = bytes.try_into().unwrap();
-                (row.face_detection_id as u32, embedding)
-            }
-            ).collect();
-
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?
+        .iter()
+        .map(|row| FaceDetectionWithEmbedding {
+            detection: FaceDetection {
+                uuid: row.uuid,
+                bounding_box: BoundingBox {
+                    x: row.roi_x,
+                    y: row.roi_y,
+                    w: row.roi_w,
+                    h: row.roi_h,
+                },
+                confidence: row.confidence as f32,
+            },
+            embedding: bytemuck::cast_slice(&row.embedding).try_into().unwrap(),
+        })
+        .collect();
         tracing::info!("sqlite getting detections with embeddings done");
+
         Ok(result)
     }
 
     async fn update_detections_with_clusters(
         &self,
-        clustered_ids: &[(u32, Option<u32>)],
+        clustered_face_detections: &[ClusteredFaceDetection],
     ) -> Result<(), ImageMetadataRepositoryError> {
         tracing::info!("sqlite updating clusters");
         let mut tx = self
@@ -359,15 +379,15 @@ WHERE roi_x = ? AND roi_y = ? AND roi_w = ? AND roi_h = ? AND confidence = ?
             .await
             .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
 
-        for (detection_id, cluster_id) in clustered_ids {
-            let cluster_id = if let Some(cluster_id) = cluster_id {
-                *cluster_id as i32
+        for detection in clustered_face_detections {
+            let cluster_id = if let Some(cluster_id) = detection.cluster_id {
+                cluster_id as i32
             } else {
                 -1
             };
-            sqlx::query(r#"UPDATE face_detection SET face_id = ? WHERE face_detection_id = ?"#)
+            sqlx::query(r#"UPDATE face_detection SET face_uuid = ? WHERE uuid = ?"#)
                 .bind(cluster_id)
-                .bind(detection_id)
+                .bind(detection.detection.detection.uuid)
                 .execute(&mut *tx)
                 .await
                 .map_err(|_| ImageMetadataRepositoryError::ImageMetadataRepositoryError)?;

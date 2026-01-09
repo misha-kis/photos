@@ -8,16 +8,43 @@ use ort::{
     session::{Session, SessionOutputs},
     value::TensorRef,
 };
-use photos_domain::{BoundingBox, FaceDetection};
+use photos_domain::BoundingBox;
 use photos_services::{ImageAnalysisServiceError, ResizeService};
 
-pub struct FaceDetector {
+
+#[derive(Copy, Clone)]
+pub(crate) struct FaceDetection {
+    pub(crate) bounding_box: BoundingBox,
+    pub(crate) confidence: f32,
+}
+
+impl PartialEq for FaceDetection {
+    fn eq(&self, other: &Self) -> bool {
+        self.confidence.total_cmp(&other.confidence) == std::cmp::Ordering::Equal
+    }
+}
+
+impl PartialOrd for FaceDetection {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Eq for FaceDetection {}
+
+impl Ord for FaceDetection {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.confidence.total_cmp(&other.confidence)
+    }
+}
+
+pub(crate) struct FaceDetector {
     session: Session,
     image_size: u32,
 }
 
 impl FaceDetector {
-    pub fn new(model_path: PathBuf, image_size: u32) -> Result<Self, ImageAnalysisServiceError> {
+    pub(crate) fn new(model_path: PathBuf, image_size: u32) -> Result<Self, ImageAnalysisServiceError> {
         ort::init()
             .with_execution_providers([CoreMLExecutionProvider::default().build()])
             .commit();
@@ -31,7 +58,7 @@ impl FaceDetector {
         })
     }
 
-    pub fn detect(
+    pub(crate) fn detect(
         &mut self,
         image: &DynamicImage,
         resize_service: &dyn ResizeService,

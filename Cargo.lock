@@ -3195,6 +3195,7 @@ dependencies = [
  "image",
  "ndarray",
  "ort",
+ "photos-core",
  "photos-domain",
  "photos-services",
 ]
@@ -3236,6 +3237,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytemuck",
+ "photos-core",
  "photos-domain",
  "photos-services",
  "sqlx",
@@ -3247,6 +3249,7 @@ name = "photos-services"
 version = "0.0.0"
 dependencies = [
  "async-trait",
+ "photos-core",
  "photos-domain",
  "thiserror 2.0.17",
 ]

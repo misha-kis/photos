@@ -8,13 +8,13 @@ use photos_domain::{FaceDetection, FaceDetectionWithEmbedding};
 use photos_services::{ImageAnalysisServiceError, ResizeService};
 use std::path::PathBuf;
 
-pub struct FaceEmbedder {
+pub(crate) struct FaceEmbedder {
     session: Session,
     image_size: u32,
 }
 
 impl FaceEmbedder {
-    pub fn new(model_path: PathBuf, image_size: u32) -> anyhow::Result<Self> {
+    pub(crate) fn new(model_path: PathBuf, image_size: u32) -> anyhow::Result<Self> {
         ort::init()
             .with_execution_providers([CoreMLExecutionProvider::default().build()])
             .commit();
@@ -25,7 +25,7 @@ impl FaceEmbedder {
         })
     }
 
-    pub fn generate_embedding(
+    pub(crate) fn generate_embedding(
         &mut self,
         image: &DynamicImage,
         detection: FaceDetection,

@@ -1,3 +1,5 @@
+use photos_core::Uuid;
+
 #[derive(Copy, Clone, PartialEq)]
 pub struct BoundingBox {
     pub x: f32,
@@ -29,6 +31,7 @@ impl BoundingBox {
 
 #[derive(Clone, Copy)]
 pub struct FaceDetection {
+    pub uuid: Uuid,
     pub bounding_box: BoundingBox,
     pub confidence: f32,
 }
@@ -55,4 +58,9 @@ impl Ord for FaceDetection {
 pub struct FaceDetectionWithEmbedding {
     pub detection: FaceDetection,
     pub embedding: [f32; 512], // todo: make generic
+}
+
+pub struct ClusteredFaceDetection {
+    pub cluster_id: Option<u32>,
+    pub detection: FaceDetectionWithEmbedding,
 }

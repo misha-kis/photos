@@ -11,14 +11,14 @@ pub(crate) async fn cluster_embeddings_task(
     tracing::debug!("creating clusters for faces");
     if let Ok(detections_with_embeddings) = app_service_registry
         .image_meta_repo()
-        .get_all_detections_with_embedding()
+        .get_detections_with_embeddings()
         .await
-        && let Ok(clustered_ids) = app_service_registry
+        && let Ok(clustered_face_detections) = app_service_registry
             .analysis_service()
             .cluster_embeddings(detections_with_embeddings)
         && let Ok(()) = app_service_registry
             .image_meta_repo()
-            .update_detections_with_clusters(&clustered_ids)
+            .update_detections_with_clusters(&clustered_face_detections)
             .await
     {
         tracing::debug!("creating clusters for faces done");
