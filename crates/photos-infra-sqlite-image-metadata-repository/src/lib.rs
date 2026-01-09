@@ -308,15 +308,11 @@ WHERE embedding IS NULL
             r#"
 UPDATE face_detection
 SET embedding = ?
-WHERE roi_x = ? AND roi_y = ? AND roi_w = ? AND roi_h = ? AND confidence = ?
+WHERE uuid = ?
 "#,
         )
         .bind(bytes)
-        .bind(face_detection_with_embedding.detection.bounding_box.x)
-        .bind(face_detection_with_embedding.detection.bounding_box.y)
-        .bind(face_detection_with_embedding.detection.bounding_box.w)
-        .bind(face_detection_with_embedding.detection.bounding_box.h)
-        .bind(face_detection_with_embedding.detection.confidence)
+        .bind(face_detection_with_embedding.detection.uuid)
         .execute(&self.pool)
         .await
         .map_err(|_| ImageMetadataRepositoryError::ImageMetadataRepositoryError)?;
