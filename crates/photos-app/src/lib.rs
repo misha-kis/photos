@@ -1,13 +1,13 @@
 use crate::errors::AppError;
 use crate::service_registry::AppServiceRegistry;
 use photos_core::JobId;
-use photos_domain::{ImageId, ImageRecord};
+use photos_domain::{FaceDetection, ImageId, ImageRecord};
 use photos_infra_fast_image_resize_resizer::FastImageResizeResizer;
 use photos_infra_fs_repository::FSImageRepository;
 use photos_infra_import_item_discovery::discover_import_items;
 use photos_infra_sqlite_image_metadata_repository::SqliteImageMetadataRepository;
-use photos_services::{ImageMetadataRepository, ServiceRegistry};
-use photos_task_queue::{TaskPriority, TaskQueue};
+use photos_services::{ImageMetadataRepository, ImageRepository, ServiceRegistry};
+use photos_task_queue::{TaskFn, TaskPriority, TaskQueue};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -21,14 +21,12 @@ pub mod events;
 mod service_registry;
 
 pub use events::AppEvent;
+use photos_infra_cv::ImageAnalysis;
 
 struct ImportJobState {
-    job_id: JobId,
     total: u64,
     completed: u64,
     image_records: Vec<ImageRecord>,
-    event_sender: mpsc::UnboundedSender<AppEvent>,
-    result_sender: mpsc::Sender<AppEvent>,
 }
 
 pub struct App {
@@ -60,11 +58,15 @@ impl App {
                 .map_err(|_| AppError::BadDirectory)
         })?;
 
+        let analysis_service =
+            ImageAnalysis::new(config.image_analysis_config).map_err(|_| AppError::BadDirectory)?;
+
         let resize_service = FastImageResizeResizer::default();
         let service_registry = Arc::new(AppServiceRegistry {
             image_repository: Arc::new(image_repository),
             image_metadata_repository: Arc::new(image_metadata_repository),
             resize_service: Arc::new(resize_service),
+            analysis_service: Arc::new(analysis_service),
         });
 
         let (event_sender, _event_receiver) = mpsc::unbounded_channel();
@@ -88,9 +90,7 @@ impl App {
         let service_registry = self.service_registry.clone();
         let event_sender = self.event_sender.clone();
 
-        let task: Box<
-            dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
-        > = Box::new(move || {
+        let task: TaskFn = Box::new(move || {
             let service_registry = service_registry.clone();
             let event_sender = event_sender.clone();
             let tx = tx;
@@ -102,10 +102,10 @@ impl App {
                     .await
                     .map_err(|e| AppError::InvalidDatabaseState { err: e.to_string() });
 
-                let event = events::AppEvent::ImageIdsReady { result };
+                let event = AppEvent::ImageIdsReady { result };
                 let _ = event_sender.send(event.clone());
                 let _ = tx.send(event).await;
-            }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
+            })
         });
         let _ = self.runtime.block_on(async {
             self.task_queue
@@ -156,12 +156,9 @@ impl App {
         let import_jobs = self.import_jobs.clone();
 
         let job_state = Arc::new(Mutex::new(ImportJobState {
-            job_id,
             total,
             completed: 0,
             image_records: Vec::new(),
-            event_sender: event_sender.clone(),
-            result_sender: tx.clone(),
         }));
 
         {
@@ -190,7 +187,7 @@ impl App {
             let task: Box<
                 dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
             > = Box::new(move || {
-                Box::pin(import_item_task_function(
+                Box::pin(import_item_task(
                     service_registry,
                     path,
                     job_state,
@@ -250,9 +247,12 @@ impl App {
             }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
         });
 
-        let _ = self
-            .runtime
-            .block_on(async { self.task_queue.lock().await.submit(task, TaskPriority::Low) });
+        let _ = self.runtime.block_on(async {
+            self.task_queue
+                .lock()
+                .await
+                .submit(task, TaskPriority::High)
+        });
         rx
     }
 
@@ -299,14 +299,17 @@ impl App {
             }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
         });
 
-        let _ = self
-            .runtime
-            .block_on(async { self.task_queue.lock().await.submit(task, TaskPriority::Low) });
+        let _ = self.runtime.block_on(async {
+            self.task_queue
+                .lock()
+                .await
+                .submit(task, TaskPriority::High)
+        });
         rx
     }
 }
 
-async fn import_item_task_function(
+async fn import_item_task(
     service_registry: Arc<AppServiceRegistry>,
     path: PathBuf,
     job_state: Arc<Mutex<ImportJobState>>,
@@ -360,6 +363,18 @@ async fn import_item_task_function(
 
                         let mut jobs = import_jobs_final.lock().await;
                         jobs.remove(&job_id_final);
+                        let task_queue_clone = task_queue.clone();
+                        let dispatch_face_detection_task: TaskFn = Box::new(move || {
+                            Box::pin(dispatch_face_detection_task(
+                                service_registry,
+                                task_queue_clone,
+                                tx,
+                            ))
+                        });
+                        let _ = task_queue
+                            .lock()
+                            .await
+                            .submit(dispatch_face_detection_task, TaskPriority::Lowest);
                     }
                     Err(e) => {
                         let finish_event = AppEvent::ImportFinished {
@@ -416,5 +431,118 @@ async fn import_item_task_function(
                 jobs.remove(&job_id_final);
             }
         }
+    }
+}
+
+async fn dispatch_face_detection_task(
+    service_registry: Arc<AppServiceRegistry>,
+    task_queue: Arc<Mutex<TaskQueue>>,
+    tx: mpsc::Sender<AppEvent>,
+) {
+    tracing::info!("getting images without detections");
+    if let Ok(image_records_without_detections) = service_registry
+        .image_metadata_repository
+        .get_image_records_without_detections()
+        .await
+    {
+        tracing::debug!("dispatching tasks for face detection");
+
+        let mut new_tasks = Vec::new();
+        for image_record in image_records_without_detections {
+            let service_registry = service_registry.clone();
+            let tx = tx.clone();
+            let task: TaskFn = Box::new(move || {
+                Box::pin(async move { detect_faces_task(service_registry, image_record, tx).await })
+                    as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
+            });
+            new_tasks.push((task, TaskPriority::Low));
+        }
+        let task_queue_clone = task_queue.clone();
+        let dispatch_embedding_generation_task: TaskFn = Box::new(move || {
+            Box::pin(dispatch_embedding_generation_task(
+                service_registry,
+                task_queue_clone,
+                tx,
+            ))
+        });
+        new_tasks.push((dispatch_embedding_generation_task, TaskPriority::Lowest));
+
+        let task_queue = task_queue.lock().await;
+        for (task, priority) in new_tasks {
+            let _ = task_queue.submit(task, priority);
+        }
+    }
+}
+
+async fn dispatch_embedding_generation_task(
+    service_registry: Arc<AppServiceRegistry>,
+    task_queue: Arc<Mutex<TaskQueue>>,
+    tx: mpsc::Sender<AppEvent>,
+) {
+    match service_registry
+        .image_meta_repo()
+        .get_detections_without_embeddings()
+        .await
+    {
+        Ok(detections_without_embeddings) => {
+            tracing::debug!("dispatching tasks for embedding generation");
+            let mut new_tasks = Vec::new();
+            for (image_record, detection) in detections_without_embeddings {
+                let service_registry = service_registry.clone();
+                let tx = tx.clone();
+                let task: TaskFn = Box::new(move || {
+                    Box::pin(generate_embeddings_task(
+                        service_registry,
+                        image_record,
+                        detection,
+                        tx,
+                    ))
+                });
+                new_tasks.push((task, TaskPriority::Low));
+            }
+            let task_queue = task_queue.lock().await;
+            for (task, priority) in new_tasks {
+                let _ = task_queue.submit(task, priority);
+            }
+        }
+        Err(e) => {
+            tracing::error!("Failed to get detections without embeddings: {e:?}")
+        }
+    }
+}
+async fn detect_faces_task(
+    service_registry: Arc<AppServiceRegistry>,
+    image_record: ImageRecord,
+    _tx: mpsc::Sender<AppEvent>,
+) {
+    tracing::debug!("detecting faces for image: {}", image_record.id);
+    if let Ok(image) = service_registry.image_repository.get_image(&image_record)
+        && let Ok(face_detections) = service_registry
+            .analysis_service()
+            .get_face_detections(&image, service_registry.resize_service())
+    {
+        let _ = service_registry
+            .image_metadata_repository
+            .add_detections_to_image(&image_record.id, face_detections)
+            .await;
+    }
+}
+
+async fn generate_embeddings_task(
+    service_registry: Arc<AppServiceRegistry>,
+    image_record: ImageRecord,
+    detection: FaceDetection,
+    _tx: mpsc::Sender<AppEvent>,
+) {
+    if let Ok(image) = service_registry.image_repository.get_image(&image_record)
+        && let Ok(detection_with_embedding) = service_registry
+            .analysis_service()
+            .get_face_embedding(&image, detection, service_registry.resize_service())
+        && let Err(e) = service_registry
+            .image_meta_repo()
+            .update_face_detection_with_embedding(detection_with_embedding)
+            .await
+    {
+        tracing::error!("could not insert embeddings: {e}");
     }
 }

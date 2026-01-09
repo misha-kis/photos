@@ -23,21 +23,19 @@ impl AppProxy {
     pub fn new(gallery_dir: PathBuf, config: photos_app::config::Config) -> anyhow::Result<Self> {
         let thumbnail_size = config.thumbnail_sizes[0];
         let app = Arc::new(photos_app::App::new(gallery_dir, config)?);
-        
+
         let mut receiver = app.get_image_ids();
         let mut image_ids = Vec::new();
-        
+
         let rt = tokio::runtime::Runtime::new()?;
         rt.block_on(async {
-            if let Some(event) = receiver.recv().await {
-                if let AppEvent::ImageIdsReady { result } = event {
-                    if let Ok(ids) = result {
-                        image_ids = ids;
-                    }
-                }
+            if let Some(AppEvent::ImageIdsReady {result}) = receiver.recv().await
+                && let Ok(ids) = result
+            {
+                image_ids = ids;
             }
         });
-        
+
         Ok(Self {
             app,
             thumbnail_size,
@@ -69,9 +67,14 @@ impl AppProxy {
     }
 
     pub fn request_import_thumbnail(&mut self, path: &PathBuf) -> &mut Receiver<AppEvent> {
-        if !self.import_thumbnail_receivers.contains_key(path) && !self.import_thumbnail_cache.contains_key(path) {
-            let receiver = self.app.get_thumbnail_from_file(path.clone(), self.thumbnail_size);
-            self.import_thumbnail_receivers.insert(path.clone(), receiver);
+        if !self.import_thumbnail_receivers.contains_key(path)
+            && !self.import_thumbnail_cache.contains_key(path)
+        {
+            let receiver = self
+                .app
+                .get_thumbnail_from_file(path.clone(), self.thumbnail_size);
+            self.import_thumbnail_receivers
+                .insert(path.clone(), receiver);
         }
         self.import_thumbnail_receivers.get_mut(path).unwrap()
     }
@@ -107,13 +110,12 @@ impl AppProxy {
     pub fn process_events(&mut self) {
         let mut completed_thumbnails = Vec::new();
         for (id, receiver) in &mut self.thumbnail_receivers {
-            if let Ok(event) = receiver.try_recv() {
-                if let AppEvent::ThumbnailReady { image_id, result } = event {
-                    if let Ok(image) = result {
+            if let Ok(AppEvent::ThumbnailReady { image_id, result }) = receiver.try_recv() {
+                if let Ok(image) = result {
                         self.thumbnail_cache.insert(image_id, image);
                     }
                     completed_thumbnails.push(*id);
-                }
+
             }
         }
         for id in completed_thumbnails {
@@ -121,43 +123,39 @@ impl AppProxy {
         }
 
         let mut completed_import_thumbnails = Vec::new();
-        for (_path, receiver) in &mut self.import_thumbnail_receivers {
-            if let Ok(event) = receiver.try_recv() {
-                if let AppEvent::ThumbnailFromFileReady { path, result } = event {
+        for receiver in self.import_thumbnail_receivers.values_mut() {
+            if let Ok(AppEvent::ThumbnailFromFileReady { path, result }) = receiver.try_recv() {
                     if let Ok(image) = result {
                         self.import_thumbnail_cache.insert(path.clone(), image);
                     }
                     completed_import_thumbnails.push(path);
                 }
-            }
+
         }
         for path in completed_import_thumbnails {
             self.import_thumbnail_receivers.remove(&path);
         }
 
-        if let Some(receiver) = &mut self.import_discovery_receiver {
-            if let Ok(event) = receiver.try_recv() {
-                if let AppEvent::ImportItemsDiscovered { result, .. } = event {
+        if let Some(receiver) = &mut self.import_discovery_receiver
+            && let Ok(AppEvent::ImportItemsDiscovered { result, .. }) = receiver.try_recv() {
                     if let Ok(items) = result {
                         self.discovered_items = Some(items);
                     }
                     self.import_discovery_receiver = None;
-                }
-            }
-        }
 
+
+        }
     }
 
     pub fn refresh_images(&mut self) {
         let mut receiver = self.app.get_image_ids();
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            if let Some(event) = receiver.recv().await {
-                if let AppEvent::ImageIdsReady { result } = event {
-                    if let Ok(ids) = result {
+            if let Some(AppEvent::ImageIdsReady { result }) = receiver.recv().await
+                    && let Ok(ids) = result {
                         self.image_ids = ids;
-                    }
-                }
+
+
             }
         });
     }

@@ -1,4 +1,7 @@
-use photos_domain::{ImageId, ImageRecord};
+use photos_domain::{
+    BoundingBox, FaceDetection, FaceDetectionWithEmbedding, ImageFormat, ImageId, ImageMeta,
+    ImageRecord,
+};
 use photos_services::{ImageMetadataRepository, ImageMetadataRepositoryError};
 use sqlx::FromRow;
 use std::path::{Path, PathBuf};
@@ -41,8 +44,9 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         image_record: &ImageRecord,
     ) -> Result<(), ImageMetadataRepositoryError> {
         tracing::info!("sqlite inserting image record");
-        sqlx::query(r#"INSERT INTO image(uuid) VALUES ($1)"#)
+        sqlx::query(r#"INSERT INTO image(uuid, format_id) VALUES (?, ?)"#)
             .bind(image_record.id)
+            .bind(image_record.meta.format.as_u8())
             .execute(&self.pool)
             .await
             .map_err(|_| ImageMetadataRepositoryError::ImageMetadataRepositoryError)?;
@@ -69,8 +73,9 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
             .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
 
         for record in image_records {
-            sqlx::query(r#"INSERT INTO image(uuid) VALUES ($1)"#)
+            sqlx::query(r#"INSERT INTO image(uuid, format_id) VALUES (?, ?)"#)
                 .bind(record.id)
+                .bind(record.meta.format.as_u8())
                 .execute(&mut *tx)
                 .await
                 .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
@@ -89,27 +94,24 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         image_id: ImageId,
     ) -> Result<ImageRecord, ImageMetadataRepositoryError> {
         tracing::info!("sqlite getting image record for {}", image_id);
-        let exists =
-            sqlx::query_scalar::<_, bool>(r#"SELECT EXISTS(SELECT 1 FROM image WHERE uuid = $1)"#)
-                .bind(image_id)
-                .fetch_one(&self.pool)
-                .await
-                .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
-
-        if exists {
-            // Note: The database only stores UUIDs, not full metadata.
-            // Full ImageRecord with metadata should be retrieved via ImageRepository.
-            Err(ImageMetadataRepositoryError::QueryFailed {
-                err: format!(
-                    "Image metadata not stored in database for id {}. Use ImageRepository to get full record.",
-                    image_id
-                ),
-            })
-        } else {
-            Err(ImageMetadataRepositoryError::QueryFailed {
-                err: format!("Image with id {} not found", image_id),
-            })
+        #[derive(FromRow)]
+        struct Row {
+            uuid: ImageId,
+            format_id: i64,
         }
+
+        let row = sqlx::query_as::<_, Row>(r#"SELECT uuid, format_id FROM image"#)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
+
+        let format = ImageFormat::try_from(row.format_id as u8)
+            .map_err(|_| ImageMetadataRepositoryError::InvalidImageFormat)?;
+        tracing::info!("sqlite getting image ids done");
+        Ok(ImageRecord {
+            id: row.uuid,
+            meta: ImageMeta { format },
+        })
     }
 
     async fn delete_image_record(
@@ -164,5 +166,157 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
             .map_err(|_| ImageMetadataRepositoryError::ImageMetadataRepositoryError);
         tracing::info!("sqlite getting number of images done");
         result
+    }
+
+    async fn get_image_records_without_detections(
+        &self,
+    ) -> Result<Vec<ImageRecord>, ImageMetadataRepositoryError> {
+        tracing::info!("sqlite getting image records without face detections");
+        #[derive(FromRow)]
+        struct Row {
+            uuid: ImageId,
+            format_id: i64,
+        }
+
+        let result =
+            sqlx::query_as::<_, Row>(r#"SELECT uuid, format_id FROM image WHERE is_analyzed = 0"#)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?
+                .iter()
+                .map(|row| {
+                    if let Ok(format) = ImageFormat::try_from(row.format_id as u8) {
+                        Ok(ImageRecord {
+                            id: row.uuid,
+                            meta: ImageMeta { format },
+                        })
+                    } else {
+                        tracing::error!("image with id {} has unsupported format", row.uuid);
+                        Err(ImageMetadataRepositoryError::InvalidImageFormat)
+                    }
+                })
+                .filter_map(|maybe_record| maybe_record.ok())
+                .collect();
+        tracing::info!("sqlite getting image records without face detections done");
+        Ok(result)
+    }
+
+    async fn add_detections_to_image(
+        &self,
+        image_id: &ImageId,
+        face_detections: Vec<FaceDetection>,
+    ) -> Result<(), ImageMetadataRepositoryError> {
+        tracing::info!("sqlite inserting detections");
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
+
+        for detection in face_detections {
+            sqlx::query(r#"INSERT INTO face_detection(image_uuid, roi_x, roi_y, roi_w, roi_h, confidence) VALUES (?, ?, ?, ?, ?, ?)"#)
+                .bind(image_id)
+                .bind(detection.bounding_box.x)
+                .bind(detection.bounding_box.y)
+                .bind(detection.bounding_box.w)
+                .bind(detection.bounding_box.h)
+                .bind(detection.confidence)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
+        }
+        sqlx::query(r#"UPDATE image SET is_analyzed = 1 WHERE uuid = ?"#)
+            .bind(image_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
+
+        tx.commit()
+            .await
+            .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
+
+        tracing::info!("sqlite inserting detections done");
+        Ok(())
+    }
+
+    async fn get_detections_without_embeddings(
+        &self,
+    ) -> Result<Vec<(ImageRecord, FaceDetection)>, ImageMetadataRepositoryError> {
+        tracing::info!("sqlite getting detections without embeddings");
+        #[derive(FromRow)]
+        struct Row {
+            image_uuid: ImageId,
+            format_id: i64,
+            roi_x: f32,
+            roi_y: f32,
+            roi_w: f32,
+            roi_h: f32,
+            confidence: f64,
+        }
+
+        let result = sqlx::query_as::<_, Row>(
+            r#"
+SELECT image_uuid, format_id, roi_x, roi_y, roi_w, roi_h, confidence
+FROM face_detection
+JOIN image i on i.uuid = face_detection.image_uuid
+WHERE embedding IS NULL
+"#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?
+        .iter()
+        .map(|row| {
+            if let Ok(format) = ImageFormat::try_from(row.format_id as u8) {
+                let image_record = ImageRecord {
+                    id: row.image_uuid,
+                    meta: ImageMeta { format },
+                };
+                let detection = FaceDetection {
+                    bounding_box: BoundingBox {
+                        x: row.roi_x,
+                        y: row.roi_y,
+                        w: row.roi_w,
+                        h: row.roi_h,
+                    },
+                    confidence: row.confidence as f32,
+                };
+                Ok((image_record, detection))
+            } else {
+                tracing::error!("image with id {} has unsupported format", row.image_uuid);
+                Err(ImageMetadataRepositoryError::InvalidImageFormat)
+            }
+        })
+        .filter_map(|maybe_record| maybe_record.ok())
+        .collect();
+        tracing::info!("sqlite getting detections without embeddings done");
+
+        Ok(result)
+    }
+
+    async fn update_face_detection_with_embedding(
+        &self,
+        face_detection_with_embedding: FaceDetectionWithEmbedding,
+    ) -> Result<(), ImageMetadataRepositoryError> {
+        tracing::info!("sqlite udpating detection with embedding");
+        let bytes: &[u8] = bytemuck::cast_slice(&face_detection_with_embedding.embedding);
+        sqlx::query(
+            r#"
+UPDATE face_detection
+SET embedding = ?
+WHERE roi_x = ? AND roi_y = ? AND roi_w = ? AND roi_h = ? AND confidence = ?
+"#,
+        )
+        .bind(bytes)
+        .bind(face_detection_with_embedding.detection.bounding_box.x)
+        .bind(face_detection_with_embedding.detection.bounding_box.y)
+        .bind(face_detection_with_embedding.detection.bounding_box.w)
+        .bind(face_detection_with_embedding.detection.bounding_box.h)
+        .bind(face_detection_with_embedding.detection.confidence)
+        .execute(&self.pool)
+        .await
+        .map_err(|_| ImageMetadataRepositoryError::ImageMetadataRepositoryError)?;
+        tracing::info!("sqlite udpating detection with embedding done");
+        Ok(())
     }
 }

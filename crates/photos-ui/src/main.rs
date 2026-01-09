@@ -23,7 +23,7 @@ struct UiApp {
 impl UiApp {
     fn new() -> anyhow::Result<Self> {
         let picture_dir = dirs::picture_dir().context("Could not resolve pictures directory")?;
-        let gallery_dir = picture_dir.join("picslib4");
+        let gallery_dir = picture_dir.join("picslib5");
         let config = Config::default();
         let app_proxy = app_proxy::AppProxy::new(gallery_dir, config)?;
         let state = AppState::Gallery(GalleryView::new());
@@ -47,9 +47,7 @@ impl eframe::App for UiApp {
                         NavAction::Faces => {
                             self.state = AppState::Faces;
                         }
-                        NavAction::Import => {
-                            self.state = AppState::Import(ImportView::new())
-                        }
+                        NavAction::Import => self.state = AppState::Import(ImportView::new()),
                     }
                 }
             });

@@ -30,4 +30,3 @@ pub enum AppEvent {
         success: bool,
     },
 }
-

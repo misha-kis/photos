@@ -15,6 +15,29 @@ pub enum ImageFormat {
     Webp,
 }
 
+impl ImageFormat {
+    pub fn as_u8(&self) -> u8 {
+        match self {
+            ImageFormat::Jpeg => 0,
+            ImageFormat::Png => 1,
+            ImageFormat::Webp => 2,
+        }
+    }
+}
+
+impl TryFrom<u8> for ImageFormat {
+    type Error = DomainError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Jpeg),
+            1 => Ok(Self::Png),
+            2 => Ok(Self::Webp),
+            _ => Err(DomainError::UnsupportedFormat),
+        }
+    }
+}
+
 impl AsRef<str> for ImageFormat {
     fn as_ref(&self) -> &str {
         match self {
@@ -53,7 +76,6 @@ impl Dimensions {
 }
 
 pub struct ImageMeta {
-    pub dimensions: Dimensions,
     pub format: ImageFormat,
 }
 

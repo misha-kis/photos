@@ -11,6 +11,7 @@ photos-infra-fast-image-resize-resizer = { path = "../photos-infra-fast-image-re
 photos-infra-fs-repository = { path = "../photos-infra-fs-repository" }
 photos-infra-sqlite-image-metadata-repository = { path = "../photos-infra-sqlite-image-metadata-repository" }
 photos-infra-import-item-discovery = { path = "../photos-infra-import-item-discovery" }
+photos-infra-cv = { path = "../photos-infra-cv" }
 photos-task-queue = { path = "../photos-task-queue" }
 tokio = { workspace = true }
 thiserror = "2.0.17"

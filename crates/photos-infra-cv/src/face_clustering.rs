@@ -32,8 +32,8 @@ pub struct ClusteringResult {
 fn normalize_embedding(embedding: &mut [f32; 512]) {
     let norm: f32 = embedding.iter().map(|&x| x * x).sum::<f32>().sqrt();
     if norm > 1e-8 {
-        for i in 0..512 {
-            embedding[i] /= norm;
+        for item in embedding.iter_mut() {
+            *item /= norm;
         }
     }
 }

@@ -1,6 +1,6 @@
 use image::codecs::jpeg::JpegEncoder;
 use image::{DynamicImage, ImageEncoder};
-use photos_domain::{ImageId, ImageMeta, ImageRecord};
+use photos_domain::{ImageFormat, ImageId, ImageMeta, ImageRecord};
 use photos_services::{ImageRepository, ImageRepositoryError, ResizeService};
 use std::fs::{copy, create_dir_all};
 use std::path::{Path, PathBuf};
@@ -81,7 +81,9 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
             .unwrap()
             .to_str()
             .expect("has extension");
-        let original_path = self.original_path(image_id, extension);
+        let format = ImageFormat::try_from(extension)
+            .map_err(|_| ImageRepositoryError::UnsupportedFormat)?;
+        let original_path = self.original_path(image_id, format.as_ref());
         ensure_dir(original_path.parent().expect("parent dir exists"))
             .map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
 
@@ -117,15 +119,9 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
                 .map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
         }
 
-        let format = photos_domain::ImageFormat::try_from(extension)
-            .map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
-
         Ok(ImageRecord {
             id: image_id,
-            meta: ImageMeta {
-                dimensions: photos_domain::Dimensions { width, height },
-                format,
-            },
+            meta: ImageMeta { format },
         })
     }
 

@@ -26,6 +26,8 @@ pub enum ImageMetadataRepositoryError {
     ImageMetadataRepositoryError,
     #[error("cannot connect or create db")]
     CannotConnectOrCreate,
+    #[error("invalid image format")]
+    InvalidImageFormat,
 }
 
 #[async_trait::async_trait]
@@ -49,6 +51,21 @@ pub trait ImageMetadataRepository {
 
     async fn get_image_ids(&self) -> Result<Vec<ImageId>, ImageMetadataRepositoryError>;
     async fn get_number_of_images(&self) -> Result<u64, ImageMetadataRepositoryError>;
+    async fn get_image_records_without_detections(
+        &self,
+    ) -> Result<Vec<ImageRecord>, ImageMetadataRepositoryError>;
+    async fn add_detections_to_image(
+        &self,
+        image_record: &ImageId,
+        face_detections: Vec<FaceDetection>,
+    ) -> Result<(), ImageMetadataRepositoryError>;
+    async fn get_detections_without_embeddings(
+        &self,
+    ) -> Result<Vec<(ImageRecord, FaceDetection)>, ImageMetadataRepositoryError>;
+    async fn update_face_detection_with_embedding(
+        &self,
+        face_detection_with_embedding: FaceDetectionWithEmbedding,
+    ) -> Result<(), ImageMetadataRepositoryError>;
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -59,6 +76,8 @@ pub enum ImageRepositoryError {
     InvalidThumbnailSize,
     #[error("the requested image does not exist")]
     ImageDoesNotExist,
+    #[error("unsupported format")]
+    UnsupportedFormat,
 }
 
 pub trait ImageRepository {
@@ -105,4 +124,5 @@ pub trait ServiceRegistry: Send + Sync {
     fn image_repo(&self) -> &dyn ImageRepository;
     fn image_meta_repo(&self) -> &dyn ImageMetadataRepository;
     fn resize_service(&self) -> &dyn ResizeService;
+    fn analysis_service(&self) -> &dyn ImageAnalysisService;
 }

@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use std::cell::Cell;
+use std::path::PathBuf;
 
 use crate::app_proxy::AppProxy;
 use crate::components::dynamic_grid::DynamicGrid;
@@ -86,14 +86,15 @@ impl ImportView {
                 }
 
                 app_proxy.process_events();
-                
-                let has_pending_thumbnails = files_to_import.iter().enumerate().any(|(idx, _)| {
-                    !texture_handles.contains_key(&idx)
-                });
-                
+
+                let has_pending_thumbnails = files_to_import
+                    .iter()
+                    .enumerate()
+                    .any(|(idx, _)| !texture_handles.contains_key(&idx));
+
                 for (idx, path) in files_to_import.iter().enumerate() {
-                    if !texture_handles.contains_key(&idx) {
-                        if let Some(image) = app_proxy.get_cached_import_thumbnail(path) {
+                    if !texture_handles.contains_key(&idx)
+                        && let Some(image) = app_proxy.get_cached_import_thumbnail(path) {
                             let rgba = image.clone().into_rgba8();
                             let texture_id = format!("import-{}", idx);
                             let tex = ctx.load_texture(
@@ -105,16 +106,16 @@ impl ImportView {
                                 Default::default(),
                             );
                             texture_handles.insert(idx, tex);
-                        }
+
                     }
                 }
-                
+
                 if has_pending_thumbnails {
                     ctx.request_repaint();
                 }
 
                 let mut should_import = false;
-                
+
                 ui.vertical(|ui| {
                     ui.horizontal(|ui| {
                         if ui.button("Cancel").clicked() {
@@ -129,13 +130,14 @@ impl ImportView {
                     ui.separator();
                     ui.add_space(10.0);
 
-                    let ids: Vec<usize> = files_to_import.iter().enumerate().map(|(i, _)| i).collect();
+                    let ids: Vec<usize> =
+                        files_to_import.iter().enumerate().map(|(i, _)| i).collect();
 
                     let get_item_data = |import_image_id: &usize| -> Option<egui::TextureHandle> {
                         if cancelled.get() {
                             return None;
                         }
-                        
+
                         if let Some(cached_handle) = texture_handles.get(import_image_id) {
                             return Some(cached_handle.clone());
                         }
@@ -158,7 +160,7 @@ impl ImportView {
                         |_| {},
                     );
                 });
-                
+
                 if cancelled.get() {
                     app_proxy.cancel_import_thumbnail_requests();
                     on_cancel_or_done();
@@ -182,10 +184,10 @@ impl ImportView {
                 total,
             } => {
                 app_proxy.process_events();
-                
+
                 for (idx, path) in files_to_import.iter().enumerate() {
-                    if !texture_handles.contains_key(&idx) {
-                        if let Some(image) = app_proxy.get_cached_import_thumbnail(path) {
+                    if !texture_handles.contains_key(&idx)
+                        && let Some(image) = app_proxy.get_cached_import_thumbnail(path) {
                             let rgba = image.clone().into_rgba8();
                             let texture_id = format!("import-{}", idx);
                             let tex = ctx.load_texture(
@@ -197,14 +199,16 @@ impl ImportView {
                                 Default::default(),
                             );
                             texture_handles.insert(idx, tex);
-                        }
+
                     }
                 }
-                
+
                 let mut should_finish = false;
                 if let Some(receiver) = app_proxy.get_import_workflow_receiver() {
                     while let Ok(event) = receiver.try_recv() {
-                        if let Some(progress) = crate::app_proxy::ImportProgress::from_app_event(&event) {
+                        if let Some(progress) =
+                            crate::app_proxy::ImportProgress::from_app_event(&event)
+                        {
                             match progress {
                                 crate::app_proxy::ImportProgress::Progress(new_done, new_total) => {
                                     *done = new_done;
@@ -217,16 +221,16 @@ impl ImportView {
                         }
                     }
                 }
-                
+
                 if !should_finish && *done < *total {
                     ctx.request_repaint();
                 }
-                
+
                 if should_finish {
                     self.import_state = ImportState::Done;
                     return;
                 }
-                
+
                 let ids: Vec<usize> = files_to_import.iter().enumerate().map(|(i, _)| i).collect();
                 ui.vertical(|ui| {
                     ui.label(format!("Importing: {done} / {total}"));

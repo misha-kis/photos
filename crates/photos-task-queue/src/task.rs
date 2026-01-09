@@ -2,9 +2,12 @@
 pub enum TaskPriority {
     High,
     Low,
+    Lowest,
 }
 
-pub type TaskFn = Box<dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static>;
+pub type TaskFn =
+    Box<dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static>;
+pub type TaskInnerFn = std::pin::Pin<Box<dyn Future<Output = ()> + Send>>;
 
 pub(crate) struct QueuedTask {
     pub task: TaskFn,
@@ -36,4 +39,3 @@ impl Ord for QueuedTask {
         self.priority.cmp(&other.priority)
     }
 }
-

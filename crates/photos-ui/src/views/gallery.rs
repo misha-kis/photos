@@ -26,11 +26,11 @@ impl GalleryView {
         on_item_clicked: impl FnMut(usize),
     ) {
         app_proxy.process_events();
-        
+
         let image_ids = app_proxy.image_ids.clone();
         for image_id in &image_ids {
-            if !self.texture_handles.contains_key(image_id) {
-                if let Some(image) = app_proxy.get_cached_thumbnail(image_id) {
+            if !self.texture_handles.contains_key(image_id)
+                && let Some(image) = app_proxy.get_cached_thumbnail(image_id) {
                     let rgba = image.clone().into_rgba8();
                     let texture_id = format!("thumbnail-{}", image_id);
                     let tex = ctx.load_texture(
@@ -42,7 +42,7 @@ impl GalleryView {
                         Default::default(),
                     );
                     self.texture_handles.insert(*image_id, tex);
-                }
+
             }
         }
 

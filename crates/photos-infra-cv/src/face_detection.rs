@@ -93,10 +93,10 @@ impl FaceDetector {
             face_detections = face_detections
                 .iter()
                 .filter(|box1| {
-                    &face_detections[0]
+                    face_detections[0]
                         .bounding_box
                         .intersection(&box1.bounding_box)
-                        / &face_detections[0].bounding_box.union(&box1.bounding_box)
+                        / face_detections[0].bounding_box.union(&box1.bounding_box)
                         < 0.7
                 })
                 .copied()

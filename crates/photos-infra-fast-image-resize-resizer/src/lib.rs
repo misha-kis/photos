@@ -49,10 +49,7 @@ impl ResizeService for FastImageResizeResizer {
             image.pixel_type().expect("has pixel type"),
         );
 
-        let index = self
-            .next_index
-            .fetch_add(1, Ordering::Relaxed)
-            % self.pool.len();
+        let index = self.next_index.fetch_add(1, Ordering::Relaxed) % self.pool.len();
         let resizer = &self.pool[index];
 
         resizer
