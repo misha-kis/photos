@@ -1,12 +1,12 @@
 use crate::errors::AppError;
 use crate::service_registry::AppServiceRegistry;
 use photos_core::JobId;
-use photos_domain::{FaceDetection, ImageId, ImageRecord};
+use photos_domain::{ImageId, ImageRecord};
 use photos_infra_fast_image_resize_resizer::FastImageResizeResizer;
 use photos_infra_fs_repository::FSImageRepository;
 use photos_infra_import_item_discovery::discover_import_items;
 use photos_infra_sqlite_image_metadata_repository::SqliteImageMetadataRepository;
-use photos_services::{ImageMetadataRepository, ImageRepository, ServiceRegistry};
+use photos_services::{ImageMetadataRepository, ServiceRegistry};
 use photos_task_queue::{TaskFn, TaskPriority, TaskQueue};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -19,7 +19,9 @@ pub mod config;
 mod errors;
 pub mod events;
 mod service_registry;
+mod tasks;
 
+use crate::tasks::import_item_task;
 pub use events::AppEvent;
 use photos_infra_cv::ImageAnalysis;
 
@@ -306,243 +308,5 @@ impl App {
                 .submit(task, TaskPriority::High)
         });
         rx
-    }
-}
-
-async fn import_item_task(
-    service_registry: Arc<AppServiceRegistry>,
-    path: PathBuf,
-    job_state: Arc<Mutex<ImportJobState>>,
-    event_sender: mpsc::UnboundedSender<AppEvent>,
-    tx: mpsc::Sender<AppEvent>,
-    job_id: JobId,
-    import_jobs: Arc<Mutex<HashMap<JobId, Arc<Mutex<ImportJobState>>>>>,
-    task_queue: Arc<Mutex<TaskQueue>>,
-) {
-    let image_record_result = service_registry
-        .image_repo()
-        .insert_image(&path)
-        .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() });
-
-    let mut job_state_guard = job_state.lock().await;
-
-    match image_record_result {
-        Ok(image_record) => {
-            job_state_guard.image_records.push(image_record);
-            job_state_guard.completed += 1;
-
-            let progress_event = AppEvent::ImportProgress {
-                job_id,
-                current: job_state_guard.completed,
-                total: job_state_guard.total,
-            };
-            let _ = event_sender.send(progress_event.clone());
-            let _ = tx.send(progress_event).await;
-
-            if job_state_guard.completed == job_state_guard.total {
-                let image_records = std::mem::take(&mut job_state_guard.image_records);
-                let event_sender_final = event_sender.clone();
-                let tx_final = tx.clone();
-                let job_id_final = job_id;
-                let import_jobs_final = import_jobs.clone();
-
-                drop(job_state_guard);
-
-                match service_registry
-                    .image_metadata_repository
-                    .add_image_record_bulk(&image_records)
-                    .await
-                {
-                    Ok(_) => {
-                        let finish_event = AppEvent::ImportFinished {
-                            job_id: job_id_final,
-                            success: true,
-                        };
-                        let _ = event_sender_final.send(finish_event.clone());
-                        let _ = tx_final.send(finish_event).await;
-
-                        let mut jobs = import_jobs_final.lock().await;
-                        jobs.remove(&job_id_final);
-                        let task_queue_clone = task_queue.clone();
-                        let dispatch_face_detection_task: TaskFn = Box::new(move || {
-                            Box::pin(dispatch_face_detection_task(
-                                service_registry,
-                                task_queue_clone,
-                                tx,
-                            ))
-                        });
-                        let _ = task_queue
-                            .lock()
-                            .await
-                            .submit(dispatch_face_detection_task, TaskPriority::Lowest);
-                    }
-                    Err(e) => {
-                        let finish_event = AppEvent::ImportFinished {
-                            job_id: job_id_final,
-                            success: false,
-                        };
-                        let _ = event_sender_final.send(finish_event.clone());
-                        let _ = tx_final.send(finish_event).await;
-
-                        let mut jobs = import_jobs_final.lock().await;
-                        jobs.remove(&job_id_final);
-
-                        tracing::error!("Failed to save image records: {}", e);
-                    }
-                }
-            }
-        }
-        Err(e) => {
-            job_state_guard.completed += 1;
-            tracing::error!("Failed to import image {}: {}", path.display(), e);
-
-            let progress_event = AppEvent::ImportProgress {
-                job_id,
-                current: job_state_guard.completed,
-                total: job_state_guard.total,
-            };
-            let _ = event_sender.send(progress_event.clone());
-            let _ = tx.send(progress_event).await;
-
-            if job_state_guard.completed == job_state_guard.total {
-                let image_records = std::mem::take(&mut job_state_guard.image_records);
-                let event_sender_final = event_sender.clone();
-                let tx_final = tx.clone();
-                let job_id_final = job_id;
-                let import_jobs_final = import_jobs.clone();
-
-                drop(job_state_guard);
-
-                if !image_records.is_empty() {
-                    let _ = service_registry
-                        .image_metadata_repository
-                        .add_image_record_bulk(&image_records)
-                        .await;
-                }
-
-                let finish_event = AppEvent::ImportFinished {
-                    job_id: job_id_final,
-                    success: !image_records.is_empty(),
-                };
-                let _ = event_sender_final.send(finish_event.clone());
-                let _ = tx_final.send(finish_event).await;
-
-                let mut jobs = import_jobs_final.lock().await;
-                jobs.remove(&job_id_final);
-            }
-        }
-    }
-}
-
-async fn dispatch_face_detection_task(
-    service_registry: Arc<AppServiceRegistry>,
-    task_queue: Arc<Mutex<TaskQueue>>,
-    tx: mpsc::Sender<AppEvent>,
-) {
-    tracing::info!("getting images without detections");
-    if let Ok(image_records_without_detections) = service_registry
-        .image_metadata_repository
-        .get_image_records_without_detections()
-        .await
-    {
-        tracing::debug!("dispatching tasks for face detection");
-
-        let mut new_tasks = Vec::new();
-        for image_record in image_records_without_detections {
-            let service_registry = service_registry.clone();
-            let tx = tx.clone();
-            let task: TaskFn = Box::new(move || {
-                Box::pin(async move { detect_faces_task(service_registry, image_record, tx).await })
-                    as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
-            });
-            new_tasks.push((task, TaskPriority::Low));
-        }
-        let task_queue_clone = task_queue.clone();
-        let dispatch_embedding_generation_task: TaskFn = Box::new(move || {
-            Box::pin(dispatch_embedding_generation_task(
-                service_registry,
-                task_queue_clone,
-                tx,
-            ))
-        });
-        new_tasks.push((dispatch_embedding_generation_task, TaskPriority::Lowest));
-
-        let task_queue = task_queue.lock().await;
-        for (task, priority) in new_tasks {
-            let _ = task_queue.submit(task, priority);
-        }
-    }
-}
-
-async fn dispatch_embedding_generation_task(
-    service_registry: Arc<AppServiceRegistry>,
-    task_queue: Arc<Mutex<TaskQueue>>,
-    tx: mpsc::Sender<AppEvent>,
-) {
-    match service_registry
-        .image_meta_repo()
-        .get_detections_without_embeddings()
-        .await
-    {
-        Ok(detections_without_embeddings) => {
-            tracing::debug!("dispatching tasks for embedding generation");
-            let mut new_tasks = Vec::new();
-            for (image_record, detection) in detections_without_embeddings {
-                let service_registry = service_registry.clone();
-                let tx = tx.clone();
-                let task: TaskFn = Box::new(move || {
-                    Box::pin(generate_embeddings_task(
-                        service_registry,
-                        image_record,
-                        detection,
-                        tx,
-                    ))
-                });
-                new_tasks.push((task, TaskPriority::Low));
-            }
-            let task_queue = task_queue.lock().await;
-            for (task, priority) in new_tasks {
-                let _ = task_queue.submit(task, priority);
-            }
-        }
-        Err(e) => {
-            tracing::error!("Failed to get detections without embeddings: {e:?}")
-        }
-    }
-}
-async fn detect_faces_task(
-    service_registry: Arc<AppServiceRegistry>,
-    image_record: ImageRecord,
-    _tx: mpsc::Sender<AppEvent>,
-) {
-    tracing::debug!("detecting faces for image: {}", image_record.id);
-    if let Ok(image) = service_registry.image_repository.get_image(&image_record)
-        && let Ok(face_detections) = service_registry
-            .analysis_service()
-            .get_face_detections(&image, service_registry.resize_service())
-    {
-        let _ = service_registry
-            .image_metadata_repository
-            .add_detections_to_image(&image_record.id, face_detections)
-            .await;
-    }
-}
-
-async fn generate_embeddings_task(
-    service_registry: Arc<AppServiceRegistry>,
-    image_record: ImageRecord,
-    detection: FaceDetection,
-    _tx: mpsc::Sender<AppEvent>,
-) {
-    if let Ok(image) = service_registry.image_repository.get_image(&image_record)
-        && let Ok(detection_with_embedding) = service_registry
-            .analysis_service()
-            .get_face_embedding(&image, detection, service_registry.resize_service())
-        && let Err(e) = service_registry
-            .image_meta_repo()
-            .update_face_detection_with_embedding(detection_with_embedding)
-            .await
-    {
-        tracing::error!("could not insert embeddings: {e}");
     }
 }
