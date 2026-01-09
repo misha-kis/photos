@@ -14,7 +14,6 @@ pub(crate) async fn import_item_task(
     service_registry: Arc<AppServiceRegistry>,
     path: PathBuf,
     job_state: Arc<Mutex<ImportJobState>>,
-    event_sender: mpsc::UnboundedSender<AppEvent>,
     tx: mpsc::Sender<AppEvent>,
     job_id: JobId,
     import_jobs: Arc<Mutex<HashMap<JobId, Arc<Mutex<ImportJobState>>>>>,
@@ -37,12 +36,10 @@ pub(crate) async fn import_item_task(
                 current: job_state_guard.completed,
                 total: job_state_guard.total,
             };
-            let _ = event_sender.send(progress_event.clone());
             let _ = tx.send(progress_event).await;
 
             if job_state_guard.completed == job_state_guard.total {
                 let image_records = std::mem::take(&mut job_state_guard.image_records);
-                let event_sender_final = event_sender.clone();
                 let tx_final = tx.clone();
                 let job_id_final = job_id;
                 let import_jobs_final = import_jobs.clone();
@@ -59,7 +56,6 @@ pub(crate) async fn import_item_task(
                             job_id: job_id_final,
                             success: true,
                         };
-                        let _ = event_sender_final.send(finish_event.clone());
                         let _ = tx_final.send(finish_event).await;
 
                         let mut jobs = import_jobs_final.lock().await;
@@ -82,7 +78,6 @@ pub(crate) async fn import_item_task(
                             job_id: job_id_final,
                             success: false,
                         };
-                        let _ = event_sender_final.send(finish_event.clone());
                         let _ = tx_final.send(finish_event).await;
 
                         let mut jobs = import_jobs_final.lock().await;
@@ -102,12 +97,10 @@ pub(crate) async fn import_item_task(
                 current: job_state_guard.completed,
                 total: job_state_guard.total,
             };
-            let _ = event_sender.send(progress_event.clone());
             let _ = tx.send(progress_event).await;
 
             if job_state_guard.completed == job_state_guard.total {
                 let image_records = std::mem::take(&mut job_state_guard.image_records);
-                let event_sender_final = event_sender.clone();
                 let tx_final = tx.clone();
                 let job_id_final = job_id;
                 let import_jobs_final = import_jobs.clone();
@@ -125,7 +118,6 @@ pub(crate) async fn import_item_task(
                     job_id: job_id_final,
                     success: !image_records.is_empty(),
                 };
-                let _ = event_sender_final.send(finish_event.clone());
                 let _ = tx_final.send(finish_event).await;
 
                 let mut jobs = import_jobs_final.lock().await;

@@ -34,7 +34,6 @@ struct ImportJobState {
 pub struct App {
     service_registry: Arc<AppServiceRegistry>,
     task_queue: Arc<Mutex<TaskQueue>>,
-    event_sender: mpsc::UnboundedSender<AppEvent>,
     import_jobs: Arc<Mutex<HashMap<JobId, Arc<Mutex<ImportJobState>>>>>,
     runtime: Runtime,
 }
@@ -71,8 +70,6 @@ impl App {
             analysis_service: Arc::new(analysis_service),
         });
 
-        let (event_sender, _event_receiver) = mpsc::unbounded_channel();
-
         let task_queue = Arc::new(Mutex::new(TaskQueue::new(
             runtime.handle().clone(),
             config.max_blocking_tasks,
@@ -81,7 +78,6 @@ impl App {
         Ok(Self {
             service_registry,
             task_queue,
-            event_sender,
             import_jobs: Arc::new(Mutex::new(HashMap::new())),
             runtime,
         })
@@ -90,11 +86,9 @@ impl App {
     pub fn get_image_ids(&self) -> mpsc::Receiver<AppEvent> {
         let (tx, rx) = mpsc::channel(1);
         let service_registry = self.service_registry.clone();
-        let event_sender = self.event_sender.clone();
 
         let task: TaskFn = Box::new(move || {
             let service_registry = service_registry.clone();
-            let event_sender = event_sender.clone();
             let tx = tx;
 
             Box::pin(async move {
@@ -105,7 +99,6 @@ impl App {
                     .map_err(|e| AppError::InvalidDatabaseState { err: e.to_string() });
 
                 let event = AppEvent::ImageIdsReady { result };
-                let _ = event_sender.send(event.clone());
                 let _ = tx.send(event).await;
             })
         });
@@ -120,12 +113,10 @@ impl App {
 
     pub fn discover_import_items(&self, path: PathBuf) -> mpsc::Receiver<AppEvent> {
         let (tx, rx) = mpsc::channel(1);
-        let event_sender = self.event_sender.clone();
 
         let task: Box<
             dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
         > = Box::new(move || {
-            let event_sender = event_sender.clone();
             let tx = tx;
             let path_clone = path.clone();
 
@@ -135,7 +126,6 @@ impl App {
                     .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() });
 
                 let event = AppEvent::ImportItemsDiscovered { path, result };
-                let _ = event_sender.send(event.clone());
                 let _ = tx.send(event).await;
             }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
         });
@@ -154,7 +144,6 @@ impl App {
         let job_id = JobId::new_v4();
         let total = paths.len() as u64;
         let service_registry = self.service_registry.clone();
-        let event_sender = self.event_sender.clone();
         let import_jobs = self.import_jobs.clone();
 
         let job_state = Arc::new(Mutex::new(ImportJobState {
@@ -173,7 +162,6 @@ impl App {
             current: 0,
             total,
         };
-        let _ = event_sender.send(initial_event.clone());
         let _ = self
             .runtime
             .block_on(async { tx.send(initial_event).await });
@@ -181,7 +169,6 @@ impl App {
         for path in paths.into_iter() {
             let job_state = job_state.clone();
             let service_registry = service_registry.clone();
-            let event_sender = event_sender.clone();
             let tx = tx.clone();
             let import_jobs = import_jobs.clone();
             let task_queue = self.task_queue.clone();
@@ -193,7 +180,6 @@ impl App {
                     service_registry,
                     path,
                     job_state,
-                    event_sender,
                     tx,
                     job_id,
                     import_jobs,
@@ -216,13 +202,11 @@ impl App {
     ) -> mpsc::Receiver<AppEvent> {
         let (tx, rx) = mpsc::channel(1);
         let service_registry = self.service_registry.clone();
-        let event_sender = self.event_sender.clone();
 
         let task: Box<
             dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
         > = Box::new(move || {
             let service_registry = service_registry.clone();
-            let event_sender = event_sender.clone();
             let tx = tx;
             let image_id = image_id;
 
@@ -244,7 +228,6 @@ impl App {
                 };
 
                 let event = AppEvent::ThumbnailReady { image_id, result };
-                let _ = event_sender.send(event.clone());
                 let _ = tx.send(event).await;
             }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
         });
@@ -265,13 +248,11 @@ impl App {
     ) -> mpsc::Receiver<AppEvent> {
         let (tx, rx) = mpsc::channel(1);
         let service_registry = self.service_registry.clone();
-        let event_sender = self.event_sender.clone();
 
         let task: Box<
             dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
         > = Box::new(move || {
             let service_registry = service_registry.clone();
-            let event_sender = event_sender.clone();
             let tx = tx;
             let path_clone = path.clone();
 
@@ -296,7 +277,6 @@ impl App {
                     path: path_clone,
                     result,
                 };
-                let _ = event_sender.send(event.clone());
                 let _ = tx.send(event).await;
             }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
         });
