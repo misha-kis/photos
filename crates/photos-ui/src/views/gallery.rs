@@ -30,19 +30,19 @@ impl GalleryView {
         let image_ids = app_proxy.image_ids.clone();
         for image_id in &image_ids {
             if !self.texture_handles.contains_key(image_id)
-                && let Some(image) = app_proxy.get_cached_thumbnail(image_id) {
-                    let rgba = image.clone().into_rgba8();
-                    let texture_id = format!("thumbnail-{}", image_id);
-                    let tex = ctx.load_texture(
-                        &texture_id,
-                        egui::ColorImage::from_rgba_unmultiplied(
-                            [rgba.width() as _, rgba.height() as _],
-                            rgba.as_raw(),
-                        ),
-                        Default::default(),
-                    );
-                    self.texture_handles.insert(*image_id, tex);
-
+                && let Some(image) = app_proxy.get_cached_thumbnail(image_id)
+            {
+                let rgba = image.clone().into_rgba8();
+                let texture_id = format!("thumbnail-{}", image_id);
+                let tex = ctx.load_texture(
+                    &texture_id,
+                    egui::ColorImage::from_rgba_unmultiplied(
+                        [rgba.width() as _, rgba.height() as _],
+                        rgba.as_raw(),
+                    ),
+                    Default::default(),
+                );
+                self.texture_handles.insert(*image_id, tex);
             }
         }
 

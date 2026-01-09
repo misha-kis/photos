@@ -94,19 +94,19 @@ impl ImportView {
 
                 for (idx, path) in files_to_import.iter().enumerate() {
                     if !texture_handles.contains_key(&idx)
-                        && let Some(image) = app_proxy.get_cached_import_thumbnail(path) {
-                            let rgba = image.clone().into_rgba8();
-                            let texture_id = format!("import-{}", idx);
-                            let tex = ctx.load_texture(
-                                &texture_id,
-                                ColorImage::from_rgba_unmultiplied(
-                                    [rgba.width() as _, rgba.height() as _],
-                                    rgba.as_raw(),
-                                ),
-                                Default::default(),
-                            );
-                            texture_handles.insert(idx, tex);
-
+                        && let Some(image) = app_proxy.get_cached_import_thumbnail(path)
+                    {
+                        let rgba = image.clone().into_rgba8();
+                        let texture_id = format!("import-{}", idx);
+                        let tex = ctx.load_texture(
+                            &texture_id,
+                            ColorImage::from_rgba_unmultiplied(
+                                [rgba.width() as _, rgba.height() as _],
+                                rgba.as_raw(),
+                            ),
+                            Default::default(),
+                        );
+                        texture_handles.insert(idx, tex);
                     }
                 }
 
@@ -187,19 +187,19 @@ impl ImportView {
 
                 for (idx, path) in files_to_import.iter().enumerate() {
                     if !texture_handles.contains_key(&idx)
-                        && let Some(image) = app_proxy.get_cached_import_thumbnail(path) {
-                            let rgba = image.clone().into_rgba8();
-                            let texture_id = format!("import-{}", idx);
-                            let tex = ctx.load_texture(
-                                &texture_id,
-                                ColorImage::from_rgba_unmultiplied(
-                                    [rgba.width() as _, rgba.height() as _],
-                                    rgba.as_raw(),
-                                ),
-                                Default::default(),
-                            );
-                            texture_handles.insert(idx, tex);
-
+                        && let Some(image) = app_proxy.get_cached_import_thumbnail(path)
+                    {
+                        let rgba = image.clone().into_rgba8();
+                        let texture_id = format!("import-{}", idx);
+                        let tex = ctx.load_texture(
+                            &texture_id,
+                            ColorImage::from_rgba_unmultiplied(
+                                [rgba.width() as _, rgba.height() as _],
+                                rgba.as_raw(),
+                            ),
+                            Default::default(),
+                        );
+                        texture_handles.insert(idx, tex);
                     }
                 }
 

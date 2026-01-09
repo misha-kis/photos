@@ -29,7 +29,7 @@ impl AppProxy {
 
         let rt = tokio::runtime::Runtime::new()?;
         rt.block_on(async {
-            if let Some(AppEvent::ImageIdsReady {result}) = receiver.recv().await
+            if let Some(AppEvent::ImageIdsReady { result }) = receiver.recv().await
                 && let Ok(ids) = result
             {
                 image_ids = ids;
@@ -112,10 +112,9 @@ impl AppProxy {
         for (id, receiver) in &mut self.thumbnail_receivers {
             if let Ok(AppEvent::ThumbnailReady { image_id, result }) = receiver.try_recv() {
                 if let Ok(image) = result {
-                        self.thumbnail_cache.insert(image_id, image);
-                    }
-                    completed_thumbnails.push(*id);
-
+                    self.thumbnail_cache.insert(image_id, image);
+                }
+                completed_thumbnails.push(*id);
             }
         }
         for id in completed_thumbnails {
@@ -125,25 +124,23 @@ impl AppProxy {
         let mut completed_import_thumbnails = Vec::new();
         for receiver in self.import_thumbnail_receivers.values_mut() {
             if let Ok(AppEvent::ThumbnailFromFileReady { path, result }) = receiver.try_recv() {
-                    if let Ok(image) = result {
-                        self.import_thumbnail_cache.insert(path.clone(), image);
-                    }
-                    completed_import_thumbnails.push(path);
+                if let Ok(image) = result {
+                    self.import_thumbnail_cache.insert(path.clone(), image);
                 }
-
+                completed_import_thumbnails.push(path);
+            }
         }
         for path in completed_import_thumbnails {
             self.import_thumbnail_receivers.remove(&path);
         }
 
         if let Some(receiver) = &mut self.import_discovery_receiver
-            && let Ok(AppEvent::ImportItemsDiscovered { result, .. }) = receiver.try_recv() {
-                    if let Ok(items) = result {
-                        self.discovered_items = Some(items);
-                    }
-                    self.import_discovery_receiver = None;
-
-
+            && let Ok(AppEvent::ImportItemsDiscovered { result, .. }) = receiver.try_recv()
+        {
+            if let Ok(items) = result {
+                self.discovered_items = Some(items);
+            }
+            self.import_discovery_receiver = None;
         }
     }
 
@@ -152,10 +149,9 @@ impl AppProxy {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             if let Some(AppEvent::ImageIdsReady { result }) = receiver.recv().await
-                    && let Ok(ids) = result {
-                        self.image_ids = ids;
-
-
+                && let Ok(ids) = result
+            {
+                self.image_ids = ids;
             }
         });
     }

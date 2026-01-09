@@ -24,7 +24,7 @@ pub struct ClusteringResult {
     /// Cluster labels for each embedding
     /// -1 indicates noise/outlier
     /// Non-negative values indicate cluster IDs
-    pub labels: Vec<i32>,
+    pub labels: Vec<Option<u32>>,
     /// Number of clusters found (excluding noise)
     pub n_clusters: usize,
 }
@@ -83,7 +83,7 @@ pub fn cluster_embeddings(
     if embeddings.len() < config.min_cluster_size {
         // All points are noise if we don't have enough for a cluster
         return Ok(ClusteringResult {
-            labels: vec![-1; embeddings.len()],
+            labels: vec![None; embeddings.len()],
             n_clusters: 0,
         });
     }
@@ -98,14 +98,17 @@ pub fn cluster_embeddings(
         .build();
 
     let clusterer = Hdbscan::new(&distance_matrix, hyper_params);
-    let labels = clusterer
+    let labels: Vec<Option<u32>> = clusterer
         .cluster()
-        .context("Failed to run HDBSCAN clustering")?;
+        .context("Failed to run HDBSCAN clustering")?
+        .iter()
+        .map(|l| if *l < 0 { None } else { Some(*l as u32) })
+        .collect();
 
     // Count number of clusters (excluding noise/outliers with label -1)
     let n_clusters = labels
         .iter()
-        .filter(|&&label| label >= 0)
+        .filter(|l| l.is_some())
         .collect::<std::collections::HashSet<_>>()
         .len();
 
@@ -130,7 +133,7 @@ mod tests {
 
         let result = cluster_embeddings(&embeddings, config).unwrap();
         // Identical embeddings should be in the same cluster
-        assert!(result.labels[0] == result.labels[1] && result.labels[0] >= 0);
+        assert!(result.labels[0] == result.labels[1] && result.labels[0].is_some());
         assert_eq!(result.n_clusters, 1);
     }
 
@@ -152,7 +155,7 @@ mod tests {
         };
         let result = cluster_embeddings(&embeddings, config).unwrap();
         // Single point should be noise
-        assert_eq!(result.labels[0], -1);
+        assert_eq!(result.labels[0], None);
         assert_eq!(result.n_clusters, 0);
     }
 }

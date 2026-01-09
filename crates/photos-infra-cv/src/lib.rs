@@ -60,4 +60,19 @@ impl ImageAnalysisService for ImageAnalysis {
             .map_err(|_| ImageAnalysisServiceError::CouldNotInfer)?
             .generate_embedding(image, face_detection, resize_service)
     }
+
+    fn cluster_embeddings(
+        &self,
+        detections_with_embeddings: Vec<(u32, [f32; 512])>,
+    ) -> Result<Vec<(u32, Option<u32>)>, ImageAnalysisServiceError> {
+        let embeddings: Vec<_> = detections_with_embeddings.iter().map(|(_, e)| *e).collect();
+        let clustered_embeddings = cluster_embeddings(&embeddings, ClusteringConfig::default())
+            .map_err(|_| ImageAnalysisServiceError::CouldNotInfer)?;
+        let result = detections_with_embeddings
+            .iter()
+            .map(|(id, _)| *id)
+            .zip(clustered_embeddings.labels.iter().copied())
+            .collect();
+        Ok(result)
+    }
 }

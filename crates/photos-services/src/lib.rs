@@ -66,6 +66,13 @@ pub trait ImageMetadataRepository {
         &self,
         face_detection_with_embedding: FaceDetectionWithEmbedding,
     ) -> Result<(), ImageMetadataRepositoryError>;
+    async fn get_all_detections_with_embedding(
+        &self,
+    ) -> Result<Vec<(u32, [f32; 512])>, ImageMetadataRepositoryError>;
+    async fn update_detections_with_clusters(
+        &self,
+        clustered_ids: &[(u32, Option<u32>)],
+    ) -> Result<(), ImageMetadataRepositoryError>;
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -118,6 +125,11 @@ pub trait ImageAnalysisService {
         face_detection: FaceDetection,
         resize_service: &dyn ResizeService,
     ) -> Result<FaceDetectionWithEmbedding, ImageAnalysisServiceError>;
+
+    fn cluster_embeddings(
+        &self,
+        detections_with_embeddings: Vec<(u32, [f32; 512])>,
+    ) -> Result<Vec<(u32, Option<u32>)>, ImageAnalysisServiceError>;
 }
 
 pub trait ServiceRegistry: Send + Sync {

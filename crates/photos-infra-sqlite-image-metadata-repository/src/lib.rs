@@ -319,4 +319,63 @@ WHERE roi_x = ? AND roi_y = ? AND roi_w = ? AND roi_h = ? AND confidence = ?
         tracing::info!("sqlite udpating detection with embedding done");
         Ok(())
     }
+
+    async fn get_all_detections_with_embedding(
+        &self,
+    ) -> Result<Vec<(u32, [f32; 512])>, ImageMetadataRepositoryError> {
+        tracing::info!("sqlite getting detections with embeddings");
+        #[derive(FromRow)]
+        struct Row {
+            face_detection_id: i64,
+            embedding: Vec<u8>,
+        }
+
+        let result = sqlx::query_as::<_, Row>(
+            r#"SELECT face_detection_id, embedding FROM face_detection WHERE embedding IS NOT NULL"#
+        )
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?
+            .iter()
+            .map(|row| {
+                let bytes: &[f32] = bytemuck::cast_slice(&row.embedding);
+                let embedding: [f32; 512] = bytes.try_into().unwrap();
+                (row.face_detection_id as u32, embedding)
+            }
+            ).collect();
+
+        tracing::info!("sqlite getting detections with embeddings done");
+        Ok(result)
+    }
+
+    async fn update_detections_with_clusters(
+        &self,
+        clustered_ids: &[(u32, Option<u32>)],
+    ) -> Result<(), ImageMetadataRepositoryError> {
+        tracing::info!("sqlite updating clusters");
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
+
+        for (detection_id, cluster_id) in clustered_ids {
+            let cluster_id = if let Some(cluster_id) = cluster_id {
+                *cluster_id as i32
+            } else {
+                -1
+            };
+            sqlx::query(r#"UPDATE face_detection SET face_id = ? WHERE face_detection_id = ?"#)
+                .bind(cluster_id)
+                .bind(detection_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|_| ImageMetadataRepositoryError::ImageMetadataRepositoryError)?;
+        }
+        tx.commit()
+            .await
+            .map_err(|_| ImageMetadataRepositoryError::ImageMetadataRepositoryError)?;
+        tracing::info!("sqlite updating clusters done");
+        Ok(())
+    }
 }

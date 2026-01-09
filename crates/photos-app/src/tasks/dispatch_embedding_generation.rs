@@ -1,5 +1,6 @@
 use crate::AppEvent;
 use crate::service_registry::AppServiceRegistry;
+use crate::tasks::cluster_embeddings::cluster_embeddings_task;
 use crate::tasks::generate_embeddings::generate_embeddings_task;
 use photos_services::ServiceRegistry;
 use photos_task_queue::{TaskFn, TaskPriority, TaskQueue};
@@ -32,6 +33,9 @@ pub(crate) async fn dispatch_embedding_generation_task(
                 });
                 new_tasks.push((task, TaskPriority::Low));
             }
+            let cluster_embeddings_task: TaskFn =
+                Box::new(move || Box::pin(cluster_embeddings_task(service_registry, tx)));
+            new_tasks.push((cluster_embeddings_task, TaskPriority::Lowest));
             let task_queue = task_queue.lock().await;
             for (task, priority) in new_tasks {
                 let _ = task_queue.submit(task, priority);
