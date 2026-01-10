@@ -1,6 +1,9 @@
-use photos_domain::{ClusteredFaceDetection, DynamicImage, FaceDetection, FaceDetectionWithEmbedding, ImageId, ImageRecord};
-use std::path::Path;
 use photos_core::Uuid;
+use photos_domain::{
+    BoundingBox, ClusteredFaceDetection, DynamicImage, FaceDetection, FaceDetectionWithEmbedding,
+    ImageId, ImageRecord,
+};
+use std::path::Path;
 
 #[derive(thiserror::Error, Debug)]
 pub enum ResizeServiceError {
@@ -49,6 +52,7 @@ pub trait ImageMetadataRepository {
     ) -> Result<(), ImageMetadataRepositoryError>;
 
     async fn get_image_ids(&self) -> Result<Vec<ImageId>, ImageMetadataRepositoryError>;
+    async fn get_face_ids(&self) -> Result<Vec<Uuid>, ImageMetadataRepositoryError>;
     async fn get_number_of_images(&self) -> Result<u64, ImageMetadataRepositoryError>;
     async fn get_image_records_without_detections(
         &self,
@@ -72,6 +76,10 @@ pub trait ImageMetadataRepository {
         &self,
         clustered_face_detections: &[ClusteredFaceDetection],
     ) -> Result<(), ImageMetadataRepositoryError>;
+    async fn get_min_detection_bbox_and_image_for_face_id(
+        &self,
+        face_id: Uuid,
+    ) -> Result<(BoundingBox, ImageRecord), ImageMetadataRepositoryError>;
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -98,6 +106,12 @@ pub trait ImageRepository {
     fn get_thumbnail_from_file(
         &self,
         path: &Path,
+        thumbnail_size: u32,
+    ) -> Result<DynamicImage, ImageRepositoryError>;
+    fn get_face_thumbnail(
+        &self,
+        image_record: &ImageRecord,
+        bounding_box: BoundingBox,
         thumbnail_size: u32,
     ) -> Result<DynamicImage, ImageRepositoryError>;
 }

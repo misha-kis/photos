@@ -1,6 +1,6 @@
 use image::codecs::jpeg::JpegEncoder;
 use image::{DynamicImage, ImageEncoder};
-use photos_domain::{ImageFormat, ImageId, ImageMeta, ImageRecord};
+use photos_domain::{BoundingBox, ImageFormat, ImageId, ImageMeta, ImageRecord};
 use photos_services::{ImageRepository, ImageRepositoryError, ResizeService};
 use std::fs::{copy, create_dir_all};
 use std::path::{Path, PathBuf};
@@ -185,6 +185,26 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
             .map_err(|_| ImageRepositoryError::ImageRepositoryError);
         tracing::debug!("done resizing");
         resized
+    }
+
+    fn get_face_thumbnail(
+        &self,
+        image_record: &ImageRecord,
+        bounding_box: BoundingBox,
+        thumbnail_size: u32,
+    ) -> Result<DynamicImage, ImageRepositoryError> {
+        let image = self
+            .get_image(image_record)
+            .map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
+        let image = image.crop_imm(
+            bounding_box.x as u32,
+            bounding_box.y as u32,
+            bounding_box.w as u32,
+            bounding_box.h as u32,
+        );
+        self.resize_service
+            .resize(&image, thumbnail_size, thumbnail_size)
+            .map_err(|_| ImageRepositoryError::ImageRepositoryError)
     }
 }
 

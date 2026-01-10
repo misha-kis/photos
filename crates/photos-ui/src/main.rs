@@ -1,4 +1,5 @@
 use crate::components::navbar::{NavAction, show_navbar};
+use crate::views::faces::FacesView;
 use anyhow::Context;
 use eframe::egui;
 use photos_app::config::Config;
@@ -11,7 +12,7 @@ mod views;
 
 pub enum AppState {
     Gallery(GalleryView),
-    Faces,
+    Faces(FacesView),
     Import(ImportView),
 }
 
@@ -45,7 +46,7 @@ impl eframe::App for UiApp {
                             self.state = AppState::Gallery(GalleryView::new());
                         }
                         NavAction::Faces => {
-                            self.state = AppState::Faces;
+                            self.state = AppState::Faces(FacesView::new());
                         }
                         NavAction::Import => self.state = AppState::Import(ImportView::new()),
                     }
@@ -54,7 +55,7 @@ impl eframe::App for UiApp {
 
         egui::CentralPanel::default().show(ctx, |ui| match &mut self.state {
             AppState::Gallery(view) => view.show(ui, ctx, &mut self.app_proxy, |_| {}),
-            AppState::Faces => {}
+            AppState::Faces(view) => view.show(ui, ctx, &mut self.app_proxy, |_| {}),
             AppState::Import(view) => {
                 let mut new_state = None;
                 view.show(ui, ctx, &mut self.app_proxy, || {

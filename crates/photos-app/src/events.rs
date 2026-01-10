@@ -1,5 +1,5 @@
 use crate::errors::AppError;
-use photos_core::JobId;
+use photos_core::{JobId, Uuid};
 use photos_domain::{DynamicImage, ImageId};
 use std::path::PathBuf;
 
@@ -8,8 +8,15 @@ pub enum AppEvent {
     ImageIdsReady {
         result: Result<Vec<ImageId>, AppError>,
     },
+    FaceIdsReady {
+        result: Result<Vec<Uuid>, AppError>,
+    },
     ThumbnailReady {
         image_id: ImageId,
+        result: Result<DynamicImage, AppError>,
+    },
+    FaceThumbnailReady {
+        face_id: Uuid,
         result: Result<DynamicImage, AppError>,
     },
     ThumbnailFromFileReady {

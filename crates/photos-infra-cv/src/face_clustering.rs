@@ -26,6 +26,7 @@ pub(crate) struct ClusteringResult {
     /// Non-negative values indicate cluster IDs
     pub labels: Vec<Option<u32>>,
     /// Number of clusters found (excluding noise)
+    #[allow(unused)]
     pub n_clusters: usize,
 }
 

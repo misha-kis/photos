@@ -51,7 +51,11 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
             .bind(image_record.meta.format.as_u8())
             .execute(&self.pool)
             .await
-            .map_err(|e| ImageMetadataRepositoryError::ImageMetadataRepositoryError { err: e.to_string() })?;
+            .map_err(
+                |e| ImageMetadataRepositoryError::ImageMetadataRepositoryError {
+                    err: e.to_string(),
+                },
+            )?;
         tracing::info!("sqlite inserting image record done");
         Ok(())
     }
@@ -155,6 +159,23 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         Ok(result)
     }
 
+    async fn get_face_ids(&self) -> Result<Vec<Uuid>, ImageMetadataRepositoryError> {
+        tracing::info!("sqlite getting face ids");
+        #[derive(FromRow)]
+        struct Row {
+            uuid: ImageId,
+        }
+        let result = sqlx::query_as::<_, Row>(r#"SELECT uuid FROM face"#)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?
+            .iter()
+            .map(|row| row.uuid)
+            .collect();
+        tracing::info!("sqlite getting face ids done");
+        Ok(result)
+    }
+
     async fn get_number_of_images(&self) -> Result<u64, ImageMetadataRepositoryError> {
         tracing::info!("sqlite getting number of images");
         #[derive(FromRow)]
@@ -165,7 +186,11 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
             .fetch_one(&self.pool)
             .await
             .map(|row| row.uuid_count)
-            .map_err(|e| ImageMetadataRepositoryError::ImageMetadataRepositoryError { err: e.to_string() });
+            .map_err(
+                |e| ImageMetadataRepositoryError::ImageMetadataRepositoryError {
+                    err: e.to_string(),
+                },
+            );
         tracing::info!("sqlite getting number of images done");
         result
     }
@@ -316,7 +341,9 @@ WHERE uuid = ?
         .bind(face_detection_with_embedding.detection.uuid)
         .execute(&self.pool)
         .await
-            .map_err(|e| ImageMetadataRepositoryError::ImageMetadataRepositoryError { err: e.to_string() })?;
+        .map_err(
+            |e| ImageMetadataRepositoryError::ImageMetadataRepositoryError { err: e.to_string() },
+        )?;
         tracing::info!("sqlite udpating detection with embedding done");
         Ok(())
     }
@@ -391,21 +418,75 @@ WHERE embedding IS NOT NULL
             } else {
                 Uuid::nil()
             };
-            sqlx::query(r#"
+            sqlx::query(
+                r#"
 INSERT INTO face (uuid) VALUES (?) ON CONFLICT DO NOTHING;
 UPDATE face_detection SET face_uuid = ? WHERE uuid = ?
-"#)
-                .bind(cluster_uuid)
-                .bind(cluster_uuid)
-                .bind(detection.detection.detection.uuid)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| ImageMetadataRepositoryError::ImageMetadataRepositoryError { err: e.to_string() })?;
-        }
-        tx.commit()
+"#,
+            )
+            .bind(cluster_uuid)
+            .bind(cluster_uuid)
+            .bind(detection.detection.detection.uuid)
+            .execute(&mut *tx)
             .await
-            .map_err(|e| ImageMetadataRepositoryError::ImageMetadataRepositoryError { err: e.to_string() })?;
+            .map_err(|e| {
+                ImageMetadataRepositoryError::ImageMetadataRepositoryError { err: e.to_string() }
+            })?;
+        }
+        tx.commit().await.map_err(|e| {
+            ImageMetadataRepositoryError::ImageMetadataRepositoryError { err: e.to_string() }
+        })?;
         tracing::info!("sqlite updating clusters done");
         Ok(())
+    }
+
+    async fn get_min_detection_bbox_and_image_for_face_id(
+        &self,
+        face_id: Uuid,
+    ) -> Result<(BoundingBox, ImageRecord), ImageMetadataRepositoryError> {
+        tracing::info!("sqlite getting min detection for face id");
+        #[derive(FromRow)]
+        struct Row {
+            roi_x: f32,
+            roi_y: f32,
+            roi_w: f32,
+            roi_h: f32,
+            image_uuid: ImageId,
+            format_id: i64,
+        }
+        let row = sqlx::query_as::<_, Row>(
+            r#"
+SELECT roi_x, roi_y, roi_w, roi_h, image_uuid, format_id
+FROM (SELECT min(uuid) uuid
+      FROM face_detection
+      WHERE face_uuid = ?) min_uuid
+         JOIN face_detection fd ON fd.uuid = min_uuid.uuid
+         JOIN image i ON fd.image_uuid = i.uuid
+"#,
+        )
+        .bind(face_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(
+            |e| ImageMetadataRepositoryError::ImageMetadataRepositoryError { err: e.to_string() },
+        )?;
+
+        let format = ImageFormat::try_from(row.format_id as u8)
+            .map_err(|_| ImageMetadataRepositoryError::InvalidImageFormat)?;
+        let result = (
+            BoundingBox {
+                x: row.roi_x,
+                y: row.roi_y,
+                w: row.roi_w,
+                h: row.roi_h,
+            },
+            ImageRecord {
+                id: row.image_uuid,
+                meta: ImageMeta { format },
+            },
+        );
+
+        tracing::info!("sqlite getting min detection for face id");
+        Ok(result)
     }
 }

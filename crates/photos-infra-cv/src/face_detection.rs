@@ -11,7 +11,6 @@ use ort::{
 use photos_domain::BoundingBox;
 use photos_services::{ImageAnalysisServiceError, ResizeService};
 
-
 #[derive(Copy, Clone)]
 pub(crate) struct FaceDetection {
     pub(crate) bounding_box: BoundingBox,
@@ -44,7 +43,10 @@ pub(crate) struct FaceDetector {
 }
 
 impl FaceDetector {
-    pub(crate) fn new(model_path: PathBuf, image_size: u32) -> Result<Self, ImageAnalysisServiceError> {
+    pub(crate) fn new(
+        model_path: PathBuf,
+        image_size: u32,
+    ) -> Result<Self, ImageAnalysisServiceError> {
         ort::init()
             .with_execution_providers([CoreMLExecutionProvider::default().build()])
             .commit();
