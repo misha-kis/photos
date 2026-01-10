@@ -158,7 +158,7 @@ impl ImportView {
                             image_view(ui, visible, size, || Ok(texture_opt.clone()), Some(click));
                         },
                         |_| {},
-                        false
+                        false,
                     );
                 });
 
@@ -259,7 +259,7 @@ impl ImportView {
                             image_view(ui, visible, size, || Ok(texture_opt.clone()), Some(click));
                         },
                         |_| {},
-                        false
+                        false,
                     );
                 });
             }

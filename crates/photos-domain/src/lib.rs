@@ -21,10 +21,10 @@ pub type ImageId = photos_core::Uuid;
 //         }
 //     }
 // }
-// 
+//
 // impl TryFrom<u8> for ImageFormat {
 //     type Error = DomainError;
-// 
+//
 //     fn try_from(value: u8) -> Result<Self, Self::Error> {
 //         match value {
 //             0 => Ok(Self::Jpeg),
@@ -34,7 +34,7 @@ pub type ImageId = photos_core::Uuid;
 //         }
 //     }
 // }
-// 
+//
 // impl AsRef<str> for ImageFormat {
 //     fn as_ref(&self) -> &str {
 //         match self {
@@ -44,10 +44,10 @@ pub type ImageId = photos_core::Uuid;
 //         }
 //     }
 // }
-// 
+//
 // impl TryFrom<&str> for ImageFormat {
 //     type Error = DomainError;
-// 
+//
 //     fn try_from(value: &str) -> Result<Self, Self::Error> {
 //         match value.to_lowercase().as_ref() {
 //             "jpeg" | "jpg" => Ok(Self::Jpeg),

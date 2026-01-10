@@ -154,8 +154,10 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
 
     fn delete_image(&self, image_record: &ImageRecord) -> Result<(), ImageRepositoryError> {
         tracing::info!("deleting image");
-        let original_path =
-            self.original_path(image_record.id, image_record.meta.format.extensions_str()[0]);
+        let original_path = self.original_path(
+            image_record.id,
+            image_record.meta.format.extensions_str()[0],
+        );
         if !original_path.exists() {
             return Err(ImageRepositoryError::ImageDoesNotExist);
         }
@@ -173,7 +175,10 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
 
     fn get_image(&self, image_record: &ImageRecord) -> Result<DynamicImage, ImageRepositoryError> {
         tracing::info!("getting image {:?}", image_record.id);
-        let path = self.original_path(image_record.id, image_record.meta.format.extensions_str()[0]);
+        let path = self.original_path(
+            image_record.id,
+            image_record.meta.format.extensions_str()[0],
+        );
         if !path.exists() {
             return Err(ImageRepositoryError::ImageDoesNotExist);
         }
