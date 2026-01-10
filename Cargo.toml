@@ -11,7 +11,6 @@ members = [
     "crates/photos-services",
     "crates/photos-task-queue",
     "crates/photos-ui",
-    "crates/photos-workflow",
 ]
 exclude = ["models", "test_data"]
 

@@ -1508,21 +1508,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "futures"
-version = "0.3.31"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65bc07b1a8bc7c85c5f2e110c476c7389b4554ba72af57d8445ea63a576b0876"
-dependencies = [
- "futures-channel",
- "futures-core",
- "futures-executor",
- "futures-io",
- "futures-sink",
- "futures-task",
- "futures-util",
-]
-
-[[package]]
 name = "futures-channel"
 version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1608,7 +1593,6 @@ version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9fa08315bb612088cc391249efdc3bc77536f16c91f6cf495e6fbe85b20a4a81"
 dependencies = [
- "futures-channel",
  "futures-core",
  "futures-io",
  "futures-macro",
@@ -3300,22 +3284,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "photos-workflow"
-version = "0.0.0"
-dependencies = [
- "async-trait",
- "dashmap",
- "futures",
- "photos-core",
- "photos-domain",
- "photos-services",
- "thiserror 2.0.17",
- "tokio",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
 name = "pin-project"
 version = "1.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4583,23 +4551,6 @@ checksum = "eca58d7bba4a75707817a2c44174253f9236b2d5fbd055602e9d5c07c139a047"
 dependencies = [
  "futures-core",
  "pin-project-lite",
- "tokio",
-]
-
-[[package]]
-name = "tokio-util"
-version = "0.7.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2efa149fe76073d6e8fd97ef4f4eca7b67f599660115591483572e406e165594"
-dependencies = [
- "bytes",
- "futures-core",
- "futures-io",
- "futures-sink",
- "futures-util",
- "hashbrown 0.15.5",
- "pin-project-lite",
- "slab",
  "tokio",
 ]
 
