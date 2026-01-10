@@ -1,8 +1,10 @@
+use exif::{Reader, Tag};
 use image::codecs::jpeg::JpegEncoder;
-use image::{DynamicImage, ImageEncoder};
-use photos_domain::{BoundingBox, ImageFormat, ImageId, ImageMeta, ImageRecord};
+use image::{DynamicImage, ImageEncoder, ImageReader};
+use photos_domain::{BoundingBox, ImageId, ImageMeta, ImageRecord};
 use photos_services::{ImageRepository, ImageRepositoryError, ResizeService};
-use std::fs::{copy, create_dir_all};
+use std::fs::{File, copy, create_dir_all};
+use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
 
 pub struct FSImageRepository<T: ResizeService> {
@@ -76,24 +78,49 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
     fn insert_image(&self, image_path: &Path) -> Result<ImageRecord, ImageRepositoryError> {
         tracing::info!("inserting image from path {:?}", image_path);
         let image_id = ImageId::now_v7();
-        let extension = image_path
-            .extension()
-            .unwrap()
-            .to_str()
-            .expect("has extension");
-        let format = ImageFormat::try_from(extension)
-            .map_err(|_| ImageRepositoryError::UnsupportedFormat)?;
-        let original_path = self.original_path(image_id, format.as_ref());
+
+        tracing::debug!("opening image");
+        let reader = ImageReader::open(image_path)
+            .map_err(|e| ImageRepositoryError::ImageError { err: e.to_string() })?
+            .with_guessed_format()
+            .map_err(|e| ImageRepositoryError::ImageError { err: e.to_string() })?;
+        let format = reader.format().ok_or(ImageRepositoryError::ImageError {
+            err: "no format".to_string(),
+        })?;
+        let image = reader
+            .decode()
+            .map_err(|e| ImageRepositoryError::ImageError { err: e.to_string() })?;
+
+        let original_path = self.original_path(image_id, format.extensions_str()[0]);
         ensure_dir(original_path.parent().expect("parent dir exists"))
             .map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
 
         tracing::debug!("copying original image");
-        copy(image_path, original_path).map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
+        let orientation = read_orientation(&image_path);
+        let image = match &orientation {
+            None | Some(1) => {
+                copy(image_path, original_path)
+                    .map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
+                image
+            }
+            Some(orientation) => {
+                let image = apply_orientation(image, *orientation);
+                let file = File::create(image_path)
+                    .map_err(|e| ImageRepositoryError::ImageError { err: e.to_string() })?;
+                let mut writer = BufWriter::new(file);
+                image
+                    .write_to(&mut writer, format)
+                    .map_err(|e| ImageRepositoryError::ImageError { err: e.to_string() })?;
+                image
+            }
+        };
         tracing::debug!("done copying original image");
+
         let thumbnail_paths = self.thumbnail_paths(image_id);
-        tracing::debug!("opening image");
-        let image =
-            image::open(image_path).map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
+        let image = match read_orientation(&image_path) {
+            None => image,
+            Some(orientation) => apply_orientation(image, orientation),
+        };
         let width = image.width();
         let height = image.height();
 
@@ -128,7 +155,7 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
     fn delete_image(&self, image_record: &ImageRecord) -> Result<(), ImageRepositoryError> {
         tracing::info!("deleting image");
         let original_path =
-            self.original_path(image_record.id, image_record.meta.format.as_ref().as_ref());
+            self.original_path(image_record.id, image_record.meta.format.extensions_str()[0]);
         if !original_path.exists() {
             return Err(ImageRepositoryError::ImageDoesNotExist);
         }
@@ -146,11 +173,15 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
 
     fn get_image(&self, image_record: &ImageRecord) -> Result<DynamicImage, ImageRepositoryError> {
         tracing::info!("getting image {:?}", image_record.id);
-        let path = self.original_path(image_record.id, image_record.meta.format.as_ref().as_ref());
+        let path = self.original_path(image_record.id, image_record.meta.format.extensions_str()[0]);
         if !path.exists() {
             return Err(ImageRepositoryError::ImageDoesNotExist);
         }
-        image::open(&path).map_err(|_| ImageRepositoryError::ImageRepositoryError)
+        let image = image::open(&path).map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
+        match read_orientation(&path) {
+            None => Ok(image),
+            Some(orientation) => Ok(apply_orientation(image, orientation)),
+        }
     }
 
     fn get_thumbnail(
@@ -174,6 +205,10 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
         }
         tracing::debug!("opening image");
         let image = image::open(path).map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
+        let image = match read_orientation(&path) {
+            None => image,
+            Some(orientation) => apply_orientation(image, orientation),
+        };
         let width = image.width();
         let height = image.height();
         let (width, height) = thumbnail_width_height(width, height, thumbnail_size);
@@ -205,6 +240,29 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
         self.resize_service
             .resize(&image, thumbnail_size, thumbnail_size)
             .map_err(|_| ImageRepositoryError::ImageRepositoryError)
+    }
+}
+
+fn read_orientation(path: &Path) -> Option<u32> {
+    let file = File::open(path).ok()?;
+    let mut bufreader = BufReader::new(file);
+    let exif = Reader::new().read_from_container(&mut bufreader).ok()?;
+
+    exif.get_field(Tag::Orientation, exif::In::PRIMARY)
+        .and_then(|f| f.value.get_uint(0))
+}
+
+fn apply_orientation(img: DynamicImage, orientation: u32) -> DynamicImage {
+    match orientation {
+        1 => img,             // normal
+        2 => img.fliph(),     // mirror horizontal
+        3 => img.rotate180(), // rotate 180
+        4 => img.flipv(),     // mirror vertical
+        5 => img.rotate90().fliph(),
+        6 => img.rotate90(), // rotate 90 CW
+        7 => img.rotate270().fliph(),
+        8 => img.rotate270(), // rotate 270 CW
+        _ => img,
     }
 }
 
@@ -270,7 +328,7 @@ mod tests {
             .join("originals")
             .join(id_string_split.0)
             .join(id_string_split.1)
-            .with_added_extension(record.meta.format.as_ref());
+            .with_added_extension(record.meta.format.extensions_str()[0]);
 
         assert!(original_path.exists());
 
@@ -279,7 +337,7 @@ mod tests {
             .join("512")
             .join(id_string_split.0)
             .join(id_string_split.1)
-            .with_added_extension(record.meta.format.as_ref());
+            .with_added_extension(record.meta.format.extensions_str()[0]);
 
         assert!(thumbnail_path.exists());
 

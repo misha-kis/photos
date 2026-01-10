@@ -11,3 +11,4 @@ photos-domain = { path = "../photos-domain" }
 photos-services = { path = "../photos-services" }
 tracing = { workspace = true }
 bytemuck = "1.24.0"
+image = { workspace = true }

@@ -1,7 +1,8 @@
+use image::ImageFormat;
 use photos_core::Uuid;
 use photos_domain::{
-    BoundingBox, ClusteredFaceDetection, FaceDetection, FaceDetectionWithEmbedding, ImageFormat,
-    ImageId, ImageMeta, ImageRecord,
+    BoundingBox, ClusteredFaceDetection, FaceDetection, FaceDetectionWithEmbedding, ImageId,
+    ImageMeta, ImageRecord,
 };
 use photos_services::{ImageMetadataRepository, ImageMetadataRepositoryError};
 use sqlx::FromRow;
@@ -46,9 +47,10 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         image_record: &ImageRecord,
     ) -> Result<(), ImageMetadataRepositoryError> {
         tracing::info!("sqlite inserting image record");
+        let format_id = format_to_i64(image_record.meta.format)?;
         sqlx::query(r#"INSERT INTO image(uuid, format_id) VALUES (?, ?)"#)
             .bind(image_record.id)
-            .bind(image_record.meta.format.as_u8())
+            .bind(format_id)
             .execute(&self.pool)
             .await
             .map_err(
@@ -79,9 +81,10 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
             .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
 
         for record in image_records {
+            let format_id = format_to_i64(record.meta.format)?;
             sqlx::query(r#"INSERT INTO image(uuid, format_id) VALUES (?, ?)"#)
                 .bind(record.id)
-                .bind(record.meta.format.as_u8())
+                .bind(format_id)
                 .execute(&mut *tx)
                 .await
                 .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
@@ -111,8 +114,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
             .await
             .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
 
-        let format = ImageFormat::try_from(row.format_id as u8)
-            .map_err(|_| ImageMetadataRepositoryError::InvalidImageFormat)?;
+        let format = i64_to_format(row.format_id)?;
         tracing::info!("sqlite getting image ids done");
         Ok(ImageRecord {
             id: row.uuid,
@@ -212,7 +214,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
                 .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?
                 .iter()
                 .map(|row| {
-                    if let Ok(format) = ImageFormat::try_from(row.format_id as u8) {
+                    if let Ok(format) = i64_to_format(row.format_id) {
                         Ok(ImageRecord {
                             id: row.uuid,
                             meta: ImageMeta { format },
@@ -296,7 +298,7 @@ WHERE embedding IS NULL
         .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?
         .iter()
         .map(|row| {
-            if let Ok(format) = ImageFormat::try_from(row.format_id as u8) {
+            if let Ok(format) = i64_to_format(row.format_id) {
                 let image_record = ImageRecord {
                     id: row.image_uuid,
                     meta: ImageMeta { format },
@@ -471,8 +473,7 @@ FROM (SELECT min(uuid) uuid
             |e| ImageMetadataRepositoryError::ImageMetadataRepositoryError { err: e.to_string() },
         )?;
 
-        let format = ImageFormat::try_from(row.format_id as u8)
-            .map_err(|_| ImageMetadataRepositoryError::InvalidImageFormat)?;
+        let format = i64_to_format(row.format_id)?;
         let result = (
             BoundingBox {
                 x: row.roi_x,
@@ -488,5 +489,47 @@ FROM (SELECT min(uuid) uuid
 
         tracing::info!("sqlite getting min detection for face id");
         Ok(result)
+    }
+}
+
+fn format_to_i64(format: ImageFormat) -> Result<i64, ImageMetadataRepositoryError> {
+    match format {
+        ImageFormat::Png => Ok(0),
+        ImageFormat::Jpeg => Ok(1),
+        ImageFormat::Gif => Ok(2),
+        ImageFormat::WebP => Ok(3),
+        ImageFormat::Pnm => Ok(4),
+        ImageFormat::Tiff => Ok(5),
+        ImageFormat::Tga => Ok(6),
+        ImageFormat::Dds => Ok(7),
+        ImageFormat::Bmp => Ok(8),
+        ImageFormat::Ico => Ok(9),
+        ImageFormat::Hdr => Ok(10),
+        ImageFormat::OpenExr => Ok(11),
+        ImageFormat::Farbfeld => Ok(12),
+        ImageFormat::Avif => Ok(13),
+        ImageFormat::Qoi => Ok(14),
+        _ => Err(ImageMetadataRepositoryError::InvalidImageFormat),
+    }
+}
+
+fn i64_to_format(format_id: i64) -> Result<ImageFormat, ImageMetadataRepositoryError> {
+    match format_id {
+        0 => Ok(ImageFormat::Png),
+        1 => Ok(ImageFormat::Jpeg),
+        2 => Ok(ImageFormat::Gif),
+        3 => Ok(ImageFormat::WebP),
+        4 => Ok(ImageFormat::Pnm),
+        5 => Ok(ImageFormat::Tiff),
+        6 => Ok(ImageFormat::Tga),
+        7 => Ok(ImageFormat::Dds),
+        8 => Ok(ImageFormat::Bmp),
+        9 => Ok(ImageFormat::Ico),
+        10 => Ok(ImageFormat::Hdr),
+        11 => Ok(ImageFormat::OpenExr),
+        12 => Ok(ImageFormat::Farbfeld),
+        13 => Ok(ImageFormat::Avif),
+        14 => Ok(ImageFormat::Qoi),
+        _ => Err(ImageMetadataRepositoryError::InvalidImageFormat),
     }
 }

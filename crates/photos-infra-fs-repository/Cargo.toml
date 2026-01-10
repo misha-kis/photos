@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 image.workspace = true
+kamadak-exif = "0.6.1"
 photos-domain = { path = "../photos-domain" }
 photos-services = { path = "../photos-services" }
 tracing = { workspace = true }

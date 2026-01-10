@@ -92,6 +92,8 @@ pub enum ImageRepositoryError {
     ImageDoesNotExist,
     #[error("unsupported format")]
     UnsupportedFormat,
+    #[error("image error: {err}")]
+    ImageError { err: String },
 }
 
 pub trait ImageRepository {

@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-photos-domain = { path = "../photos-domain" }
 walkdir = "2.5.0"
 tracing = { workspace = true }
+image = { workspace = true }
