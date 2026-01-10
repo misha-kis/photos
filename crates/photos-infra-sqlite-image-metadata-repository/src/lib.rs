@@ -15,7 +15,7 @@ pub struct SqliteImageMetadataRepository {
 
 impl SqliteImageMetadataRepository {
     pub async fn new(path: PathBuf) -> Result<Self, ImageMetadataRepositoryError> {
-        tracing::info!("sqlite init");
+        tracing::debug!("sqlite init");
         let db_path = path.join("db.sqlite");
         let opts = sqlx::sqlite::SqliteConnectOptions::new()
             .filename(db_path)
@@ -35,7 +35,7 @@ impl SqliteImageMetadataRepository {
             .run(&pool)
             .await
             .map_err(|_| ImageMetadataRepositoryError::CannotConnectOrCreate)?;
-        tracing::info!("sqlite init done");
+        tracing::debug!("sqlite init done");
         Ok(Self { pool })
     }
 }
@@ -46,7 +46,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         &self,
         image_record: &ImageRecord,
     ) -> Result<(), ImageMetadataRepositoryError> {
-        tracing::info!("sqlite inserting image record");
+        tracing::debug!("sqlite inserting image record");
         let format_id = format_to_i64(image_record.meta.format)?;
         sqlx::query(r#"INSERT INTO image(uuid, format_id) VALUES (?, ?)"#)
             .bind(image_record.id)
@@ -58,7 +58,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
                     err: e.to_string(),
                 },
             )?;
-        tracing::info!("sqlite inserting image record done");
+        tracing::debug!("sqlite inserting image record done");
         Ok(())
     }
 
@@ -70,7 +70,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
             return Ok(());
         }
 
-        tracing::info!(
+        tracing::debug!(
             "sqlite bulk inserting {} image records",
             image_records.len()
         );
@@ -94,7 +94,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
             .await
             .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
 
-        tracing::info!("sqlite bulk insert done");
+        tracing::debug!("sqlite bulk insert done");
         Ok(())
     }
 
@@ -102,7 +102,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         &self,
         image_id: ImageId,
     ) -> Result<ImageRecord, ImageMetadataRepositoryError> {
-        tracing::info!("sqlite getting image record for {}", image_id);
+        tracing::debug!("sqlite getting image record for {}", image_id);
         #[derive(FromRow)]
         struct Row {
             uuid: ImageId,
@@ -115,7 +115,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
             .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
 
         let format = i64_to_format(row.format_id)?;
-        tracing::info!("sqlite getting image ids done");
+        tracing::debug!("sqlite getting image ids done");
         Ok(ImageRecord {
             id: row.uuid,
             meta: ImageMeta { format },
@@ -126,7 +126,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         &self,
         image_id: ImageId,
     ) -> Result<(), ImageMetadataRepositoryError> {
-        tracing::info!("sqlite deleting image record for {}", image_id);
+        tracing::debug!("sqlite deleting image record for {}", image_id);
         let rows_affected = sqlx::query(r#"DELETE FROM image WHERE uuid = $1"#)
             .bind(image_id)
             .execute(&self.pool)
@@ -139,12 +139,12 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
             });
         }
 
-        tracing::info!("sqlite delete done");
+        tracing::debug!("sqlite delete done");
         Ok(())
     }
 
     async fn get_image_ids(&self) -> Result<Vec<ImageId>, ImageMetadataRepositoryError> {
-        tracing::info!("sqlite getting image ids");
+        tracing::debug!("sqlite getting image ids");
         #[derive(FromRow)]
         struct Row {
             uuid: ImageId,
@@ -157,12 +157,12 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
             .iter()
             .map(|row| row.uuid)
             .collect();
-        tracing::info!("sqlite getting image ids done");
+        tracing::debug!("sqlite getting image ids done");
         Ok(result)
     }
 
     async fn get_face_ids(&self) -> Result<Vec<Uuid>, ImageMetadataRepositoryError> {
-        tracing::info!("sqlite getting face ids");
+        tracing::debug!("sqlite getting face ids");
         #[derive(FromRow)]
         struct Row {
             uuid: ImageId,
@@ -174,12 +174,12 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
             .iter()
             .map(|row| row.uuid)
             .collect();
-        tracing::info!("sqlite getting face ids done");
+        tracing::debug!("sqlite getting face ids done");
         Ok(result)
     }
 
     async fn get_number_of_images(&self) -> Result<u64, ImageMetadataRepositoryError> {
-        tracing::info!("sqlite getting number of images");
+        tracing::debug!("sqlite getting number of images");
         #[derive(FromRow)]
         struct Row {
             uuid_count: u64,
@@ -193,14 +193,14 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
                     err: e.to_string(),
                 },
             );
-        tracing::info!("sqlite getting number of images done");
+        tracing::debug!("sqlite getting number of images done");
         result
     }
 
     async fn get_image_records_without_detections(
         &self,
     ) -> Result<Vec<ImageRecord>, ImageMetadataRepositoryError> {
-        tracing::info!("sqlite getting image records without face detections");
+        tracing::debug!("sqlite getting image records without face detections");
         #[derive(FromRow)]
         struct Row {
             uuid: ImageId,
@@ -226,7 +226,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
                 })
                 .filter_map(|maybe_record| maybe_record.ok())
                 .collect();
-        tracing::info!("sqlite getting image records without face detections done");
+        tracing::debug!("sqlite getting image records without face detections done");
         Ok(result)
     }
 
@@ -235,7 +235,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         image_id: &ImageId,
         face_detections: Vec<FaceDetection>,
     ) -> Result<(), ImageMetadataRepositoryError> {
-        tracing::info!("sqlite inserting detections");
+        tracing::debug!("sqlite inserting detections");
         let mut tx = self
             .pool
             .begin()
@@ -265,14 +265,14 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
             .await
             .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
 
-        tracing::info!("sqlite inserting detections done");
+        tracing::debug!("sqlite inserting detections done");
         Ok(())
     }
 
     async fn get_detections_without_embeddings(
         &self,
     ) -> Result<Vec<(ImageRecord, FaceDetection)>, ImageMetadataRepositoryError> {
-        tracing::info!("sqlite getting detections without embeddings");
+        tracing::debug!("sqlite getting detections without embeddings");
         #[derive(FromRow)]
         struct Row {
             uuid: Uuid,
@@ -321,7 +321,7 @@ WHERE embedding IS NULL
         })
         .filter_map(|maybe_record| maybe_record.ok())
         .collect();
-        tracing::info!("sqlite getting detections without embeddings done");
+        tracing::debug!("sqlite getting detections without embeddings done");
 
         Ok(result)
     }
@@ -330,7 +330,7 @@ WHERE embedding IS NULL
         &self,
         face_detection_with_embedding: FaceDetectionWithEmbedding,
     ) -> Result<(), ImageMetadataRepositoryError> {
-        tracing::info!("sqlite udpating detection with embedding");
+        tracing::debug!("sqlite udpating detection with embedding");
         let bytes: &[u8] = bytemuck::cast_slice(&face_detection_with_embedding.embedding);
         sqlx::query(
             r#"
@@ -346,13 +346,13 @@ WHERE uuid = ?
         .map_err(
             |e| ImageMetadataRepositoryError::ImageMetadataRepositoryError { err: e.to_string() },
         )?;
-        tracing::info!("sqlite udpating detection with embedding done");
+        tracing::debug!("sqlite udpating detection with embedding done");
         Ok(())
     }
     async fn get_detections_with_embeddings(
         &self,
     ) -> Result<Vec<FaceDetectionWithEmbedding>, ImageMetadataRepositoryError> {
-        tracing::info!("sqlite getting detections with embeddings");
+        tracing::debug!("sqlite getting detections with embeddings");
         #[derive(FromRow)]
         struct Row {
             uuid: Uuid,
@@ -389,7 +389,7 @@ WHERE embedding IS NOT NULL
             embedding: bytemuck::cast_slice(&row.embedding).try_into().unwrap(),
         })
         .collect();
-        tracing::info!("sqlite getting detections with embeddings done");
+        tracing::debug!("sqlite getting detections with embeddings done");
 
         Ok(result)
     }
@@ -398,7 +398,7 @@ WHERE embedding IS NOT NULL
         &self,
         clustered_face_detections: &[ClusteredFaceDetection],
     ) -> Result<(), ImageMetadataRepositoryError> {
-        tracing::info!("sqlite updating clusters");
+        tracing::debug!("sqlite updating clusters");
         let mut tx = self
             .pool
             .begin()
@@ -438,7 +438,7 @@ UPDATE face_detection SET face_uuid = ? WHERE uuid = ?
         tx.commit().await.map_err(|e| {
             ImageMetadataRepositoryError::ImageMetadataRepositoryError { err: e.to_string() }
         })?;
-        tracing::info!("sqlite updating clusters done");
+        tracing::debug!("sqlite updating clusters done");
         Ok(())
     }
 
@@ -446,7 +446,7 @@ UPDATE face_detection SET face_uuid = ? WHERE uuid = ?
         &self,
         face_id: Uuid,
     ) -> Result<(BoundingBox, ImageRecord), ImageMetadataRepositoryError> {
-        tracing::info!("sqlite getting min detection for face id");
+        tracing::debug!("sqlite getting min detection for face id");
         #[derive(FromRow)]
         struct Row {
             roi_x: f32,
@@ -487,7 +487,7 @@ FROM (SELECT min(uuid) uuid
             },
         );
 
-        tracing::info!("sqlite getting min detection for face id");
+        tracing::debug!("sqlite getting min detection for face id");
         Ok(result)
     }
 }
