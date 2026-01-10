@@ -71,6 +71,7 @@ impl FacesView {
                 image_view(ui, visible, size, || Ok(texture_opt.clone()), Some(click));
             },
             on_item_clicked,
+            false,
         );
     }
 }

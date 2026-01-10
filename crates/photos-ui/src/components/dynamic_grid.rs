@@ -31,6 +31,7 @@ impl<ItemId: Copy + std::hash::Hash + Eq, ItemData> DynamicGrid<ItemId, ItemData
         mut get_item_data: FGet,
         mut render_item: FRender,
         mut on_item_clicked: FClick,
+        stick_to_bottom: bool,
     ) where
         FGet: FnMut(&ItemId) -> Option<ItemData>,
         FRender: FnMut(
@@ -57,7 +58,7 @@ impl<ItemId: Copy + std::hash::Hash + Eq, ItemData> DynamicGrid<ItemId, ItemData
 
         egui::ScrollArea::vertical()
             .auto_shrink([false; 2])
-            .stick_to_bottom(true)
+            .stick_to_bottom(stick_to_bottom)
             .show(ui, |ui| {
                 let clip_rect = ui.clip_rect();
                 let scroll_y = ui.min_rect().top();
@@ -85,7 +86,11 @@ impl<ItemId: Copy + std::hash::Hash + Eq, ItemData> DynamicGrid<ItemId, ItemData
                         for item_id in chunk {
                             let is_visible = start_index <= i && i <= end_index;
                             let mut click_callback = || on_item_clicked(i);
-                            let data = get_item_data(item_id);
+                            let data = if is_visible {
+                                get_item_data(item_id)
+                            } else {
+                                None
+                            };
                             render_item(
                                 ui,
                                 is_visible,
