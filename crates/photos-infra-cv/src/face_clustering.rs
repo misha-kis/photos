@@ -1,5 +1,6 @@
-use anyhow::{Context, Result};
+use crate::errors::IntoInternal;
 use hdbscan::{DistanceMetric, Hdbscan, HdbscanHyperParams};
+use photos_services::ImageAnalysisServiceError;
 
 /// Configuration for HDBSCAN clustering
 #[derive(Clone, Debug)]
@@ -73,7 +74,7 @@ fn distance_matrix(embeddings: &[[f32; 512]]) -> Vec<Vec<f32>> {
 pub(crate) fn cluster_embeddings(
     embeddings: &[[f32; 512]],
     config: ClusteringConfig,
-) -> Result<ClusteringResult> {
+) -> Result<ClusteringResult, ImageAnalysisServiceError> {
     if embeddings.is_empty() {
         return Ok(ClusteringResult {
             labels: Vec::new(),
@@ -101,7 +102,7 @@ pub(crate) fn cluster_embeddings(
     let clusterer = Hdbscan::new(&distance_matrix, hyper_params);
     let labels: Vec<Option<u32>> = clusterer
         .cluster()
-        .context("Failed to run HDBSCAN clustering")?
+        .internal()?
         .iter()
         .map(|l| if *l < 0 { None } else { Some(*l as u32) })
         .collect();

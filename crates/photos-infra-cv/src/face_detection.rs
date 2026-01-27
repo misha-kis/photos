@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use crate::errors::IntoInternal;
 use image::{DynamicImage, GenericImageView};
 use ndarray::{Array, Axis, s};
 use ort::ep::CoreMLExecutionProvider;
@@ -51,9 +52,9 @@ impl FaceDetector {
             .with_execution_providers([CoreMLExecutionProvider::default().build()])
             .commit();
         let session = Session::builder()
-            .map_err(|_| ImageAnalysisServiceError::CouldNotInitialize)?
+            .internal()?
             .commit_from_file(model_path)
-            .map_err(|_| ImageAnalysisServiceError::CouldNotInitialize)?;
+            .internal()?;
         Ok(Self {
             session,
             image_size,
@@ -68,7 +69,7 @@ impl FaceDetector {
         let (img_width, img_height) = (image.width(), image.height());
         let img = resize_service
             .resize(image, self.image_size, self.image_size)
-            .map_err(|_| ImageAnalysisServiceError::CouldNotInfer)?;
+            .internal()?;
         let mut input = Array::zeros((1, 3, self.image_size as usize, self.image_size as usize));
         for pixel in img.pixels() {
             let x = pixel.0 as _;
@@ -80,10 +81,11 @@ impl FaceDetector {
         }
         let outputs: SessionOutputs = self
             .session
-            .run(inputs!["images" => TensorRef::from_array_view(&input).map_err(|_| ImageAnalysisServiceError::CouldNotInfer)?]).map_err(|_| ImageAnalysisServiceError::CouldNotInfer)?;
+            .run(inputs!["images" => TensorRef::from_array_view(&input).internal()?])
+            .internal()?;
         let output = outputs["output0"]
             .try_extract_array::<f32>()
-            .map_err(|_| ImageAnalysisServiceError::CouldNotInfer)?
+            .internal()?
             .t()
             .into_owned();
 

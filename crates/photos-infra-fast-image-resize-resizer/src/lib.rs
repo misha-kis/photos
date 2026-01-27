@@ -5,6 +5,19 @@ use photos_services::{ResizeService, ResizeServiceError};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+pub trait IntoInternal<T> {
+    fn internal(self) -> Result<T, ResizeServiceError>;
+}
+
+impl<T, E> IntoInternal<T> for Result<T, E>
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    fn internal(self) -> Result<T, ResizeServiceError> {
+        self.map_err(|e| ResizeServiceError::Internal(Box::new(e)))
+    }
+}
+
 pub struct FastImageResizeResizer {
     pool: Arc<Vec<Mutex<Resizer>>>,
     next_index: Arc<AtomicUsize>,
@@ -56,26 +69,32 @@ impl ResizeService for FastImageResizeResizer {
             .lock()
             .expect("can acquire lock")
             .resize(image, &mut dst_image, None)
-            .map_err(|_| ResizeServiceError::ResizeServiceError)?;
+            .internal()?;
 
         let buffer = dst_image.buffer().to_vec();
         let image = match dst_image.pixel_type() {
-            U8 => DynamicImage::ImageLuma8(
-                GrayImage::from_raw(width, height, buffer)
-                    .ok_or(ResizeServiceError::ResizeServiceError)?,
-            ),
-            U8x2 => DynamicImage::ImageLumaA8(
-                GrayAlphaImage::from_raw(width, height, buffer)
-                    .ok_or(ResizeServiceError::ResizeServiceError)?,
-            ),
-            U8x3 => DynamicImage::ImageRgb8(
-                RgbImage::from_raw(width, height, buffer)
-                    .ok_or(ResizeServiceError::ResizeServiceError)?,
-            ),
-            U8x4 => DynamicImage::ImageRgba8(
-                RgbaImage::from_raw(width, height, buffer)
-                    .ok_or(ResizeServiceError::ResizeServiceError)?,
-            ),
+            U8 => DynamicImage::ImageLuma8(GrayImage::from_raw(width, height, buffer).ok_or(
+                ResizeServiceError::ImageFromRaw {
+                    format: "ImageLuma8",
+                },
+            )?),
+            U8x2 => {
+                DynamicImage::ImageLumaA8(GrayAlphaImage::from_raw(width, height, buffer).ok_or(
+                    ResizeServiceError::ImageFromRaw {
+                        format: "ImageLumaA8",
+                    },
+                )?)
+            }
+            U8x3 => DynamicImage::ImageRgb8(RgbImage::from_raw(width, height, buffer).ok_or(
+                ResizeServiceError::ImageFromRaw {
+                    format: "ImageRgb8",
+                },
+            )?),
+            U8x4 => DynamicImage::ImageRgba8(RgbaImage::from_raw(width, height, buffer).ok_or(
+                ResizeServiceError::ImageFromRaw {
+                    format: "ImageRgba8",
+                },
+            )?),
             _ => Err(ResizeServiceError::ResizeServiceError)?,
         };
         tracing::debug!("resizing image done");

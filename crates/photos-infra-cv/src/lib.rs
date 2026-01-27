@@ -1,3 +1,4 @@
+mod errors;
 mod face_clustering;
 mod face_detection;
 mod face_embedding;
@@ -26,11 +27,9 @@ pub struct ImageAnalysis {
 impl ImageAnalysis {
     pub fn new(config: ImageAnalysisConfig) -> Result<Self, ImageAnalysisServiceError> {
         let face_detector =
-            FaceDetector::new(config.detector_model_path, config.detector_image_size)
-                .map_err(|_| ImageAnalysisServiceError::CouldNotInitialize)?;
+            FaceDetector::new(config.detector_model_path, config.detector_image_size)?;
         let face_embedder =
-            FaceEmbedder::new(config.embedder_model_path, config.embedder_image_size)
-                .map_err(|_| ImageAnalysisServiceError::CouldNotInitialize)?;
+            FaceEmbedder::new(config.embedder_model_path, config.embedder_image_size)?;
         Ok(Self {
             face_detector: Mutex::new(face_detector),
             face_embedder: Mutex::new(face_embedder),
@@ -79,8 +78,7 @@ impl ImageAnalysisService for ImageAnalysis {
             .iter()
             .map(|d| d.embedding)
             .collect();
-        let clustered_embeddings = cluster_embeddings(&embeddings, ClusteringConfig::default())
-            .map_err(|_| ImageAnalysisServiceError::CouldNotInfer)?;
+        let clustered_embeddings = cluster_embeddings(&embeddings, ClusteringConfig::default())?;
         let result = detections_with_embeddings
             .into_iter()
             .zip(clustered_embeddings.labels.into_iter())

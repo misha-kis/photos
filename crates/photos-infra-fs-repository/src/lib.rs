@@ -7,6 +7,19 @@ use std::fs::{File, copy, create_dir_all};
 use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
 
+pub trait IntoInternal<T> {
+    fn internal(self) -> Result<T, ImageRepositoryError>;
+}
+
+impl<T, E> IntoInternal<T> for Result<T, E>
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    fn internal(self) -> Result<T, ImageRepositoryError> {
+        self.map_err(|e| ImageRepositoryError::Internal(Box::new(e)))
+    }
+}
+
 pub struct FSImageRepository<T: ResizeService> {
     pub path: PathBuf,
     pub thumbnail_sizes: Vec<u32>,
@@ -81,36 +94,29 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
 
         tracing::debug!("opening image");
         let reader = ImageReader::open(image_path)
-            .map_err(|e| ImageRepositoryError::ImageError { err: e.to_string() })?
+            .internal()?
             .with_guessed_format()
-            .map_err(|e| ImageRepositoryError::ImageError { err: e.to_string() })?;
+            .internal()?;
         let format = reader.format().ok_or(ImageRepositoryError::ImageError {
             err: "no format".to_string(),
         })?;
-        let image = reader
-            .decode()
-            .map_err(|e| ImageRepositoryError::ImageError { err: e.to_string() })?;
+        let image = reader.decode().internal()?;
 
         let original_path = self.original_path(image_id, format.extensions_str()[0]);
-        ensure_dir(original_path.parent().expect("parent dir exists"))
-            .map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
+        ensure_dir(original_path.parent().expect("parent dir exists")).internal()?;
 
         tracing::debug!("copying original image");
         let orientation = read_orientation(&image_path);
         let image = match &orientation {
             None | Some(1) => {
-                copy(image_path, original_path)
-                    .map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
+                copy(image_path, original_path).internal()?;
                 image
             }
             Some(orientation) => {
                 let image = apply_orientation(image, *orientation);
-                let file = File::create(image_path)
-                    .map_err(|e| ImageRepositoryError::ImageError { err: e.to_string() })?;
+                let file = File::create(image_path).internal()?;
                 let mut writer = BufWriter::new(file);
-                image
-                    .write_to(&mut writer, format)
-                    .map_err(|e| ImageRepositoryError::ImageError { err: e.to_string() })?;
+                image.write_to(&mut writer, format).internal()?;
                 image
             }
         };
@@ -131,19 +137,17 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
             let resized_image = self
                 .resize_service
                 .resize(&image, width, height)
-                .map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
+                .internal()?;
 
-            ensure_dir(thumbnail_path.parent().expect("parent dir exists"))
-                .map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
+            ensure_dir(thumbnail_path.parent().expect("parent dir exists")).internal()?;
 
-            let mut out_file = std::fs::File::create(&thumbnail_path)
-                .map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
+            let mut out_file = std::fs::File::create(&thumbnail_path).internal()?;
 
             tracing::debug!("writing resized image");
             let rgb_image = resized_image.to_rgb8();
             JpegEncoder::new(&mut out_file)
                 .write_image(&rgb_image, width, height, image::ExtendedColorType::Rgb8)
-                .map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
+                .internal()?;
         }
 
         Ok(ImageRecord {
@@ -161,14 +165,12 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
         if !original_path.exists() {
             return Err(ImageRepositoryError::ImageDoesNotExist);
         }
-        std::fs::remove_file(original_path)
-            .map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
+        std::fs::remove_file(original_path).internal()?;
         for thumbnail_path in self.thumbnail_paths(image_record.id) {
             if !thumbnail_path.exists() {
                 return Err(ImageRepositoryError::ImageDoesNotExist);
             }
-            std::fs::remove_file(thumbnail_path)
-                .map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
+            std::fs::remove_file(thumbnail_path).internal()?;
         }
         Ok(())
     }
@@ -182,7 +184,7 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
         if !path.exists() {
             return Err(ImageRepositoryError::ImageDoesNotExist);
         }
-        let image = image::open(&path).map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
+        let image = image::open(&path).internal()?;
         match read_orientation(&path) {
             None => Ok(image),
             Some(orientation) => Ok(apply_orientation(image, orientation)),
@@ -209,7 +211,7 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
             return Err(ImageRepositoryError::ImageDoesNotExist);
         }
         tracing::debug!("opening image");
-        let image = image::open(path).map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
+        let image = image::open(path).internal()?;
         let image = match read_orientation(&path) {
             None => image,
             Some(orientation) => apply_orientation(image, orientation),
@@ -219,10 +221,7 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
         let (width, height) = thumbnail_width_height(width, height, thumbnail_size);
 
         tracing::debug!("resizing");
-        let resized = self
-            .resize_service
-            .resize(&image, width, height)
-            .map_err(|_| ImageRepositoryError::ImageRepositoryError);
+        let resized = self.resize_service.resize(&image, width, height).internal();
         tracing::debug!("done resizing");
         resized
     }
@@ -233,9 +232,7 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
         bounding_box: BoundingBox,
         thumbnail_size: u32,
     ) -> Result<DynamicImage, ImageRepositoryError> {
-        let image = self
-            .get_image(image_record)
-            .map_err(|_| ImageRepositoryError::ImageRepositoryError)?;
+        let image = self.get_image(image_record).internal()?;
         let image = image.crop_imm(
             bounding_box.x as u32,
             bounding_box.y as u32,
@@ -244,7 +241,7 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
         );
         self.resize_service
             .resize(&image, thumbnail_size, thumbnail_size)
-            .map_err(|_| ImageRepositoryError::ImageRepositoryError)
+            .internal()
     }
 }
 

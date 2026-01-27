@@ -9,6 +9,10 @@ use std::path::Path;
 pub enum ResizeServiceError {
     #[error("could not resize")]
     ResizeServiceError,
+    #[error("failed to build image with format {format}")]
+    ImageFromRaw { format: &'static str },
+    #[error("internal error")]
+    Internal(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
 pub trait ResizeService {
@@ -24,12 +28,10 @@ pub trait ResizeService {
 pub enum ImageMetadataRepositoryError {
     #[error("query failed: {err}")]
     QueryFailed { err: String },
-    #[error("image metadata repository failure: {err}")]
-    ImageMetadataRepositoryError { err: String },
-    #[error("cannot connect or create db")]
-    CannotConnectOrCreate,
     #[error("invalid image format")]
     InvalidImageFormat,
+    #[error("internal error")]
+    Internal(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
 #[async_trait::async_trait]
@@ -84,16 +86,14 @@ pub trait ImageMetadataRepository {
 
 #[derive(thiserror::Error, Debug)]
 pub enum ImageRepositoryError {
-    #[error("image repository failure")]
-    ImageRepositoryError,
     #[error("the requested thumbnail size is invalid")]
     InvalidThumbnailSize,
     #[error("the requested image does not exist")]
     ImageDoesNotExist,
-    #[error("unsupported format")]
-    UnsupportedFormat,
     #[error("image error: {err}")]
     ImageError { err: String },
+    #[error("internal error")]
+    Internal(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
 pub trait ImageRepository {
@@ -120,12 +120,10 @@ pub trait ImageRepository {
 
 #[derive(thiserror::Error, Debug)]
 pub enum ImageAnalysisServiceError {
-    #[error("could not initialize model")]
-    CouldNotInitialize,
     #[error("could not infer")]
     CouldNotInfer,
-    #[error("?")]
-    Unknown,
+    #[error("internal error")]
+    Internal(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
 pub trait ImageAnalysisService {

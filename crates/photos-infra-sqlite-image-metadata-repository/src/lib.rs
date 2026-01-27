@@ -9,6 +9,19 @@ use sqlx::FromRow;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+pub trait IntoInternal<T> {
+    fn internal(self) -> Result<T, ImageMetadataRepositoryError>;
+}
+
+impl<T, E> IntoInternal<T> for Result<T, E>
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    fn internal(self) -> Result<T, ImageMetadataRepositoryError> {
+        self.map_err(|e| ImageMetadataRepositoryError::Internal(Box::new(e)))
+    }
+}
+
 pub struct SqliteImageMetadataRepository {
     pool: sqlx::SqlitePool,
 }
@@ -21,20 +34,15 @@ impl SqliteImageMetadataRepository {
             .filename(db_path)
             .create_if_missing(true);
         tracing::debug!("sqlite connecting");
-        let pool = sqlx::SqlitePool::connect_with(opts)
-            .await
-            .map_err(|_| ImageMetadataRepositoryError::CannotConnectOrCreate)?;
+        let pool = sqlx::SqlitePool::connect_with(opts).await.internal()?;
         tracing::debug!("sqlite loading migrations");
         let migrator = sqlx::migrate::Migrator::new(Path::new(
             "./crates/photos-infra-sqlite-image-metadata-repository/migrations",
         ))
         .await
-        .map_err(|_| ImageMetadataRepositoryError::CannotConnectOrCreate)?;
+        .internal()?;
         tracing::debug!("sqlite migrating");
-        migrator
-            .run(&pool)
-            .await
-            .map_err(|_| ImageMetadataRepositoryError::CannotConnectOrCreate)?;
+        migrator.run(&pool).await.internal()?;
         tracing::debug!("sqlite init done");
         Ok(Self { pool })
     }
@@ -53,11 +61,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
             .bind(format_id)
             .execute(&self.pool)
             .await
-            .map_err(
-                |e| ImageMetadataRepositoryError::ImageMetadataRepositoryError {
-                    err: e.to_string(),
-                },
-            )?;
+            .internal()?;
         tracing::debug!("sqlite inserting image record done");
         Ok(())
     }
@@ -74,11 +78,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
             "sqlite bulk inserting {} image records",
             image_records.len()
         );
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
+        let mut tx = self.pool.begin().await.internal()?;
 
         for record in image_records {
             let format_id = format_to_i64(record.meta.format)?;
@@ -87,12 +87,10 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
                 .bind(format_id)
                 .execute(&mut *tx)
                 .await
-                .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
+                .internal()?;
         }
 
-        tx.commit()
-            .await
-            .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
+        tx.commit().await.internal()?;
 
         tracing::debug!("sqlite bulk insert done");
         Ok(())
@@ -112,7 +110,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         let row = sqlx::query_as::<_, Row>(r#"SELECT uuid, format_id FROM image"#)
             .fetch_one(&self.pool)
             .await
-            .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
+            .internal()?;
 
         let format = i64_to_format(row.format_id)?;
         tracing::debug!("sqlite getting image ids done");
@@ -131,7 +129,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
             .bind(image_id)
             .execute(&self.pool)
             .await
-            .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
+            .internal()?;
 
         if rows_affected.rows_affected() == 0 {
             return Err(ImageMetadataRepositoryError::QueryFailed {
@@ -153,7 +151,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         let result = sqlx::query_as::<_, Row>(r#"SELECT uuid FROM image"#)
             .fetch_all(&self.pool)
             .await
-            .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?
+            .internal()?
             .iter()
             .map(|row| row.uuid)
             .collect();
@@ -170,7 +168,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         let result = sqlx::query_as::<_, Row>(r#"SELECT uuid FROM face"#)
             .fetch_all(&self.pool)
             .await
-            .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?
+            .internal()?
             .iter()
             .map(|row| row.uuid)
             .collect();
@@ -188,11 +186,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
             .fetch_one(&self.pool)
             .await
             .map(|row| row.uuid_count)
-            .map_err(
-                |e| ImageMetadataRepositoryError::ImageMetadataRepositoryError {
-                    err: e.to_string(),
-                },
-            );
+            .internal();
         tracing::debug!("sqlite getting number of images done");
         result
     }
@@ -211,7 +205,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
             sqlx::query_as::<_, Row>(r#"SELECT uuid, format_id FROM image WHERE is_analyzed = 0"#)
                 .fetch_all(&self.pool)
                 .await
-                .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?
+                .internal()?
                 .iter()
                 .map(|row| {
                     if let Ok(format) = i64_to_format(row.format_id) {
@@ -236,11 +230,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         face_detections: Vec<FaceDetection>,
     ) -> Result<(), ImageMetadataRepositoryError> {
         tracing::debug!("sqlite inserting detections");
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
+        let mut tx = self.pool.begin().await.internal()?;
 
         for detection in face_detections {
             sqlx::query(r#"INSERT INTO face_detection(uuid, image_uuid, roi_x, roi_y, roi_w, roi_h, confidence) VALUES (?, ?, ?, ?, ?, ?, ?)"#)
@@ -253,17 +243,15 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
                 .bind(detection.confidence)
                 .execute(&mut *tx)
                 .await
-                .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
+                .internal()?;
         }
         sqlx::query(r#"UPDATE image SET is_analyzed = 1 WHERE uuid = ?"#)
             .bind(image_id)
             .execute(&mut *tx)
             .await
-            .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
+            .internal()?;
 
-        tx.commit()
-            .await
-            .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
+        tx.commit().await.internal()?;
 
         tracing::debug!("sqlite inserting detections done");
         Ok(())
@@ -295,7 +283,7 @@ WHERE embedding IS NULL
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?
+        .internal()?
         .iter()
         .map(|row| {
             if let Ok(format) = i64_to_format(row.format_id) {
@@ -343,9 +331,7 @@ WHERE uuid = ?
         .bind(face_detection_with_embedding.detection.uuid)
         .execute(&self.pool)
         .await
-        .map_err(
-            |e| ImageMetadataRepositoryError::ImageMetadataRepositoryError { err: e.to_string() },
-        )?;
+        .internal()?;
         tracing::debug!("sqlite udpating detection with embedding done");
         Ok(())
     }
@@ -373,7 +359,7 @@ WHERE embedding IS NOT NULL
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?
+        .internal()?
         .iter()
         .map(|row| FaceDetectionWithEmbedding {
             detection: FaceDetection {
@@ -399,11 +385,7 @@ WHERE embedding IS NOT NULL
         clustered_face_detections: &[ClusteredFaceDetection],
     ) -> Result<(), ImageMetadataRepositoryError> {
         tracing::debug!("sqlite updating clusters");
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| ImageMetadataRepositoryError::QueryFailed { err: e.to_string() })?;
+        let mut tx = self.pool.begin().await.internal()?;
 
         let unique_cluster_ids: HashSet<u32> = clustered_face_detections
             .iter()
@@ -431,13 +413,9 @@ UPDATE face_detection SET face_uuid = ? WHERE uuid = ?
             .bind(detection.detection.detection.uuid)
             .execute(&mut *tx)
             .await
-            .map_err(|e| {
-                ImageMetadataRepositoryError::ImageMetadataRepositoryError { err: e.to_string() }
-            })?;
+            .internal()?;
         }
-        tx.commit().await.map_err(|e| {
-            ImageMetadataRepositoryError::ImageMetadataRepositoryError { err: e.to_string() }
-        })?;
+        tx.commit().await.internal()?;
         tracing::debug!("sqlite updating clusters done");
         Ok(())
     }
@@ -469,9 +447,7 @@ FROM (SELECT min(uuid) uuid
         .bind(face_id)
         .fetch_one(&self.pool)
         .await
-        .map_err(
-            |e| ImageMetadataRepositoryError::ImageMetadataRepositoryError { err: e.to_string() },
-        )?;
+        .internal()?;
 
         let format = i64_to_format(row.format_id)?;
         let result = (

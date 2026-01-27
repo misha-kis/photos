@@ -1,3 +1,4 @@
+use crate::errors::IntoInternal;
 use image::{DynamicImage, GenericImageView};
 use ndarray::Array;
 use ort::ep::CoreMLExecutionProvider;
@@ -14,11 +15,17 @@ pub(crate) struct FaceEmbedder {
 }
 
 impl FaceEmbedder {
-    pub(crate) fn new(model_path: PathBuf, image_size: u32) -> anyhow::Result<Self> {
+    pub(crate) fn new(
+        model_path: PathBuf,
+        image_size: u32,
+    ) -> Result<Self, ImageAnalysisServiceError> {
         ort::init()
             .with_execution_providers([CoreMLExecutionProvider::default().build()])
             .commit();
-        let session = Session::builder()?.commit_from_file(model_path)?;
+        let session = Session::builder()
+            .internal()?
+            .commit_from_file(model_path)
+            .internal()?;
         Ok(Self {
             session,
             image_size,
@@ -39,7 +46,7 @@ impl FaceEmbedder {
         );
         let img = resize_service
             .resize(&image, self.image_size, self.image_size)
-            .map_err(|_| ImageAnalysisServiceError::CouldNotInfer)?;
+            .internal()?;
         let mut input = Array::zeros((1, 3, self.image_size as usize, self.image_size as usize));
         for pixel in img.pixels() {
             let x = pixel.0 as _;
@@ -51,10 +58,9 @@ impl FaceEmbedder {
         }
         let outputs: SessionOutputs = self
             .session
-            .run(inputs!["input" => TensorRef::from_array_view(&input).map_err(|_| ImageAnalysisServiceError::CouldNotInfer)?]).map_err(|_| ImageAnalysisServiceError::CouldNotInfer)?;
-        let array = outputs["output"]
-            .try_extract_array::<f32>()
-            .map_err(|_| ImageAnalysisServiceError::CouldNotInfer)?;
+            .run(inputs!["input" => TensorRef::from_array_view(&input).internal()?])
+            .internal()?;
+        let array = outputs["output"].try_extract_array::<f32>().internal()?;
         assert_eq!(array.len(), 512);
         let mut embedding = [0f32; 512];
         embedding.copy_from_slice(
