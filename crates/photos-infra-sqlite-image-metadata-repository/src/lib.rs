@@ -7,7 +7,9 @@ use photos_domain::{
 use photos_services::{ImageMetadataRepository, ImageMetadataRepositoryError};
 use sqlx::FromRow;
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+
+static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
 pub trait IntoInternal<T> {
     fn internal(self) -> Result<T, ImageMetadataRepositoryError>;
@@ -35,14 +37,8 @@ impl SqliteImageMetadataRepository {
             .create_if_missing(true);
         tracing::debug!("sqlite connecting");
         let pool = sqlx::SqlitePool::connect_with(opts).await.internal()?;
-        tracing::debug!("sqlite loading migrations");
-        let migrator = sqlx::migrate::Migrator::new(Path::new(
-            "./crates/photos-infra-sqlite-image-metadata-repository/migrations",
-        ))
-        .await
-        .internal()?;
         tracing::debug!("sqlite migrating");
-        migrator.run(&pool).await.internal()?;
+        MIGRATOR.run(&pool).await.internal()?;
         tracing::debug!("sqlite init done");
         Ok(Self { pool })
     }
