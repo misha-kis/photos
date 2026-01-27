@@ -41,7 +41,8 @@ pub struct App {
 impl App {
     pub fn new(path: PathBuf, config: config::Config) -> Result<Self, AppError> {
         if !path.exists() {
-            std::fs::create_dir(&path).map_err(|_| AppError::BadDirectory)?;
+            std::fs::create_dir(&path)
+                .map_err(|e| AppError::BadDirectory { err: e.to_string() })?;
         }
 
         let runtime =
@@ -56,11 +57,11 @@ impl App {
         let image_metadata_repository = runtime.block_on(async {
             SqliteImageMetadataRepository::new(path)
                 .await
-                .map_err(|_| AppError::BadDirectory)
+                .map_err(|e| AppError::BadDirectory { err: e.to_string() })
         })?;
 
-        let analysis_service =
-            ImageAnalysis::new(config.image_analysis_config).map_err(|_| AppError::BadDirectory)?;
+        let analysis_service = ImageAnalysis::new(config.image_analysis_config)
+            .map_err(|e| AppError::BadDirectory { err: e.to_string() })?;
 
         let resize_service = FastImageResizeResizer::default();
         let service_registry = Arc::new(AppServiceRegistry {

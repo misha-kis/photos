@@ -1,5 +1,6 @@
 /target
-/models
+/assets/models
+/assets/icons/icon.icns
 /runs
 /data
 /**/.DS_Store
