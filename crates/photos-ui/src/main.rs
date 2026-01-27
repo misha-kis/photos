@@ -76,9 +76,11 @@ pub fn main() -> eframe::Result<()> {
         .with_level(true)
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
+    let mut options = eframe::NativeOptions::default();
+    options.viewport = options.viewport.with_icon(egui::IconData::default());
     eframe::run_native(
-        "Photo Library",
-        eframe::NativeOptions::default(),
+        "Photos",
+        options,
         Box::new(|_| Ok(Box::new(UiApp::new().unwrap()))),
     )
 }
