@@ -40,13 +40,12 @@ fn bundle_resources_path() -> Option<PathBuf> {
 }
 
 fn resources_path() -> PathBuf {
-    match bundle_resources_path() {
-        Some(path) => path,
-        None => PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    bundle_resources_path().unwrap_or_else(|| {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .unwrap()
             .parent()
             .unwrap()
-            .into(),
-    }
+            .into()
+    })
 }
