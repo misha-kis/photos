@@ -204,13 +204,15 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
             uuid: ImageId,
         }
 
-        let result = sqlx::query_as::<_, Row>(r#"SELECT uuid FROM image"#)
-            .fetch_all(&self.pool)
-            .await
-            .internal()?
-            .iter()
-            .map(|row| row.uuid)
-            .collect();
+        let result = sqlx::query_as::<_, Row>(
+            r#"SELECT uuid FROM image ORDER BY coalesce(exif_timestamp, os_timestamp)"#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .internal()?
+        .iter()
+        .map(|row| row.uuid)
+        .collect();
         tracing::debug!("sqlite getting image ids done");
         Ok(result)
     }
