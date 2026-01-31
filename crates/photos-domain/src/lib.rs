@@ -26,11 +26,7 @@ impl Dimensions {
     }
 }
 
-pub struct ImageMeta {
-    pub format: ImageFormat,
-}
-
 pub struct ImageRecord {
     pub id: ImageId,
-    pub meta: ImageMeta,
+    pub format: ImageFormat,
 }

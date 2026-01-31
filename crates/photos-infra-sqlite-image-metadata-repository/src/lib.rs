@@ -2,7 +2,7 @@ use image::ImageFormat;
 use photos_core::Uuid;
 use photos_domain::{
     BoundingBox, ClusteredFaceDetection, FaceDetection, FaceDetectionWithEmbedding, ImageId,
-    ImageMeta, ImageRecord,
+    ImageRecord,
 };
 use photos_services::{ImageMetadataRepository, ImageMetadataRepositoryError};
 use sqlx::FromRow;
@@ -51,7 +51,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         image_record: &ImageRecord,
     ) -> Result<(), ImageMetadataRepositoryError> {
         tracing::debug!("sqlite inserting image record");
-        let format_id = format_to_i64(image_record.meta.format)?;
+        let format_id = format_to_i64(image_record.format)?;
         sqlx::query(r#"INSERT INTO image(uuid, format_id) VALUES (?, ?)"#)
             .bind(image_record.id)
             .bind(format_id)
@@ -77,7 +77,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         let mut tx = self.pool.begin().await.internal()?;
 
         for record in image_records {
-            let format_id = format_to_i64(record.meta.format)?;
+            let format_id = format_to_i64(record.format)?;
             sqlx::query(r#"INSERT INTO image(uuid, format_id) VALUES (?, ?)"#)
                 .bind(record.id)
                 .bind(format_id)
@@ -112,7 +112,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         tracing::debug!("sqlite getting image ids done");
         Ok(ImageRecord {
             id: row.uuid,
-            meta: ImageMeta { format },
+            format,
         })
     }
 
@@ -207,7 +207,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
                     if let Ok(format) = i64_to_format(row.format_id) {
                         Ok(ImageRecord {
                             id: row.uuid,
-                            meta: ImageMeta { format },
+                            format,
                         })
                     } else {
                         tracing::error!("image with id {} has unsupported format", row.uuid);
@@ -285,7 +285,7 @@ WHERE embedding IS NULL
             if let Ok(format) = i64_to_format(row.format_id) {
                 let image_record = ImageRecord {
                     id: row.image_uuid,
-                    meta: ImageMeta { format },
+                    format,
                 };
                 let detection = FaceDetection {
                     uuid: row.uuid,
@@ -455,7 +455,7 @@ FROM (SELECT min(uuid) uuid
             },
             ImageRecord {
                 id: row.image_uuid,
-                meta: ImageMeta { format },
+                format,
             },
         );
 

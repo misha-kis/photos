@@ -1,7 +1,7 @@
 use exif::{Reader, Tag};
 use image::codecs::jpeg::JpegEncoder;
 use image::{DynamicImage, ImageEncoder, ImageReader};
-use photos_domain::{BoundingBox, ImageId, ImageMeta, ImageRecord};
+use photos_domain::{BoundingBox, ImageId, ImageRecord};
 use photos_services::{ImageRepository, ImageRepositoryError, ResizeService};
 use std::fs::{File, copy, create_dir_all};
 use std::io::{BufReader, BufWriter};
@@ -152,16 +152,14 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
 
         Ok(ImageRecord {
             id: image_id,
-            meta: ImageMeta { format },
+            format,
         })
     }
 
     fn delete_image(&self, image_record: &ImageRecord) -> Result<(), ImageRepositoryError> {
         tracing::info!("deleting image");
-        let original_path = self.original_path(
-            image_record.id,
-            image_record.meta.format.extensions_str()[0],
-        );
+        let original_path =
+            self.original_path(image_record.id, image_record.format.extensions_str()[0]);
         if !original_path.exists() {
             return Err(ImageRepositoryError::ImageDoesNotExist);
         }
@@ -177,10 +175,7 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
 
     fn get_image(&self, image_record: &ImageRecord) -> Result<DynamicImage, ImageRepositoryError> {
         tracing::info!("getting image {:?}", image_record.id);
-        let path = self.original_path(
-            image_record.id,
-            image_record.meta.format.extensions_str()[0],
-        );
+        let path = self.original_path(image_record.id, image_record.format.extensions_str()[0]);
         if !path.exists() {
             return Err(ImageRepositoryError::ImageDoesNotExist);
         }
@@ -330,7 +325,7 @@ mod tests {
             .join("originals")
             .join(id_string_split.0)
             .join(id_string_split.1)
-            .with_added_extension(record.meta.format.extensions_str()[0]);
+            .with_added_extension(record.format.extensions_str()[0]);
 
         assert!(original_path.exists());
 
@@ -339,7 +334,7 @@ mod tests {
             .join("512")
             .join(id_string_split.0)
             .join(id_string_split.1)
-            .with_added_extension(record.meta.format.extensions_str()[0]);
+            .with_added_extension(record.format.extensions_str()[0]);
 
         assert!(thumbnail_path.exists());
 
