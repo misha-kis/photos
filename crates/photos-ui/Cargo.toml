@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-eframe = "0.33.0"
+eframe = { version = "0.33.0", features = ["persistence"] }
 dirs = "6.0.0"
 image = { workspace = true }
 photos-app = { path = "../photos-app" }
@@ -12,8 +12,13 @@ photos-domain = { path = "../photos-domain" }
 photos-core = { path = "../photos-core" }
 tokio = { workspace = true }
 anyhow = { workspace = true }
-egui-file-dialog = "0.12.0"
 tracing-subscriber = { workspace = true }
+toml = "0.9.11"
+directories = "6.0.0"
+config = "0.15.19"
+serde = { version = "1.0.228", features = ["derive"] }
+tracing.workspace = true
+rfd = "0.17.2"
 
 [package.metadata.bundle]
 name = "Photos"

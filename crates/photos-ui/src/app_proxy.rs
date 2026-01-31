@@ -25,9 +25,12 @@ pub struct AppProxy {
 }
 
 impl AppProxy {
-    pub fn new(gallery_dir: PathBuf, config: photos_app::config::Config) -> anyhow::Result<Self> {
-        let thumbnail_size = config.thumbnail_sizes[0];
-        let app = Arc::new(photos_app::App::new(gallery_dir, config)?);
+    pub fn new(
+        gallery_dir: PathBuf,
+        app_options: photos_app::config::Options,
+    ) -> anyhow::Result<Self> {
+        let thumbnail_size = app_options.thumbnail_sizes[0];
+        let app = Arc::new(photos_app::App::new(gallery_dir, app_options)?);
 
         let mut receiver = app.get_image_ids();
         let mut image_ids = Vec::new();

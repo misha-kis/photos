@@ -39,7 +39,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(path: PathBuf, config: config::Config) -> Result<Self, AppError> {
+    pub fn new(path: PathBuf, app_options: config::Options) -> Result<Self, AppError> {
         if !path.exists() {
             std::fs::create_dir(&path)
                 .map_err(|e| AppError::BadDirectory { err: e.to_string() })?;
@@ -50,7 +50,7 @@ impl App {
 
         let image_repository = FSImageRepository::new(
             path.clone(),
-            config.thumbnail_sizes.clone(),
+            app_options.thumbnail_sizes.clone(),
             FastImageResizeResizer::default(),
         );
 
@@ -60,7 +60,7 @@ impl App {
                 .map_err(|e| AppError::BadDirectory { err: e.to_string() })
         })?;
 
-        let analysis_service = ImageAnalysis::new(config.image_analysis_config)
+        let analysis_service = ImageAnalysis::new(app_options.image_analysis_config)
             .map_err(|e| AppError::BadDirectory { err: e.to_string() })?;
 
         let resize_service = FastImageResizeResizer::default();
@@ -73,7 +73,7 @@ impl App {
 
         let task_queue = Arc::new(Mutex::new(TaskQueue::new(
             runtime.handle().clone(),
-            config.max_blocking_tasks,
+            app_options.max_blocking_tasks,
         )));
 
         Ok(Self {

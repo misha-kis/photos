@@ -6,13 +6,10 @@ use crate::components::dynamic_grid::DynamicGrid;
 use crate::components::image::image_view;
 use anyhow::Context;
 use eframe::egui::{self, ColorImage};
-use egui_file_dialog::FileDialog;
 use std::collections::HashMap;
 
 enum ImportState {
-    SelectingDirectory {
-        file_dialog: FileDialog,
-    },
+    SelectingDirectory,
     PreparingFileInfo(PathBuf),
     Preview {
         files_to_import: Vec<PathBuf>,
@@ -36,10 +33,8 @@ pub struct ImportView {
 
 impl ImportView {
     pub fn new() -> Self {
-        let mut file_dialog = FileDialog::new();
-        file_dialog.pick_directory();
         Self {
-            import_state: ImportState::SelectingDirectory { file_dialog },
+            import_state: ImportState::SelectingDirectory,
         }
     }
 
@@ -51,11 +46,13 @@ impl ImportView {
         on_cancel_or_done: impl FnOnce(),
     ) {
         match &mut self.import_state {
-            ImportState::SelectingDirectory { file_dialog } => {
-                file_dialog.update(ctx);
-                if let Some(path) = file_dialog.take_picked() {
-                    self.import_state = ImportState::PreparingFileInfo(path.to_path_buf());
-                }
+            ImportState::SelectingDirectory => {
+                ui.vertical_centered(|ui| {
+                    ui.heading("Select Working Directory");
+                    if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                        self.import_state = ImportState::PreparingFileInfo(path.to_path_buf());
+                    }
+                });
             }
             ImportState::PreparingFileInfo(dir_to_import) => {
                 if ui.button("Cancel").clicked() {

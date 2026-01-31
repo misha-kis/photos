@@ -4,6 +4,7 @@ pub enum NavAction {
     Gallery,
     Faces,
     Import,
+    Close,
 }
 
 pub fn show_navbar(ui: &mut egui::Ui) -> Option<NavAction> {
@@ -27,6 +28,9 @@ pub fn show_navbar(ui: &mut egui::Ui) -> Option<NavAction> {
             ui.add_space(10.0);
             if ui.button("Import").clicked() {
                 action = Some(NavAction::Import);
+            }
+            if ui.button("Close Library").clicked() {
+                action = Some(NavAction::Close);
             }
         });
     });

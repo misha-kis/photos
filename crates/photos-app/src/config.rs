@@ -1,13 +1,13 @@
 use photos_infra_cv::ImageAnalysisConfig;
 use std::path::PathBuf;
 
-pub struct Config {
+pub struct Options {
     pub thumbnail_sizes: Vec<u32>,
     pub max_blocking_tasks: usize,
     pub image_analysis_config: ImageAnalysisConfig,
 }
 
-impl Default for Config {
+impl Default for Options {
     fn default() -> Self {
         let resources_path = resources_path();
         tracing::info!("resource path: {resources_path:?}");
