@@ -26,7 +26,6 @@ impl<ItemId: Copy + std::hash::Hash + Eq, ItemData> DynamicGrid<ItemId, ItemData
     pub fn show<FGet, FRender, FClick>(
         &mut self,
         ui: &mut egui::Ui,
-        _ctx: &egui::Context,
         items: &[ItemId],
         mut get_item_data: FGet,
         mut render_item: FRender,

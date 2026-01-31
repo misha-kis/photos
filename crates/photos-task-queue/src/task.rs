@@ -30,7 +30,7 @@ impl Eq for QueuedTask {}
 
 impl PartialOrd for QueuedTask {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(&other))
+        Some(self.cmp(other))
     }
 }
 

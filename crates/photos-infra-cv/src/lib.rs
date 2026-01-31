@@ -83,7 +83,7 @@ impl ImageAnalysisService for ImageAnalysis {
         let clustered_embeddings = cluster_embeddings(&embeddings, ClusteringConfig::default())?;
         let result = detections_with_embeddings
             .into_iter()
-            .zip(clustered_embeddings.labels.into_iter())
+            .zip(clustered_embeddings.labels)
             .map(|(detection, cluster_id)| ClusteredFaceDetection {
                 detection,
                 cluster_id,

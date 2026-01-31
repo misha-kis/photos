@@ -148,7 +148,6 @@ impl ImportView {
 
                     dynamic_grid.show(
                         ui,
-                        ctx,
                         &ids,
                         get_item_data,
                         |ui, visible, size, texture_opt, click| {
@@ -249,7 +248,6 @@ impl ImportView {
 
                     dynamic_grid.show(
                         ui,
-                        ctx,
                         &ids,
                         get_item_data,
                         |ui, visible, size, texture_opt, click| {

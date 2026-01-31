@@ -64,7 +64,6 @@ impl FacesView {
 
         self.dynamic_grid.show(
             ui,
-            ctx,
             &face_ids,
             get_item_data,
             |ui, visible, size, texture_opt, click| {

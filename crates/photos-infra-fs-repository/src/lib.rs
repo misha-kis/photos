@@ -106,7 +106,7 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
         ensure_dir(original_path.parent().expect("parent dir exists")).internal()?;
 
         tracing::debug!("copying original image");
-        let orientation = read_orientation(&image_path);
+        let orientation = read_orientation(image_path);
         let image = match &orientation {
             None | Some(1) => {
                 copy(image_path, original_path).internal()?;
@@ -123,7 +123,7 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
         tracing::debug!("done copying original image");
 
         let thumbnail_paths = self.thumbnail_paths(image_id);
-        let image = match read_orientation(&image_path) {
+        let image = match read_orientation(image_path) {
             None => image,
             Some(orientation) => apply_orientation(image, orientation),
         };
@@ -212,7 +212,7 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
         }
         tracing::debug!("opening image");
         let image = image::open(path).internal()?;
-        let image = match read_orientation(&path) {
+        let image = match read_orientation(path) {
             None => image,
             Some(orientation) => apply_orientation(image, orientation),
         };

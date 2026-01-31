@@ -11,7 +11,7 @@ use photos_app::config::Options;
 use views::gallery::GalleryView;
 use views::import::ImportView;
 
-const LAST_PATH_KEY: &'static str = "last_path";
+const LAST_PATH_KEY: &str = "last_path";
 
 pub enum InitializedAppState {
     Gallery(GalleryView),
@@ -105,12 +105,7 @@ impl UiApp {
         }
 
         let app = if let Some(path) = saved_path {
-            let path = PathBuf::from(path);
-
-            match InitializedApp::new(path) {
-                Ok(app) => Some(app),
-                Err(_) => None,
-            }
+            InitializedApp::new(path.into()).ok()
         } else {
             None
         };
