@@ -5,10 +5,11 @@ edition = "2024"
 
 [dependencies]
 async-trait = "0.1.89"
-sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite", "uuid"] }
+sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite", "uuid", "chrono"] }
 photos-core = { path = "../photos-core" }
 photos-domain = { path = "../photos-domain" }
 photos-services = { path = "../photos-services" }
 tracing = { workspace = true }
 bytemuck = "1.24.0"
 image = { workspace = true }
+chrono = { workspace = true }

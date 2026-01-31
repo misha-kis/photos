@@ -3,7 +3,7 @@ name = "photos-services"
 edition = "2024"
 
 [dependencies]
-thiserror = "2.0.17"
+thiserror = { workspace = true }
 async-trait = "0.1.89"
 photos-core = { path = "../photos-core" }
 photos-domain = { path = "../photos-domain" }

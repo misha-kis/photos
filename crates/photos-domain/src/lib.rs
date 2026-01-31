@@ -2,7 +2,10 @@ extern crate image;
 
 mod errors;
 mod image_features;
+
+use chrono::{DateTime, Utc};
 pub use errors::DomainError;
+use std::cmp::Ordering;
 
 pub use image::DynamicImage;
 use image::ImageFormat;
@@ -26,7 +29,63 @@ impl Dimensions {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Timestamps {
+    pub exif_timestamp: Option<DateTime<Utc>>,
+    pub os_timestamp: DateTime<Utc>,
+    pub import_timestamp: DateTime<Utc>,
+}
+
+impl Timestamps {
+    pub fn best_creation_timestamp(&self) -> DateTime<Utc> {
+        if let Some(ts) = self.exif_timestamp {
+            ts
+        } else {
+            self.os_timestamp
+        }
+    }
+}
+
+impl Eq for Timestamps {}
+
+impl PartialEq<Self> for Timestamps {
+    fn eq(&self, other: &Self) -> bool {
+        self.best_creation_timestamp()
+            .eq(&other.best_creation_timestamp())
+    }
+}
+
+impl PartialOrd<Self> for Timestamps {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Timestamps {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.best_creation_timestamp()
+            .cmp(&other.best_creation_timestamp())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageRecord {
     pub id: ImageId,
     pub format: ImageFormat,
+    pub timestamps: Timestamps,
+}
+
+impl Ord for ImageRecord {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match self.timestamps.cmp(&other.timestamps) {
+            core::cmp::Ordering::Equal => self.id.cmp(&other.id),
+            ord => ord,
+        }
+    }
+}
+
+impl PartialOrd for ImageRecord {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }

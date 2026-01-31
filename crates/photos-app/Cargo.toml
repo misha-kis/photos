@@ -14,6 +14,6 @@ photos-infra-import-item-discovery = { path = "../photos-infra-import-item-disco
 photos-infra-cv = { path = "../photos-infra-cv" }
 photos-task-queue = { path = "../photos-task-queue" }
 tokio = { workspace = true }
-thiserror = "2.0.17"
+thiserror = { workspace = true }
 tracing = { workspace = true }
 env = "1.0.1"

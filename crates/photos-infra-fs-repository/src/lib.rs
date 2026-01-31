@@ -1,9 +1,10 @@
+use chrono::{NaiveDateTime, Utc};
 use exif::{Reader, Tag};
 use image::codecs::jpeg::JpegEncoder;
 use image::{DynamicImage, ImageEncoder, ImageReader};
-use photos_domain::{BoundingBox, ImageId, ImageRecord};
+use photos_domain::{BoundingBox, ImageId, ImageRecord, Timestamps};
 use photos_services::{ImageRepository, ImageRepositoryError, ResizeService};
-use std::fs::{File, copy, create_dir_all};
+use std::fs::{self, File, copy, create_dir_all};
 use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
 
@@ -109,7 +110,7 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
         let orientation = read_orientation(image_path);
         let image = match &orientation {
             None | Some(1) => {
-                copy(image_path, original_path).internal()?;
+                copy(image_path, &original_path).internal()?;
                 image
             }
             Some(orientation) => {
@@ -149,10 +150,13 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
                 .write_image(&rgb_image, width, height, image::ExtendedColorType::Rgb8)
                 .internal()?;
         }
+        let timestamps = read_timestamps_with_import_timestamp(&original_path, Utc::now())
+            .ok_or(ImageRepositoryError::ImageDoesNotExist)?;
 
         Ok(ImageRecord {
             id: image_id,
             format,
+            timestamps,
         })
     }
 
@@ -238,6 +242,41 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
             .resize(&image, thumbnail_size, thumbnail_size)
             .internal()
     }
+}
+
+fn read_timestamps_with_import_timestamp(
+    path: &Path,
+    import_timestamp: chrono::DateTime<Utc>,
+) -> Option<Timestamps> {
+    let file = File::open(path).ok()?;
+    let mut bufreader = BufReader::new(file);
+
+    let exif_timestamp = Reader::new()
+        .read_from_container(&mut bufreader)
+        .ok()
+        .and_then(|exif| {
+            exif.get_field(Tag::DateTimeOriginal, exif::In::PRIMARY)
+                .or_else(|| exif.get_field(Tag::DateTimeDigitized, exif::In::PRIMARY))
+                .or_else(|| exif.get_field(Tag::DateTime, exif::In::PRIMARY))
+                .map(|f| {
+                    let raw = f.display_value().to_string();
+                    NaiveDateTime::parse_from_str(&raw, "%Y-%m-%d %H:%M:%S")
+                        .unwrap()
+                        .and_utc()
+                })
+        });
+    let meta = fs::metadata(path).ok()?;
+    let os_timestamp = meta
+        .created()
+        .ok()
+        .or_else(|| meta.modified().ok())
+        .map(|date| date.into())?;
+
+    Some(Timestamps {
+        exif_timestamp,
+        os_timestamp,
+        import_timestamp,
+    })
 }
 
 fn read_orientation(path: &Path) -> Option<u32> {

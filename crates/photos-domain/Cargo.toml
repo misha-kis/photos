@@ -3,6 +3,7 @@ name = "photos-domain"
 edition = "2024"
 
 [dependencies]
-thiserror = "2.0.17"
+thiserror = { workspace = true }
 photos-core = { path = "../photos-core" }
 image = { workspace = true }
+chrono = { workspace = true }

@@ -1,8 +1,9 @@
+use chrono::{DateTime, Utc};
 use image::ImageFormat;
 use photos_core::Uuid;
 use photos_domain::{
     BoundingBox, ClusteredFaceDetection, FaceDetection, FaceDetectionWithEmbedding, ImageId,
-    ImageRecord,
+    ImageRecord, Timestamps,
 };
 use photos_services::{ImageMetadataRepository, ImageMetadataRepositoryError};
 use sqlx::FromRow;
@@ -28,6 +29,66 @@ pub struct SqliteImageMetadataRepository {
     pool: sqlx::SqlitePool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
+pub struct ImageRecordRow {
+    pub uuid: ImageId,
+    pub format_id: i64,
+    pub exif_timestamp: DateTime<Utc>,
+    pub os_timestamp: DateTime<Utc>,
+    pub import_timestamp: DateTime<Utc>,
+}
+
+impl From<ImageRecordRow> for ImageRecord {
+    fn from(row: ImageRecordRow) -> Self {
+        Self {
+            id: row.uuid,
+            format: i64_to_format(row.format_id),
+            timestamps: Timestamps {
+                exif_timestamp: Some(row.exif_timestamp),
+                os_timestamp: row.os_timestamp,
+                import_timestamp: row.import_timestamp,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, FromRow)]
+pub struct BoundingBoxRow {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
+impl From<BoundingBoxRow> for BoundingBox {
+    fn from(row: BoundingBoxRow) -> Self {
+        BoundingBox {
+            x: row.x,
+            y: row.y,
+            w: row.w,
+            h: row.h,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, FromRow)]
+pub struct FaceDetectionRow {
+    pub uuid: Uuid,
+    #[sqlx(flatten)]
+    pub bounding_box: BoundingBoxRow,
+    pub confidence: f32,
+}
+
+impl From<FaceDetectionRow> for FaceDetection {
+    fn from(row: FaceDetectionRow) -> Self {
+        FaceDetection {
+            uuid: row.uuid,
+            bounding_box: row.bounding_box.into(),
+            confidence: row.confidence,
+        }
+    }
+}
+
 impl SqliteImageMetadataRepository {
     pub async fn new(path: PathBuf) -> Result<Self, ImageMetadataRepositoryError> {
         tracing::debug!("sqlite init");
@@ -51,10 +112,13 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         image_record: &ImageRecord,
     ) -> Result<(), ImageMetadataRepositoryError> {
         tracing::debug!("sqlite inserting image record");
-        let format_id = format_to_i64(image_record.format)?;
-        sqlx::query(r#"INSERT INTO image(uuid, format_id) VALUES (?, ?)"#)
+        let format_id = format_to_i64(image_record.format);
+        sqlx::query(r#"INSERT INTO image(uuid, format_id, exif_timestamp, os_timestamp, import_timestamp) VALUES (?, ?, ?, ?, ?)"#)
             .bind(image_record.id)
             .bind(format_id)
+            .bind(image_record.timestamps.exif_timestamp)
+            .bind(image_record.timestamps.os_timestamp)
+            .bind(image_record.timestamps.import_timestamp)
             .execute(&self.pool)
             .await
             .internal()?;
@@ -76,14 +140,17 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         );
         let mut tx = self.pool.begin().await.internal()?;
 
-        for record in image_records {
-            let format_id = format_to_i64(record.format)?;
-            sqlx::query(r#"INSERT INTO image(uuid, format_id) VALUES (?, ?)"#)
-                .bind(record.id)
-                .bind(format_id)
-                .execute(&mut *tx)
-                .await
-                .internal()?;
+        for image_record in image_records {
+            let format_id = format_to_i64(image_record.format);
+            sqlx::query(r#"INSERT INTO image(uuid, format_id, exif_timestamp, os_timestamp, import_timestamp) VALUES (?, ?, ?, ?, ?)"#)
+            .bind(image_record.id)
+            .bind(format_id)
+            .bind(image_record.timestamps.exif_timestamp)
+            .bind(image_record.timestamps.os_timestamp)
+            .bind(image_record.timestamps.import_timestamp)
+            .execute(&mut *tx)
+            .await
+            .internal()?;
         }
 
         tx.commit().await.internal()?;
@@ -97,23 +164,16 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         image_id: ImageId,
     ) -> Result<ImageRecord, ImageMetadataRepositoryError> {
         tracing::debug!("sqlite getting image record for {}", image_id);
-        #[derive(FromRow)]
-        struct Row {
-            uuid: ImageId,
-            format_id: i64,
-        }
 
-        let row = sqlx::query_as::<_, Row>(r#"SELECT uuid, format_id FROM image"#)
-            .fetch_one(&self.pool)
-            .await
-            .internal()?;
+        let row = sqlx::query_as::<_, ImageRecordRow>(
+            r#"SELECT uuid, format_id, exif_timestamp, os_timestamp, import_timestamp FROM image"#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .internal()?;
 
-        let format = i64_to_format(row.format_id)?;
         tracing::debug!("sqlite getting image ids done");
-        Ok(ImageRecord {
-            id: row.uuid,
-            format,
-        })
+        Ok(row.into())
     }
 
     async fn delete_image_record(
@@ -191,30 +251,14 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         &self,
     ) -> Result<Vec<ImageRecord>, ImageMetadataRepositoryError> {
         tracing::debug!("sqlite getting image records without face detections");
-        #[derive(FromRow)]
-        struct Row {
-            uuid: ImageId,
-            format_id: i64,
-        }
 
         let result =
-            sqlx::query_as::<_, Row>(r#"SELECT uuid, format_id FROM image WHERE is_analyzed = 0"#)
+            sqlx::query_as::<_, ImageRecordRow>(r#"SELECT uuid, format_id, exif_timestamp, os_timestamp FROM image WHERE is_analyzed = 0"#)
                 .fetch_all(&self.pool)
                 .await
                 .internal()?
-                .iter()
-                .map(|row| {
-                    if let Ok(format) = i64_to_format(row.format_id) {
-                        Ok(ImageRecord {
-                            id: row.uuid,
-                            format,
-                        })
-                    } else {
-                        tracing::error!("image with id {} has unsupported format", row.uuid);
-                        Err(ImageMetadataRepositoryError::InvalidImageFormat)
-                    }
-                })
-                .filter_map(|maybe_record| maybe_record.ok())
+                .into_iter()
+                .map(|row| row.into())
                 .collect();
         tracing::debug!("sqlite getting image records without face detections done");
         Ok(result)
@@ -259,19 +303,15 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         tracing::debug!("sqlite getting detections without embeddings");
         #[derive(FromRow)]
         struct Row {
-            uuid: Uuid,
-            image_uuid: ImageId,
-            format_id: i64,
-            roi_x: f32,
-            roi_y: f32,
-            roi_w: f32,
-            roi_h: f32,
-            confidence: f64,
+            #[sqlx(flatten)]
+            image_record_row: ImageRecordRow,
+            #[sqlx(flatten)]
+            face_detection: FaceDetectionRow,
         }
 
         let result = sqlx::query_as::<_, Row>(
             r#"
-SELECT face_detection.uuid, image_uuid, format_id, roi_x, roi_y, roi_w, roi_h, confidence
+SELECT image_uuid, format_id, exif_timestamp, os_timestamp, import_timestamp, face_detection.uuid, roi_x, roi_y, roi_w, roi_h, confidence
 FROM face_detection
 JOIN image i on i.uuid = face_detection.image_uuid
 WHERE embedding IS NULL
@@ -280,30 +320,8 @@ WHERE embedding IS NULL
         .fetch_all(&self.pool)
         .await
         .internal()?
-        .iter()
-        .map(|row| {
-            if let Ok(format) = i64_to_format(row.format_id) {
-                let image_record = ImageRecord {
-                    id: row.image_uuid,
-                    format,
-                };
-                let detection = FaceDetection {
-                    uuid: row.uuid,
-                    bounding_box: BoundingBox {
-                        x: row.roi_x,
-                        y: row.roi_y,
-                        w: row.roi_w,
-                        h: row.roi_h,
-                    },
-                    confidence: row.confidence as f32,
-                };
-                Ok((image_record, detection))
-            } else {
-                tracing::error!("image with id {} has unsupported format", row.image_uuid);
-                Err(ImageMetadataRepositoryError::InvalidImageFormat)
-            }
-        })
-        .filter_map(|maybe_record| maybe_record.ok())
+        .into_iter()
+        .map(|row| ( row.image_record_row.into(), row.face_detection.into() ))
         .collect();
         tracing::debug!("sqlite getting detections without embeddings done");
 
@@ -337,12 +355,8 @@ WHERE uuid = ?
         tracing::debug!("sqlite getting detections with embeddings");
         #[derive(FromRow)]
         struct Row {
-            uuid: Uuid,
-            roi_x: f32,
-            roi_y: f32,
-            roi_w: f32,
-            roi_h: f32,
-            confidence: f64,
+            #[sqlx(flatten)]
+            face_detection: FaceDetectionRow,
             embedding: Vec<u8>,
         }
 
@@ -356,18 +370,9 @@ WHERE embedding IS NOT NULL
         .fetch_all(&self.pool)
         .await
         .internal()?
-        .iter()
+        .into_iter()
         .map(|row| FaceDetectionWithEmbedding {
-            detection: FaceDetection {
-                uuid: row.uuid,
-                bounding_box: BoundingBox {
-                    x: row.roi_x,
-                    y: row.roi_y,
-                    w: row.roi_w,
-                    h: row.roi_h,
-                },
-                confidence: row.confidence as f32,
-            },
+            detection: row.face_detection.into(),
             embedding: bytemuck::cast_slice(&row.embedding).try_into().unwrap(),
         })
         .collect();
@@ -423,16 +428,14 @@ UPDATE face_detection SET face_uuid = ? WHERE uuid = ?
         tracing::debug!("sqlite getting min detection for face id");
         #[derive(FromRow)]
         struct Row {
-            roi_x: f32,
-            roi_y: f32,
-            roi_w: f32,
-            roi_h: f32,
-            image_uuid: ImageId,
-            format_id: i64,
+            #[sqlx(flatten)]
+            image_record_row: ImageRecordRow,
+            #[sqlx(flatten)]
+            bounding_box: BoundingBoxRow,
         }
         let row = sqlx::query_as::<_, Row>(
             r#"
-SELECT roi_x, roi_y, roi_w, roi_h, image_uuid, format_id
+SELECT image_uuid, format_id, exif_timestamp, os_timestamp, import_timestamp, roi_x, roi_y, roi_w, roi_h
 FROM (SELECT min(uuid) uuid
       FROM face_detection
       WHERE face_uuid = ?) min_uuid
@@ -445,63 +448,51 @@ FROM (SELECT min(uuid) uuid
         .await
         .internal()?;
 
-        let format = i64_to_format(row.format_id)?;
-        let result = (
-            BoundingBox {
-                x: row.roi_x,
-                y: row.roi_y,
-                w: row.roi_w,
-                h: row.roi_h,
-            },
-            ImageRecord {
-                id: row.image_uuid,
-                format,
-            },
-        );
+        let result = (row.bounding_box.into(), row.image_record_row.into());
 
         tracing::debug!("sqlite getting min detection for face id");
         Ok(result)
     }
 }
 
-fn format_to_i64(format: ImageFormat) -> Result<i64, ImageMetadataRepositoryError> {
+fn format_to_i64(format: ImageFormat) -> i64 {
     match format {
-        ImageFormat::Png => Ok(0),
-        ImageFormat::Jpeg => Ok(1),
-        ImageFormat::Gif => Ok(2),
-        ImageFormat::WebP => Ok(3),
-        ImageFormat::Pnm => Ok(4),
-        ImageFormat::Tiff => Ok(5),
-        ImageFormat::Tga => Ok(6),
-        ImageFormat::Dds => Ok(7),
-        ImageFormat::Bmp => Ok(8),
-        ImageFormat::Ico => Ok(9),
-        ImageFormat::Hdr => Ok(10),
-        ImageFormat::OpenExr => Ok(11),
-        ImageFormat::Farbfeld => Ok(12),
-        ImageFormat::Avif => Ok(13),
-        ImageFormat::Qoi => Ok(14),
-        _ => Err(ImageMetadataRepositoryError::InvalidImageFormat),
+        ImageFormat::Png => 0,
+        ImageFormat::Jpeg => 1,
+        ImageFormat::Gif => 2,
+        ImageFormat::WebP => 3,
+        ImageFormat::Pnm => 4,
+        ImageFormat::Tiff => 5,
+        ImageFormat::Tga => 6,
+        ImageFormat::Dds => 7,
+        ImageFormat::Bmp => 8,
+        ImageFormat::Ico => 9,
+        ImageFormat::Hdr => 10,
+        ImageFormat::OpenExr => 11,
+        ImageFormat::Farbfeld => 12,
+        ImageFormat::Avif => 13,
+        ImageFormat::Qoi => 14,
+        _ => unreachable!(),
     }
 }
 
-fn i64_to_format(format_id: i64) -> Result<ImageFormat, ImageMetadataRepositoryError> {
+fn i64_to_format(format_id: i64) -> ImageFormat {
     match format_id {
-        0 => Ok(ImageFormat::Png),
-        1 => Ok(ImageFormat::Jpeg),
-        2 => Ok(ImageFormat::Gif),
-        3 => Ok(ImageFormat::WebP),
-        4 => Ok(ImageFormat::Pnm),
-        5 => Ok(ImageFormat::Tiff),
-        6 => Ok(ImageFormat::Tga),
-        7 => Ok(ImageFormat::Dds),
-        8 => Ok(ImageFormat::Bmp),
-        9 => Ok(ImageFormat::Ico),
-        10 => Ok(ImageFormat::Hdr),
-        11 => Ok(ImageFormat::OpenExr),
-        12 => Ok(ImageFormat::Farbfeld),
-        13 => Ok(ImageFormat::Avif),
-        14 => Ok(ImageFormat::Qoi),
-        _ => Err(ImageMetadataRepositoryError::InvalidImageFormat),
+        0 => ImageFormat::Png,
+        1 => ImageFormat::Jpeg,
+        2 => ImageFormat::Gif,
+        3 => ImageFormat::WebP,
+        4 => ImageFormat::Pnm,
+        5 => ImageFormat::Tiff,
+        6 => ImageFormat::Tga,
+        7 => ImageFormat::Dds,
+        8 => ImageFormat::Bmp,
+        9 => ImageFormat::Ico,
+        10 => ImageFormat::Hdr,
+        11 => ImageFormat::OpenExr,
+        12 => ImageFormat::Farbfeld,
+        13 => ImageFormat::Avif,
+        14 => ImageFormat::Qoi,
+        _ => unreachable!(),
     }
 }

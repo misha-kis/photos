@@ -2,8 +2,10 @@ CREATE TABLE image
 (
     uuid             BLOB PRIMARY KEY,
     format_id        INTEGER NOT NULL,
-    is_analyzed      INTEGER   DEFAULT 0,
-    image_created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    exif_timestamp   TIMESTAMP,
+    os_timestamp     TIMESTAMP NOT NULL,
+    import_timestamp TIMESTAMP NOT NULL,
+    is_analyzed      INTEGER   DEFAULT 0
 );
 
 CREATE TABLE face_detection
