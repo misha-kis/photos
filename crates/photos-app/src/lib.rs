@@ -179,7 +179,10 @@ impl App {
                     Err(e) => Err(AppError::TaskSpawnFailed { err: e.to_string() }),
                 };
 
-                let event = AppEvent::FaceDetectionThumbnailReady { detection_id, result };
+                let event = AppEvent::FaceDetectionThumbnailReady {
+                    detection_id,
+                    result,
+                };
                 let _ = tx.send(event);
             }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
         });

@@ -77,16 +77,26 @@ impl AppProxy {
         self.thumbnail_cache.get(id)
     }
 
-    pub fn request_face_detection_thumbnail(&mut self, detection_id: Uuid) -> &mut oneshot::Receiver<AppEvent> {
-        if !self.face_detection_thumbnail_receivers.contains_key(&detection_id)
-            && !self.face_detection_thumbnail_cache.contains_key(&detection_id)
+    pub fn request_face_detection_thumbnail(
+        &mut self,
+        detection_id: Uuid,
+    ) -> &mut oneshot::Receiver<AppEvent> {
+        if !self
+            .face_detection_thumbnail_receivers
+            .contains_key(&detection_id)
+            && !self
+                .face_detection_thumbnail_cache
+                .contains_key(&detection_id)
         {
             let receiver = self
                 .app
                 .get_face_detection_thumbnail(detection_id, self.thumbnail_size);
-            self.face_detection_thumbnail_receivers.insert(detection_id, receiver);
+            self.face_detection_thumbnail_receivers
+                .insert(detection_id, receiver);
         }
-        self.face_detection_thumbnail_receivers.get_mut(&detection_id).unwrap()
+        self.face_detection_thumbnail_receivers
+            .get_mut(&detection_id)
+            .unwrap()
     }
 
     pub fn get_cached_face_detection_thumbnail(&self, id: &Uuid) -> Option<&DynamicImage> {
@@ -150,9 +160,14 @@ impl AppProxy {
 
         let mut completed_detection_thumbnails = Vec::new();
         for (id, receiver) in &mut self.face_detection_thumbnail_receivers {
-            if let Ok(AppEvent::FaceDetectionThumbnailReady { detection_id, result }) = receiver.try_recv() {
+            if let Ok(AppEvent::FaceDetectionThumbnailReady {
+                detection_id,
+                result,
+            }) = receiver.try_recv()
+            {
                 if let Ok(image) = result {
-                    self.face_detection_thumbnail_cache.insert(detection_id, image);
+                    self.face_detection_thumbnail_cache
+                        .insert(detection_id, image);
                 }
                 completed_detection_thumbnails.push(*id);
             }

@@ -61,7 +61,8 @@ impl FacesView {
             .id_salt("faces_vertical")
             .auto_shrink([false; 2])
             .show(ui, |ui| {
-                for (cluster_index, (cluster_id, detection_ids)) in face_clusters.iter().enumerate() {
+                for (cluster_index, (cluster_id, detection_ids)) in face_clusters.iter().enumerate()
+                {
                     if cluster_index > 0 {
                         ui.add(egui::Separator::default().horizontal());
                     }
@@ -76,10 +77,13 @@ impl FacesView {
                                 ui.horizontal(|ui| {
                                     for detection_id in detection_ids {
                                         let is_visible = true;
-                                        let texture_opt = if let Some(handle) = self.texture_handles.get(detection_id) {
+                                        let texture_opt = if let Some(handle) =
+                                            self.texture_handles.get(detection_id)
+                                        {
                                             Some(handle.clone())
                                         } else {
-                                            app_proxy.request_face_detection_thumbnail(*detection_id);
+                                            app_proxy
+                                                .request_face_detection_thumbnail(*detection_id);
                                             None
                                         };
                                         let current_index = item_index;
