@@ -13,13 +13,17 @@ pub struct AppProxy {
     thumbnail_size: u32,
     pub image_ids: Vec<ImageId>,
     pub face_ids: Vec<Uuid>,
+    /// (cluster_face_uuid, detection_uuids in that cluster)
+    pub face_clusters: Vec<(Uuid, Vec<Uuid>)>,
     face_thumbnail_receivers: HashMap<ImageId, oneshot::Receiver<AppEvent>>,
+    face_detection_thumbnail_receivers: HashMap<Uuid, oneshot::Receiver<AppEvent>>,
     thumbnail_receivers: HashMap<ImageId, Receiver<AppEvent>>,
     import_thumbnail_receivers: HashMap<PathBuf, Receiver<AppEvent>>,
     import_discovery_receiver: Option<Receiver<AppEvent>>,
     import_workflow_receiver: Option<Receiver<AppEvent>>,
     thumbnail_cache: HashMap<ImageId, DynamicImage>,
     face_thumbnail_cache: HashMap<ImageId, DynamicImage>,
+    face_detection_thumbnail_cache: HashMap<Uuid, DynamicImage>,
     import_thumbnail_cache: HashMap<PathBuf, DynamicImage>,
     discovered_items: Option<Vec<PathBuf>>,
 }
@@ -49,13 +53,16 @@ impl AppProxy {
             thumbnail_size,
             image_ids,
             face_ids: Vec::new(),
+            face_clusters: Vec::new(),
             thumbnail_receivers: HashMap::new(),
             face_thumbnail_receivers: HashMap::new(),
+            face_detection_thumbnail_receivers: HashMap::new(),
             import_thumbnail_receivers: HashMap::new(),
             import_discovery_receiver: None,
             import_workflow_receiver: None,
             thumbnail_cache: HashMap::new(),
             face_thumbnail_cache: HashMap::new(),
+            face_detection_thumbnail_cache: HashMap::new(),
             import_thumbnail_cache: HashMap::new(),
             discovered_items: None,
         })
@@ -89,6 +96,22 @@ impl AppProxy {
 
     pub fn get_cached_face_thumbnail(&self, id: &ImageId) -> Option<&DynamicImage> {
         self.face_thumbnail_cache.get(id)
+    }
+
+    pub fn request_face_detection_thumbnail(&mut self, detection_id: Uuid) -> &mut oneshot::Receiver<AppEvent> {
+        if !self.face_detection_thumbnail_receivers.contains_key(&detection_id)
+            && !self.face_detection_thumbnail_cache.contains_key(&detection_id)
+        {
+            let receiver = self
+                .app
+                .get_face_detection_thumbnail(detection_id, self.thumbnail_size);
+            self.face_detection_thumbnail_receivers.insert(detection_id, receiver);
+        }
+        self.face_detection_thumbnail_receivers.get_mut(&detection_id).unwrap()
+    }
+
+    pub fn get_cached_face_detection_thumbnail(&self, id: &Uuid) -> Option<&DynamicImage> {
+        self.face_detection_thumbnail_cache.get(id)
     }
 
     pub fn request_import_thumbnail(&mut self, path: &PathBuf) -> &mut Receiver<AppEvent> {
@@ -159,6 +182,19 @@ impl AppProxy {
             self.face_thumbnail_receivers.remove(&id);
         }
 
+        let mut completed_detection_thumbnails = Vec::new();
+        for (id, receiver) in &mut self.face_detection_thumbnail_receivers {
+            if let Ok(AppEvent::FaceDetectionThumbnailReady { detection_id, result }) = receiver.try_recv() {
+                if let Ok(image) = result {
+                    self.face_detection_thumbnail_cache.insert(detection_id, image);
+                }
+                completed_detection_thumbnails.push(*id);
+            }
+        }
+        for id in completed_detection_thumbnails {
+            self.face_detection_thumbnail_receivers.remove(&id);
+        }
+
         let mut completed_import_thumbnails = Vec::new();
         for receiver in self.import_thumbnail_receivers.values_mut() {
             if let Ok(AppEvent::ThumbnailFromFileReady { path, result }) = receiver.try_recv() {
@@ -202,6 +238,18 @@ impl AppProxy {
                 && let Ok(ids) = result
             {
                 self.face_ids = ids;
+            }
+        })
+    }
+
+    pub fn refresh_face_clusters(&mut self) {
+        let receiver = self.app.get_face_clusters();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            if let Ok(AppEvent::FaceClustersReady { result }) = receiver.await
+                && let Ok(clusters) = result
+            {
+                self.face_clusters = clusters;
             }
         })
     }

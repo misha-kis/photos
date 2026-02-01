@@ -151,7 +151,7 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
                 .internal()?;
         }
         let timestamps = read_timestamps_with_import_timestamp(&original_path, Utc::now())
-            .ok_or(ImageRepositoryError::ImageDoesNotExist)?;
+            .ok_or(ImageRepositoryError::FailedToReadTimestamps)?;
 
         Ok(ImageRecord {
             id: image_id,

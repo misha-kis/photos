@@ -141,6 +141,83 @@ impl App {
         rx
     }
 
+    pub fn get_face_clusters(&self) -> oneshot::Receiver<AppEvent> {
+        let (tx, rx) = oneshot::channel();
+        let service_registry = self.service_registry.clone();
+
+        let task: TaskFn = Box::new(move || {
+            Box::pin(async move {
+                let result = service_registry
+                    .image_meta_repo()
+                    .get_face_clusters()
+                    .await
+                    .map_err(|e| AppError::InvalidDatabaseState { err: e.to_string() });
+                let event = AppEvent::FaceClustersReady { result };
+                let _ = tx.send(event);
+            })
+        });
+
+        let _ = self.runtime.block_on(async {
+            self.task_queue
+                .lock()
+                .await
+                .submit(task, TaskPriority::High)
+        });
+        rx
+    }
+
+    pub fn get_face_detection_thumbnail(
+        &self,
+        detection_id: Uuid,
+        thumbnail_size: u32,
+    ) -> oneshot::Receiver<AppEvent> {
+        let (tx, rx) = oneshot::channel();
+        let service_registry = self.service_registry.clone();
+
+        let task: Box<
+            dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
+        > = Box::new(move || {
+            let service_registry = service_registry.clone();
+            let tx = tx;
+
+            Box::pin(async move {
+                let result = match tokio::task::spawn_blocking({
+                    let service_registry = service_registry.clone();
+                    let detection_id = detection_id;
+                    let detection_info = service_registry
+                        .image_meta_repo()
+                        .get_bbox_and_image_for_detection_id(detection_id)
+                        .await
+                        .map_err(|e| AppError::InvalidDatabaseState { err: e.to_string() });
+                    move || {
+                        let (bounding_box, image_record) = detection_info?;
+                        service_registry
+                            .image_repo()
+                            .get_face_thumbnail(&image_record, bounding_box, thumbnail_size)
+                            .map_err(|e| AppError::ImageRepositoryError { err: e.to_string() })
+                    }
+                })
+                .await
+                {
+                    Ok(Ok(image)) => Ok(image),
+                    Ok(Err(e)) => Err(e),
+                    Err(e) => Err(AppError::TaskSpawnFailed { err: e.to_string() }),
+                };
+
+                let event = AppEvent::FaceDetectionThumbnailReady { detection_id, result };
+                let _ = tx.send(event);
+            }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
+        });
+
+        let _ = self.runtime.block_on(async {
+            self.task_queue
+                .lock()
+                .await
+                .submit(task, TaskPriority::High)
+        });
+        rx
+    }
+
     pub fn discover_import_items(&self, path: PathBuf) -> mpsc::Receiver<AppEvent> {
         let (tx, rx) = mpsc::channel(1);
 
