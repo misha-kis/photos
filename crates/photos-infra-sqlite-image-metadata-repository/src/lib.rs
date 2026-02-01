@@ -21,7 +21,10 @@ where
     E: std::error::Error + Send + Sync + 'static,
 {
     fn internal(self) -> Result<T, ImageMetadataRepositoryError> {
-        self.map_err(|e| ImageMetadataRepositoryError::Internal(Box::new(e)))
+        self.map_err(|e| {
+            tracing::error!("{}", e.to_string());
+            ImageMetadataRepositoryError::Internal(Box::new(e))
+        })
     }
 }
 
@@ -31,22 +34,22 @@ pub struct SqliteImageMetadataRepository {
 
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct ImageRecordRow {
-    pub uuid: ImageId,
-    pub format_id: i64,
-    pub exif_timestamp: DateTime<Utc>,
-    pub os_timestamp: DateTime<Utc>,
-    pub import_timestamp: DateTime<Utc>,
+    pub image_uuid: ImageId,
+    pub image_format_id: i64,
+    pub image_exif_timestamp: Option<DateTime<Utc>>,
+    pub image_os_timestamp: DateTime<Utc>,
+    pub image_import_timestamp: DateTime<Utc>,
 }
 
 impl From<ImageRecordRow> for ImageRecord {
     fn from(row: ImageRecordRow) -> Self {
         Self {
-            id: row.uuid,
-            format: i64_to_format(row.format_id),
+            id: row.image_uuid,
+            format: i64_to_format(row.image_format_id),
             timestamps: Timestamps {
-                exif_timestamp: Some(row.exif_timestamp),
-                os_timestamp: row.os_timestamp,
-                import_timestamp: row.import_timestamp,
+                exif_timestamp: row.image_exif_timestamp,
+                os_timestamp: row.image_os_timestamp,
+                import_timestamp: row.image_import_timestamp,
             },
         }
     }
@@ -54,37 +57,37 @@ impl From<ImageRecordRow> for ImageRecord {
 
 #[derive(Debug, Clone, PartialEq, FromRow)]
 pub struct BoundingBoxRow {
-    pub x: f32,
-    pub y: f32,
-    pub w: f32,
-    pub h: f32,
+    pub fd_roi_x: f32,
+    pub fd_roi_y: f32,
+    pub fd_roi_w: f32,
+    pub fd_roi_h: f32,
 }
 
 impl From<BoundingBoxRow> for BoundingBox {
     fn from(row: BoundingBoxRow) -> Self {
         BoundingBox {
-            x: row.x,
-            y: row.y,
-            w: row.w,
-            h: row.h,
+            x: row.fd_roi_x,
+            y: row.fd_roi_y,
+            w: row.fd_roi_w,
+            h: row.fd_roi_h,
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, FromRow)]
 pub struct FaceDetectionRow {
-    pub uuid: Uuid,
+    pub fd_uuid: Uuid,
     #[sqlx(flatten)]
     pub bounding_box: BoundingBoxRow,
-    pub confidence: f32,
+    pub fd_confidence: f32,
 }
 
 impl From<FaceDetectionRow> for FaceDetection {
     fn from(row: FaceDetectionRow) -> Self {
         FaceDetection {
-            uuid: row.uuid,
+            uuid: row.fd_uuid,
             bounding_box: row.bounding_box.into(),
-            confidence: row.confidence,
+            confidence: row.fd_confidence,
         }
     }
 }
@@ -113,7 +116,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
     ) -> Result<(), ImageMetadataRepositoryError> {
         tracing::debug!("sqlite inserting image record");
         let format_id = format_to_i64(image_record.format);
-        sqlx::query(r#"INSERT INTO image(uuid, format_id, exif_timestamp, os_timestamp, import_timestamp) VALUES (?, ?, ?, ?, ?)"#)
+        sqlx::query(r#"INSERT INTO image(image_uuid, image_format_id, image_exif_timestamp, image_os_timestamp, image_import_timestamp) VALUES (?, ?, ?, ?, ?)"#)
             .bind(image_record.id)
             .bind(format_id)
             .bind(image_record.timestamps.exif_timestamp)
@@ -142,7 +145,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
 
         for image_record in image_records {
             let format_id = format_to_i64(image_record.format);
-            sqlx::query(r#"INSERT INTO image(uuid, format_id, exif_timestamp, os_timestamp, import_timestamp) VALUES (?, ?, ?, ?, ?)"#)
+            sqlx::query(r#"INSERT INTO image(image_uuid, image_format_id, image_exif_timestamp, image_os_timestamp, image_import_timestamp) VALUES (?, ?, ?, ?, ?)"#)
             .bind(image_record.id)
             .bind(format_id)
             .bind(image_record.timestamps.exif_timestamp)
@@ -166,7 +169,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         tracing::debug!("sqlite getting image record for {}", image_id);
 
         let row = sqlx::query_as::<_, ImageRecordRow>(
-            r#"SELECT uuid, format_id, exif_timestamp, os_timestamp, import_timestamp FROM image"#,
+            r#"SELECT image_uuid, image_format_id, image_exif_timestamp, image_os_timestamp, image_import_timestamp FROM image"#,
         )
         .fetch_one(&self.pool)
         .await
@@ -181,7 +184,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         image_id: ImageId,
     ) -> Result<(), ImageMetadataRepositoryError> {
         tracing::debug!("sqlite deleting image record for {}", image_id);
-        let rows_affected = sqlx::query(r#"DELETE FROM image WHERE uuid = $1"#)
+        let rows_affected = sqlx::query(r#"DELETE FROM image WHERE image_uuid = $1"#)
             .bind(image_id)
             .execute(&self.pool)
             .await
@@ -201,17 +204,17 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         tracing::debug!("sqlite getting image ids");
         #[derive(FromRow)]
         struct Row {
-            uuid: ImageId,
+            image_uuid: ImageId,
         }
 
         let result = sqlx::query_as::<_, Row>(
-            r#"SELECT uuid FROM image ORDER BY coalesce(exif_timestamp, os_timestamp)"#,
+            r#"SELECT image_uuid FROM image ORDER BY coalesce(image_exif_timestamp, image_os_timestamp)"#,
         )
         .fetch_all(&self.pool)
         .await
         .internal()?
         .iter()
-        .map(|row| row.uuid)
+        .map(|row| row.image_uuid)
         .collect();
         tracing::debug!("sqlite getting image ids done");
         Ok(result)
@@ -221,14 +224,14 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         tracing::debug!("sqlite getting face ids");
         #[derive(FromRow)]
         struct Row {
-            uuid: ImageId,
+            face_uuid: Uuid,
         }
-        let result = sqlx::query_as::<_, Row>(r#"SELECT uuid FROM face"#)
+        let result = sqlx::query_as::<_, Row>(r#"SELECT face_uuid FROM face"#)
             .fetch_all(&self.pool)
             .await
             .internal()?
             .iter()
-            .map(|row| row.uuid)
+            .map(|row| row.face_uuid)
             .collect();
         tracing::debug!("sqlite getting face ids done");
         Ok(result)
@@ -240,11 +243,12 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         struct Row {
             uuid_count: u64,
         }
-        let result = sqlx::query_as::<_, Row>(r#"SELECT COUNT(uuid) AS uuid_count FROM image"#)
-            .fetch_one(&self.pool)
-            .await
-            .map(|row| row.uuid_count)
-            .internal();
+        let result =
+            sqlx::query_as::<_, Row>(r#"SELECT COUNT(image_uuid) AS uuid_count FROM image"#)
+                .fetch_one(&self.pool)
+                .await
+                .map(|row| row.uuid_count)
+                .internal();
         tracing::debug!("sqlite getting number of images done");
         result
     }
@@ -255,7 +259,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         tracing::debug!("sqlite getting image records without face detections");
 
         let result =
-            sqlx::query_as::<_, ImageRecordRow>(r#"SELECT uuid, format_id, exif_timestamp, os_timestamp FROM image WHERE is_analyzed = 0"#)
+            sqlx::query_as::<_, ImageRecordRow>(r#"SELECT image_uuid, image_format_id, image_exif_timestamp, image_os_timestamp, image_import_timestamp FROM image WHERE image_is_analyzed = 0"#)
                 .fetch_all(&self.pool)
                 .await
                 .internal()?
@@ -275,7 +279,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         let mut tx = self.pool.begin().await.internal()?;
 
         for detection in face_detections {
-            sqlx::query(r#"INSERT INTO face_detection(uuid, image_uuid, roi_x, roi_y, roi_w, roi_h, confidence) VALUES (?, ?, ?, ?, ?, ?, ?)"#)
+            let result = sqlx::query(r#"INSERT INTO face_detection(fd_uuid, image_uuid, fd_roi_x, fd_roi_y, fd_roi_w, fd_roi_h, fd_confidence) VALUES (?, ?, ?, ?, ?, ?, ?)"#)
                 .bind(detection.uuid)
                 .bind(image_id)
                 .bind(detection.bounding_box.x)
@@ -285,9 +289,12 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
                 .bind(detection.confidence)
                 .execute(&mut *tx)
                 .await
-                .internal()?;
+                .internal();
+            if let Err(e) = result {
+                tracing::warn!("bad query: {e:?}");
+            }
         }
-        sqlx::query(r#"UPDATE image SET is_analyzed = 1 WHERE uuid = ?"#)
+        sqlx::query(r#"UPDATE image SET image_is_analyzed = 1 WHERE image_uuid = ?"#)
             .bind(image_id)
             .execute(&mut *tx)
             .await
@@ -303,7 +310,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         &self,
     ) -> Result<Vec<(ImageRecord, FaceDetection)>, ImageMetadataRepositoryError> {
         tracing::debug!("sqlite getting detections without embeddings");
-        #[derive(FromRow)]
+        #[derive(FromRow, Debug)]
         struct Row {
             #[sqlx(flatten)]
             image_record_row: ImageRecordRow,
@@ -313,17 +320,19 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
 
         let result = sqlx::query_as::<_, Row>(
             r#"
-SELECT image_uuid, format_id, exif_timestamp, os_timestamp, import_timestamp, face_detection.uuid, roi_x, roi_y, roi_w, roi_h, confidence
-FROM face_detection
-JOIN image i on i.uuid = face_detection.image_uuid
-WHERE embedding IS NULL
+SELECT i.image_uuid, image_format_id, image_exif_timestamp, image_os_timestamp, image_import_timestamp, fd_uuid, fd_roi_x, fd_roi_y, fd_roi_w, fd_roi_h, fd_confidence
+FROM face_detection f
+JOIN image i on i.image_uuid = f.image_uuid
+WHERE fd_embedding IS NULL
 "#,
         )
         .fetch_all(&self.pool)
         .await
         .internal()?
         .into_iter()
-        .map(|row| ( row.image_record_row.into(), row.face_detection.into() ))
+        .map(|row| {
+            tracing::debug!("{row:?}");
+            (row.image_record_row.into(), row.face_detection.into()) })
         .collect();
         tracing::debug!("sqlite getting detections without embeddings done");
 
@@ -334,13 +343,13 @@ WHERE embedding IS NULL
         &self,
         face_detection_with_embedding: FaceDetectionWithEmbedding,
     ) -> Result<(), ImageMetadataRepositoryError> {
-        tracing::debug!("sqlite udpating detection with embedding");
+        tracing::debug!("sqlite updating detection with embedding");
         let bytes: &[u8] = bytemuck::cast_slice(&face_detection_with_embedding.embedding);
         sqlx::query(
             r#"
 UPDATE face_detection
-SET embedding = ?
-WHERE uuid = ?
+SET fd_embedding = ?
+WHERE fd_uuid = ?
 "#,
         )
         .bind(bytes)
@@ -359,14 +368,14 @@ WHERE uuid = ?
         struct Row {
             #[sqlx(flatten)]
             face_detection: FaceDetectionRow,
-            embedding: Vec<u8>,
+            fd_embedding: Vec<u8>,
         }
 
         let result = sqlx::query_as::<_, Row>(
             r#"
-SELECT uuid, roi_x, roi_y, roi_w, roi_h, confidence, embedding
+SELECT fd_uuid, fd_roi_x, fd_roi_y, fd_roi_w, fd_roi_h, fd_confidence, fd_embedding
 FROM face_detection
-WHERE embedding IS NOT NULL
+WHERE fd_embedding IS NOT NULL
 "#,
         )
         .fetch_all(&self.pool)
@@ -375,7 +384,7 @@ WHERE embedding IS NOT NULL
         .into_iter()
         .map(|row| FaceDetectionWithEmbedding {
             detection: row.face_detection.into(),
-            embedding: bytemuck::cast_slice(&row.embedding).try_into().unwrap(),
+            embedding: bytemuck::cast_slice(&row.fd_embedding).try_into().unwrap(),
         })
         .collect();
         tracing::debug!("sqlite getting detections with embeddings done");
@@ -407,8 +416,8 @@ WHERE embedding IS NOT NULL
             };
             sqlx::query(
                 r#"
-INSERT INTO face (uuid) VALUES (?) ON CONFLICT DO NOTHING;
-UPDATE face_detection SET face_uuid = ? WHERE uuid = ?
+INSERT INTO face (face_uuid) VALUES (?) ON CONFLICT DO NOTHING;
+UPDATE face_detection SET face_uuid = ? WHERE fd_uuid = ?
 "#,
             )
             .bind(cluster_uuid)
@@ -427,7 +436,7 @@ UPDATE face_detection SET face_uuid = ? WHERE uuid = ?
         &self,
         face_id: Uuid,
     ) -> Result<(BoundingBox, ImageRecord), ImageMetadataRepositoryError> {
-        tracing::debug!("sqlite getting min detection for face id");
+        tracing::debug!("sqlite getting min detection for face id {face_id:?}");
         #[derive(FromRow)]
         struct Row {
             #[sqlx(flatten)]
@@ -437,12 +446,12 @@ UPDATE face_detection SET face_uuid = ? WHERE uuid = ?
         }
         let row = sqlx::query_as::<_, Row>(
             r#"
-SELECT image_uuid, format_id, exif_timestamp, os_timestamp, import_timestamp, roi_x, roi_y, roi_w, roi_h
-FROM (SELECT min(uuid) uuid
+SELECT i.image_uuid, image_format_id, image_exif_timestamp, image_os_timestamp, image_import_timestamp, fd_roi_x, fd_roi_y, fd_roi_w, fd_roi_h
+FROM (SELECT min(fd_uuid) min_fd_uuid
       FROM face_detection
-      WHERE face_uuid = ?) min_uuid
-         JOIN face_detection fd ON fd.uuid = min_uuid.uuid
-         JOIN image i ON fd.image_uuid = i.uuid
+      WHERE face_uuid = ?) min_fd_uuid
+         JOIN face_detection fd ON fd_uuid = min_fd_uuid.min_fd_uuid
+         JOIN image i ON fd.image_uuid = i.image_uuid
 "#,
         )
         .bind(face_id)

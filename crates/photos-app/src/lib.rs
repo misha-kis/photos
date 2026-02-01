@@ -76,12 +76,16 @@ impl App {
             app_options.max_blocking_tasks,
         )));
 
-        Ok(Self {
+        let app = Self {
             service_registry,
             task_queue,
             import_jobs: Arc::new(Mutex::new(HashMap::new())),
             runtime,
-        })
+        };
+
+        app.dispatch_image_analysis();
+
+        Ok(app)
     }
 
     pub fn get_image_ids(&self) -> mpsc::Receiver<AppEvent> {
@@ -217,6 +221,44 @@ impl App {
                 .runtime
                 .block_on(async { self.task_queue.lock().await.submit(task, TaskPriority::Low) });
         }
+
+        rx
+    }
+
+    pub fn dispatch_image_analysis(&self) -> mpsc::Receiver<AppEvent> {
+        let (tx, rx) = mpsc::channel(16);
+        let job_id = JobId::new_v4();
+        let service_registry = self.service_registry.clone();
+        let import_jobs = self.import_jobs.clone();
+
+        let job_state = Arc::new(Mutex::new(ImportJobState {
+            total: 0,
+            completed: 0,
+            image_records: Vec::new(),
+        }));
+
+        {
+            let mut jobs = self.runtime.block_on(async { import_jobs.lock().await });
+            jobs.insert(job_id, job_state.clone());
+        }
+
+        let service_registry = service_registry.clone();
+        let tx = tx.clone();
+        let task_queue = self.task_queue.clone();
+
+        let task: Box<
+            dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
+        > = Box::new(move || {
+            Box::pin(tasks::dispatch_face_detection_task(
+                service_registry,
+                task_queue,
+                tx,
+            )) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
+        });
+
+        let _ = self
+            .runtime
+            .block_on(async { self.task_queue.lock().await.submit(task, TaskPriority::Low) });
 
         rx
     }

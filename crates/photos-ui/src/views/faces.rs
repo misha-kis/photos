@@ -2,12 +2,12 @@ use crate::app_proxy::AppProxy;
 use crate::components::dynamic_grid::DynamicGrid;
 use crate::components::image::image_view;
 use eframe::egui;
-use photos_domain::ImageId;
+use photos_core::Uuid;
 use std::collections::HashMap;
 
 pub struct FacesView {
-    texture_handles: HashMap<ImageId, egui::TextureHandle>,
-    dynamic_grid: DynamicGrid<ImageId, egui::TextureHandle>,
+    texture_handles: HashMap<Uuid, egui::TextureHandle>,
+    dynamic_grid: DynamicGrid<Uuid, egui::TextureHandle>,
     should_update_face_ids: bool,
 }
 
@@ -53,12 +53,12 @@ impl FacesView {
             }
         }
 
-        let get_item_data = |image_id: &ImageId| -> Option<egui::TextureHandle> {
-            if let Some(cached_handle) = self.texture_handles.get(image_id) {
+        let get_item_data = |face_uuid: &Uuid| -> Option<egui::TextureHandle> {
+            if let Some(cached_handle) = self.texture_handles.get(face_uuid) {
                 return Some(cached_handle.clone());
             }
 
-            app_proxy.request_face_thumbnail(*image_id);
+            app_proxy.request_face_thumbnail(*face_uuid);
             None
         };
 
