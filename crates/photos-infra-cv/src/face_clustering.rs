@@ -23,7 +23,6 @@ impl Default for ClusteringConfig {
 /// Result of clustering operation
 pub(crate) struct ClusteringResult {
     /// Cluster labels for each embedding
-    /// -1 indicates noise/outlier
     /// Non-negative values indicate cluster IDs
     pub labels: Vec<Option<u32>>,
     /// Number of clusters found (excluding noise)

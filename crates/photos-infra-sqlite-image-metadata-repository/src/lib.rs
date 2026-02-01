@@ -234,6 +234,7 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
 SELECT f.face_uuid, fd.fd_uuid
 FROM face f
 JOIN face_detection fd ON fd.face_uuid = f.face_uuid
+WHERE f.face_uuid IS NOT NULL
 ORDER BY f.face_uuid, fd.fd_uuid
 "#,
         )
@@ -426,11 +427,7 @@ WHERE fd_embedding IS NOT NULL
             .collect();
 
         for detection in clustered_face_detections {
-            let cluster_uuid = if let Some(cluster_id) = detection.cluster_id {
-                cluster_uuids[&cluster_id]
-            } else {
-                Uuid::nil()
-            };
+            let cluster_uuid = detection.cluster_id.map(|id| cluster_uuids[&id]);
             sqlx::query(
                 r#"
 INSERT INTO face (face_uuid) VALUES (?) ON CONFLICT DO NOTHING;
