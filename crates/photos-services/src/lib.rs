@@ -54,7 +54,6 @@ pub trait ImageMetadataRepository {
     ) -> Result<(), ImageMetadataRepositoryError>;
 
     async fn get_image_ids(&self) -> Result<Vec<ImageId>, ImageMetadataRepositoryError>;
-    async fn get_face_ids(&self) -> Result<Vec<Uuid>, ImageMetadataRepositoryError>;
     /// Returns clusters: each item is (cluster_face_uuid, list of detection uuids in that cluster).
     async fn get_face_clusters(
         &self,
@@ -82,14 +81,6 @@ pub trait ImageMetadataRepository {
         &self,
         clustered_face_detections: &[ClusteredFaceDetection],
     ) -> Result<(), ImageMetadataRepositoryError>;
-    async fn get_min_detection_bbox_and_image_for_face_id(
-        &self,
-        face_id: Uuid,
-    ) -> Result<(BoundingBox, ImageRecord), ImageMetadataRepositoryError>;
-    async fn get_detections_for_face_id(
-        &self,
-        face_id: Uuid,
-    ) -> Result<Vec<(Uuid, BoundingBox, ImageRecord)>, ImageMetadataRepositoryError>;
     async fn get_bbox_and_image_for_detection_id(
         &self,
         detection_id: Uuid,

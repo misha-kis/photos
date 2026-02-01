@@ -116,31 +116,6 @@ impl App {
         rx
     }
 
-    pub fn get_face_ids(&self) -> oneshot::Receiver<AppEvent> {
-        let (tx, rx) = oneshot::channel();
-        let service_registry = self.service_registry.clone();
-
-        let task: TaskFn = Box::new(move || {
-            Box::pin(async move {
-                let result = service_registry
-                    .image_meta_repo()
-                    .get_face_ids()
-                    .await
-                    .map_err(|e| AppError::InvalidDatabaseState { err: e.to_string() });
-                let event = AppEvent::FaceIdsReady { result };
-                let _ = tx.send(event);
-            })
-        });
-
-        let _ = self.runtime.block_on(async {
-            self.task_queue
-                .lock()
-                .await
-                .submit(task, TaskPriority::High)
-        });
-        rx
-    }
-
     pub fn get_face_clusters(&self) -> oneshot::Receiver<AppEvent> {
         let (tx, rx) = oneshot::channel();
         let service_registry = self.service_registry.clone();
@@ -374,58 +349,6 @@ impl App {
 
                 let event = AppEvent::ThumbnailReady { image_id, result };
                 let _ = tx.send(event).await;
-            }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
-        });
-
-        let _ = self.runtime.block_on(async {
-            self.task_queue
-                .lock()
-                .await
-                .submit(task, TaskPriority::High)
-        });
-        rx
-    }
-
-    pub fn get_face_thumbnail(
-        &self,
-        face_id: Uuid,
-        thumbnail_size: u32,
-    ) -> oneshot::Receiver<AppEvent> {
-        let (tx, rx) = oneshot::channel();
-        let service_registry = self.service_registry.clone();
-
-        let task: Box<
-            dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
-        > = Box::new(move || {
-            let service_registry = service_registry.clone();
-            let tx = tx;
-
-            Box::pin(async move {
-                let result = match tokio::task::spawn_blocking({
-                    let service_registry = service_registry.clone();
-                    let face_id = face_id;
-                    let face_detection = service_registry
-                        .image_meta_repo()
-                        .get_min_detection_bbox_and_image_for_face_id(face_id)
-                        .await
-                        .map_err(|e| AppError::InvalidDatabaseState { err: e.to_string() });
-                    move || {
-                        let (bounding_box, image_record) = face_detection?;
-                        service_registry
-                            .image_repo()
-                            .get_face_thumbnail(&image_record, bounding_box, thumbnail_size)
-                            .map_err(|e| AppError::ImageRepositoryError { err: e.to_string() })
-                    }
-                })
-                .await
-                {
-                    Ok(Ok(image)) => Ok(image),
-                    Ok(Err(e)) => Err(e),
-                    Err(e) => Err(AppError::TaskSpawnFailed { err: e.to_string() }),
-                };
-
-                let event = AppEvent::FaceThumbnailReady { face_id, result };
-                let _ = tx.send(event);
             }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
         });
 

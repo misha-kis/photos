@@ -8,18 +8,11 @@ pub enum AppEvent {
     ImageIdsReady {
         result: Result<Vec<ImageId>, AppError>,
     },
-    FaceIdsReady {
-        result: Result<Vec<Uuid>, AppError>,
-    },
     FaceClustersReady {
         result: Result<Vec<(Uuid, Vec<Uuid>)>, AppError>,
     },
     ThumbnailReady {
         image_id: ImageId,
-        result: Result<DynamicImage, AppError>,
-    },
-    FaceThumbnailReady {
-        face_id: Uuid,
         result: Result<DynamicImage, AppError>,
     },
     FaceDetectionThumbnailReady {

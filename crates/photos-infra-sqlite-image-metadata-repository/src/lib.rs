@@ -220,23 +220,6 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         Ok(result)
     }
 
-    async fn get_face_ids(&self) -> Result<Vec<Uuid>, ImageMetadataRepositoryError> {
-        tracing::debug!("sqlite getting face ids");
-        #[derive(FromRow)]
-        struct Row {
-            face_uuid: Uuid,
-        }
-        let result = sqlx::query_as::<_, Row>(r#"SELECT face_uuid FROM face"#)
-            .fetch_all(&self.pool)
-            .await
-            .internal()?
-            .iter()
-            .map(|row| row.face_uuid)
-            .collect();
-        tracing::debug!("sqlite getting face ids done");
-        Ok(result)
-    }
-
     async fn get_face_clusters(
         &self,
     ) -> Result<Vec<(Uuid, Vec<Uuid>)>, ImageMetadataRepositoryError> {
@@ -464,72 +447,6 @@ UPDATE face_detection SET face_uuid = ? WHERE fd_uuid = ?
         tx.commit().await.internal()?;
         tracing::debug!("sqlite updating clusters done");
         Ok(())
-    }
-
-    async fn get_min_detection_bbox_and_image_for_face_id(
-        &self,
-        face_id: Uuid,
-    ) -> Result<(BoundingBox, ImageRecord), ImageMetadataRepositoryError> {
-        tracing::debug!("sqlite getting min detection for face id {face_id:?}");
-        #[derive(FromRow)]
-        struct Row {
-            #[sqlx(flatten)]
-            image_record_row: ImageRecordRow,
-            #[sqlx(flatten)]
-            bounding_box: BoundingBoxRow,
-        }
-        let row = sqlx::query_as::<_, Row>(
-            r#"
-SELECT i.image_uuid, image_format_id, image_exif_timestamp, image_os_timestamp, image_import_timestamp, fd_roi_x, fd_roi_y, fd_roi_w, fd_roi_h
-FROM (SELECT min(fd_uuid) min_fd_uuid
-      FROM face_detection
-      WHERE face_uuid = ?) min_fd_uuid
-         JOIN face_detection fd ON fd_uuid = min_fd_uuid.min_fd_uuid
-         JOIN image i ON fd.image_uuid = i.image_uuid
-"#,
-        )
-        .bind(face_id)
-        .fetch_one(&self.pool)
-        .await
-        .internal()?;
-
-        let result = (row.bounding_box.into(), row.image_record_row.into());
-
-        tracing::debug!("sqlite getting min detection for face id");
-        Ok(result)
-    }
-
-    async fn get_detections_for_face_id(
-        &self,
-        face_id: Uuid,
-    ) -> Result<Vec<(Uuid, BoundingBox, ImageRecord)>, ImageMetadataRepositoryError> {
-        tracing::debug!("sqlite getting detections for face id {face_id:?}");
-        #[derive(FromRow)]
-        struct Row {
-            fd_uuid: Uuid,
-            #[sqlx(flatten)]
-            image_record_row: ImageRecordRow,
-            #[sqlx(flatten)]
-            bounding_box: BoundingBoxRow,
-        }
-        let rows = sqlx::query_as::<_, Row>(
-            r#"
-SELECT fd.fd_uuid, i.image_uuid, image_format_id, image_exif_timestamp, image_os_timestamp, image_import_timestamp, fd_roi_x, fd_roi_y, fd_roi_w, fd_roi_h
-FROM face_detection fd
-JOIN image i ON fd.image_uuid = i.image_uuid
-WHERE fd.face_uuid = ?
-ORDER BY fd.fd_uuid
-"#,
-        )
-        .bind(face_id)
-        .fetch_all(&self.pool)
-        .await
-        .internal()?
-        .into_iter()
-        .map(|row| (row.fd_uuid, row.bounding_box.into(), row.image_record_row.into()))
-        .collect();
-        tracing::debug!("sqlite getting detections for face id done");
-        Ok(rows)
     }
 
     async fn get_bbox_and_image_for_detection_id(
