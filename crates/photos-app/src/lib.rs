@@ -14,6 +14,7 @@ use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc;
 use tokio::sync::{Mutex, oneshot};
+use tokio_util::sync::CancellationToken;
 
 pub mod config;
 mod errors;
@@ -29,6 +30,16 @@ struct ImportJobState {
     total: u64,
     completed: u64,
     image_records: Vec<ImageRecord>,
+}
+
+pub struct OneshotJobHandle<T> {
+    pub cancel: CancellationToken,
+    pub rx: oneshot::Receiver<T>,
+}
+
+pub struct JobHandle {
+    pub cancel: CancellationToken,
+    pub rx: mpsc::Receiver<AppEvent>,
 }
 
 pub struct App {
@@ -91,6 +102,7 @@ impl App {
     pub fn get_image_ids(&self) -> mpsc::Receiver<AppEvent> {
         let (tx, rx) = mpsc::channel(1);
         let service_registry = self.service_registry.clone();
+        let cancel = CancellationToken::new();
 
         let task: TaskFn = Box::new(move || {
             let service_registry = service_registry.clone();
@@ -111,7 +123,7 @@ impl App {
             self.task_queue
                 .lock()
                 .await
-                .submit(task, TaskPriority::High)
+                .submit(task, TaskPriority::High, cancel)
         });
         rx
     }
@@ -119,6 +131,7 @@ impl App {
     pub fn get_face_clusters(&self) -> oneshot::Receiver<AppEvent> {
         let (tx, rx) = oneshot::channel();
         let service_registry = self.service_registry.clone();
+        let cancel = CancellationToken::new();
 
         let task: TaskFn = Box::new(move || {
             Box::pin(async move {
@@ -136,7 +149,7 @@ impl App {
             self.task_queue
                 .lock()
                 .await
-                .submit(task, TaskPriority::High)
+                .submit(task, TaskPriority::High, cancel)
         });
         rx
     }
@@ -148,6 +161,7 @@ impl App {
     ) -> oneshot::Receiver<AppEvent> {
         let (tx, rx) = oneshot::channel();
         let service_registry = self.service_registry.clone();
+        let cancel = CancellationToken::new();
 
         let task: Box<
             dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
@@ -191,13 +205,14 @@ impl App {
             self.task_queue
                 .lock()
                 .await
-                .submit(task, TaskPriority::High)
+                .submit(task, TaskPriority::High, cancel)
         });
         rx
     }
 
     pub fn discover_import_items(&self, path: PathBuf) -> mpsc::Receiver<AppEvent> {
         let (tx, rx) = mpsc::channel(1);
+        let cancel = CancellationToken::new();
 
         let task: Box<
             dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
@@ -219,17 +234,18 @@ impl App {
             self.task_queue
                 .lock()
                 .await
-                .submit(task, TaskPriority::High)
+                .submit(task, TaskPriority::High, cancel)
         });
         rx
     }
 
-    pub fn import_items(&self, paths: Vec<PathBuf>) -> mpsc::Receiver<AppEvent> {
+    pub fn import_items(&self, paths: Vec<PathBuf>) -> JobHandle {
         let (tx, rx) = mpsc::channel(16);
         let job_id = JobId::new_v4();
         let total = paths.len() as u64;
         let service_registry = self.service_registry.clone();
         let import_jobs = self.import_jobs.clone();
+        let cancel = CancellationToken::new();
 
         let job_state = Arc::new(Mutex::new(ImportJobState {
             total,
@@ -257,6 +273,7 @@ impl App {
             let tx = tx.clone();
             let import_jobs = import_jobs.clone();
             let task_queue = self.task_queue.clone();
+            let cancel_clone = cancel.clone();
 
             let task: Box<
                 dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
@@ -269,15 +286,19 @@ impl App {
                     job_id,
                     import_jobs,
                     task_queue,
+                    cancel_clone,
                 )) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
             });
 
-            let _ = self
-                .runtime
-                .block_on(async { self.task_queue.lock().await.submit(task, TaskPriority::Low) });
+            let _ = self.runtime.block_on(async {
+                self.task_queue
+                    .lock()
+                    .await
+                    .submit(task, TaskPriority::Low, cancel.clone())
+            });
         }
 
-        rx
+        JobHandle { cancel, rx }
     }
 
     pub fn dispatch_image_analysis(&self) -> mpsc::Receiver<AppEvent> {
@@ -285,6 +306,7 @@ impl App {
         let job_id = JobId::new_v4();
         let service_registry = self.service_registry.clone();
         let import_jobs = self.import_jobs.clone();
+        let cancel = CancellationToken::new();
 
         let job_state = Arc::new(Mutex::new(ImportJobState {
             total: 0,
@@ -300,6 +322,7 @@ impl App {
         let service_registry = service_registry.clone();
         let tx = tx.clone();
         let task_queue = self.task_queue.clone();
+        let cancel_clone = cancel.clone();
 
         let task: Box<
             dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
@@ -308,12 +331,16 @@ impl App {
                 service_registry,
                 task_queue,
                 tx,
+                cancel_clone,
             )) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
         });
 
-        let _ = self
-            .runtime
-            .block_on(async { self.task_queue.lock().await.submit(task, TaskPriority::Low) });
+        let _ = self.runtime.block_on(async {
+            self.task_queue
+                .lock()
+                .await
+                .submit(task, TaskPriority::Low, cancel)
+        });
 
         rx
     }
@@ -325,6 +352,7 @@ impl App {
     ) -> mpsc::Receiver<AppEvent> {
         let (tx, rx) = mpsc::channel(1);
         let service_registry = self.service_registry.clone();
+        let cancel = CancellationToken::new();
 
         let task: Box<
             dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
@@ -359,7 +387,7 @@ impl App {
             self.task_queue
                 .lock()
                 .await
-                .submit(task, TaskPriority::High)
+                .submit(task, TaskPriority::High, cancel)
         });
         rx
     }
@@ -371,6 +399,7 @@ impl App {
     ) -> mpsc::Receiver<AppEvent> {
         let (tx, rx) = mpsc::channel(1);
         let service_registry = self.service_registry.clone();
+        let cancel = CancellationToken::new();
 
         let task: Box<
             dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
@@ -408,7 +437,7 @@ impl App {
             self.task_queue
                 .lock()
                 .await
-                .submit(task, TaskPriority::High)
+                .submit(task, TaskPriority::High, cancel)
         });
         rx
     }

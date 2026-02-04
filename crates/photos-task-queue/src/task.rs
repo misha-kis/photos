@@ -1,3 +1,5 @@
+use tokio_util::sync::CancellationToken;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TaskPriority {
     High,
@@ -12,11 +14,16 @@ pub type TaskInnerFn = std::pin::Pin<Box<dyn Future<Output = ()> + Send>>;
 pub(crate) struct QueuedTask {
     pub task: TaskFn,
     pub priority: TaskPriority,
+    pub cancel: CancellationToken,
 }
 
 impl QueuedTask {
-    pub fn new(task: TaskFn, priority: TaskPriority) -> Self {
-        Self { task, priority }
+    pub fn new(task: TaskFn, priority: TaskPriority, cancel: CancellationToken) -> Self {
+        Self {
+            task,
+            priority,
+            cancel,
+        }
     }
 }
 

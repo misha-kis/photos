@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::{runtime::Handle, sync::Semaphore};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
 pub struct TaskQueue {
@@ -65,11 +66,9 @@ impl TaskQueue {
                         tracing::trace!("max allowed priority: {allowed_priority:?}");
 
                         for priority in priorities_to_run {
-                            // if allowed_priority.is_some_and(|allowed_priority| priority < allowed_priority) {
-                            //     break;
-                            // }
                             while !queues.is_empty() && can_start(*priority, &running_tasks, max_blocking_tasks) {
                                 let task = match queues.pop(*priority) {
+                                    Some(t) if t.cancel.is_cancelled() => continue,
                                     Some(t) => t,
                                     None => break,
                                 };
@@ -124,8 +123,13 @@ impl TaskQueue {
         }
     }
 
-    pub fn submit(&self, task: TaskFn, priority: TaskPriority) -> Result<(), String> {
-        let queued_task = QueuedTask::new(task, priority);
+    pub fn submit(
+        &self,
+        task: TaskFn,
+        priority: TaskPriority,
+        cancel: CancellationToken,
+    ) -> Result<(), String> {
+        let queued_task = QueuedTask::new(task, priority, cancel);
         self.task_sender
             .send(queued_task)
             .map_err(|e| format!("Failed to submit task: {}", e))

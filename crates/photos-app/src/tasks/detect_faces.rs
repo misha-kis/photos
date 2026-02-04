@@ -1,14 +1,11 @@
-use crate::AppEvent;
 use crate::service_registry::AppServiceRegistry;
 use photos_domain::ImageRecord;
 use photos_services::{ImageMetadataRepository, ImageRepository, ServiceRegistry};
 use std::sync::Arc;
-use tokio::sync::mpsc;
 
 pub(crate) async fn detect_faces_task(
     service_registry: Arc<AppServiceRegistry>,
     image_record: ImageRecord,
-    _tx: mpsc::Sender<AppEvent>,
 ) {
     tracing::debug!("detecting faces for image: {}", image_record.id);
     if let Ok(image) = service_registry.image_repository.get_image(&image_record)

@@ -6,11 +6,13 @@ use photos_services::ServiceRegistry;
 use photos_task_queue::{TaskFn, TaskPriority, TaskQueue};
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
+use tokio_util::sync::CancellationToken;
 
 pub(crate) async fn dispatch_embedding_generation_task(
     service_registry: Arc<AppServiceRegistry>,
     task_queue: Arc<Mutex<TaskQueue>>,
     tx: mpsc::Sender<AppEvent>,
+    cancel: CancellationToken,
 ) {
     match service_registry
         .image_meta_repo()
@@ -38,7 +40,7 @@ pub(crate) async fn dispatch_embedding_generation_task(
             new_tasks.push((cluster_embeddings_task, TaskPriority::Lowest));
             let task_queue = task_queue.lock().await;
             for (task, priority) in new_tasks {
-                let _ = task_queue.submit(task, priority);
+                let _ = task_queue.submit(task, priority, cancel.clone());
             }
         }
         Err(e) => {

@@ -17,3 +17,4 @@ tokio = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 env = "1.0.1"
+tokio-util = { workspace = true }

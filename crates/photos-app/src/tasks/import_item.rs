@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
+use tokio_util::sync::CancellationToken;
 
 pub(crate) async fn import_item_task(
     service_registry: Arc<AppServiceRegistry>,
@@ -18,6 +19,7 @@ pub(crate) async fn import_item_task(
     job_id: JobId,
     import_jobs: Arc<Mutex<HashMap<JobId, Arc<Mutex<ImportJobState>>>>>,
     task_queue: Arc<Mutex<TaskQueue>>,
+    cancel: CancellationToken,
 ) {
     let image_record_result = service_registry
         .image_repo()
@@ -61,17 +63,20 @@ pub(crate) async fn import_item_task(
                         let mut jobs = import_jobs_final.lock().await;
                         jobs.remove(&job_id_final);
                         let task_queue_clone = task_queue.clone();
+                        let cancel_clone = cancel.clone();
                         let dispatch_face_detection_task: TaskFn = Box::new(move || {
                             Box::pin(dispatch_face_detection_task(
                                 service_registry,
                                 task_queue_clone,
                                 tx,
+                                cancel_clone,
                             ))
                         });
-                        let _ = task_queue
-                            .lock()
-                            .await
-                            .submit(dispatch_face_detection_task, TaskPriority::Lowest);
+                        let _ = task_queue.lock().await.submit(
+                            dispatch_face_detection_task,
+                            TaskPriority::Lowest,
+                            cancel,
+                        );
                     }
                     Err(e) => {
                         let finish_event = AppEvent::ImportFinished {

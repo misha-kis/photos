@@ -1,5 +1,5 @@
 use image::DynamicImage;
-use photos_app::AppEvent;
+use photos_app::{AppEvent, OneshotJobHandle};
 use photos_core::Uuid;
 use photos_domain::ImageId;
 use std::collections::HashMap;
@@ -7,6 +7,36 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::oneshot;
+
+trait Storable {
+    type Id: Eq + std::hash::Hash + Copy;
+    fn load(id: Self::Id) -> OneshotJobHandle<Self>;
+}
+
+#[derive(Default)]
+struct Storage<T: Storable> {
+    cache: HashMap<T::Id, T>,
+    jobs: HashMap<T::Id, OneshotJobHandle<T>>,
+}
+
+impl<T: Storable> Storage<T> {
+    fn update(&mut self) {
+        self.jobs.retain(|id, j| match j.rx.try_recv() {
+            Ok(t) => {
+                self.cache.insert(*id, t);
+                false
+            }
+            Err(oneshot::error::TryRecvError::Empty) => true,
+            Err(oneshot::error::TryRecvError::Closed) => false,
+        });
+    }
+
+    fn get(&mut self, id: T::Id) -> Option<&T> {
+        let res = self.cache.get(&id);
+        if res.is_none() && !self.jobs.contains_key(&id) {}
+        res
+    }
+}
 
 pub struct AppProxy {
     app: Arc<photos_app::App>,
