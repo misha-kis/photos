@@ -1,7 +1,7 @@
 use crate::errors::AppError;
 use crate::service_registry::AppServiceRegistry;
 use photos_core::{JobId, Uuid};
-use photos_domain::{ImageId, ImageRecord};
+use photos_domain::{DynamicImage, ImageId, ImageRecord};
 use photos_infra_fast_image_resize_resizer::FastImageResizeResizer;
 use photos_infra_fs_repository::FSImageRepository;
 use photos_infra_import_item_discovery::discover_import_items;
@@ -34,7 +34,7 @@ struct ImportJobState {
 
 pub struct OneshotJobHandle<T> {
     pub cancel: CancellationToken,
-    pub rx: oneshot::Receiver<T>,
+    pub rx: oneshot::Receiver<Result<T, AppError>>,
 }
 
 pub struct JobHandle {
@@ -239,7 +239,7 @@ impl App {
         rx
     }
 
-    pub fn import_items(&self, paths: Vec<PathBuf>) -> JobHandle {
+    pub fn import_items(&self, paths: Vec<PathBuf>) -> mpsc::Receiver<AppEvent> {
         let (tx, rx) = mpsc::channel(16);
         let job_id = JobId::new_v4();
         let total = paths.len() as u64;
@@ -298,7 +298,8 @@ impl App {
             });
         }
 
-        JobHandle { cancel, rx }
+        // JobHandle { cancel, rx }
+        rx
     }
 
     pub fn dispatch_image_analysis(&self) -> mpsc::Receiver<AppEvent> {
@@ -349,10 +350,11 @@ impl App {
         &self,
         image_id: ImageId,
         thumbnail_size: u32,
-    ) -> mpsc::Receiver<AppEvent> {
-        let (tx, rx) = mpsc::channel(1);
+    ) -> OneshotJobHandle<DynamicImage> {
+        let (tx, rx) = oneshot::channel();
         let service_registry = self.service_registry.clone();
         let cancel = CancellationToken::new();
+        let cancel_clone = cancel.clone();
 
         let task: Box<
             dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
@@ -378,8 +380,7 @@ impl App {
                     Err(e) => Err(AppError::TaskSpawnFailed { err: e.to_string() }),
                 };
 
-                let event = AppEvent::ThumbnailReady { image_id, result };
-                let _ = tx.send(event).await;
+                let _ = tx.send(result);
             }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
         });
 
@@ -387,9 +388,9 @@ impl App {
             self.task_queue
                 .lock()
                 .await
-                .submit(task, TaskPriority::High, cancel)
+                .submit(task, TaskPriority::High, cancel_clone)
         });
-        rx
+        OneshotJobHandle { cancel, rx }
     }
 
     pub fn get_thumbnail_from_file(

@@ -1,54 +1,103 @@
+use eframe::egui::{self, TextureHandle};
 use image::DynamicImage;
-use photos_app::{AppEvent, OneshotJobHandle};
+use photos_app::{App, AppEvent, OneshotJobHandle};
 use photos_core::Uuid;
 use photos_domain::ImageId;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::rc::Rc;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::oneshot;
 
-trait Storable {
-    type Id: Eq + std::hash::Hash + Copy;
-    fn load(id: Self::Id) -> OneshotJobHandle<Self>;
+pub(crate) trait CtxInto<T: Sized> {
+    fn ctx_into(self, ctx: &egui::Context) -> T;
 }
 
-#[derive(Default)]
+pub(crate) trait Storable: Sized {
+    type Id: Eq + std::hash::Hash + Copy;
+    type ReceiveAs: Sized + CtxInto<Self>;
+    fn load(app: &App, id: Self::Id) -> OneshotJobHandle<Self::ReceiveAs>;
+}
+
 struct Storage<T: Storable> {
+    app: Rc<App>,
     cache: HashMap<T::Id, T>,
-    jobs: HashMap<T::Id, OneshotJobHandle<T>>,
+    jobs: HashMap<T::Id, OneshotJobHandle<T::ReceiveAs>>,
 }
 
 impl<T: Storable> Storage<T> {
-    fn update(&mut self) {
-        self.jobs.retain(|id, j| match j.rx.try_recv() {
-            Ok(t) => {
-                self.cache.insert(*id, t);
-                false
-            }
-            Err(oneshot::error::TryRecvError::Empty) => true,
-            Err(oneshot::error::TryRecvError::Closed) => false,
-        });
+    fn new(app: Rc<App>) -> Self {
+        Self {
+            app,
+            cache: Default::default(),
+            jobs: Default::default(),
+        }
     }
 
-    fn get(&mut self, id: T::Id) -> Option<&T> {
-        let res = self.cache.get(&id);
-        if res.is_none() && !self.jobs.contains_key(&id) {}
-        res
+    fn get(&mut self, id: T::Id, ctx: &egui::Context) -> Option<&T> {
+        if self.cache.contains_key(&id) {
+            return self.cache.get(&id);
+        }
+
+        if let Some(job) = self.jobs.get_mut(&id) {
+            return match job.rx.try_recv() {
+                Ok(Ok(value)) => {
+                    self.jobs.remove(&id);
+                    self.cache.insert(id, value.ctx_into(ctx));
+                    self.cache.get(&id)
+                }
+                Ok(Err(_)) | Err(oneshot::error::TryRecvError::Closed) => {
+                    self.jobs.remove(&id);
+                    None
+                }
+                Err(oneshot::error::TryRecvError::Empty) => {
+                    None
+                }
+            }
+        }
+
+        let job = T::load(self.app.as_ref(), id);
+        self.jobs.insert(id, job);
+        None
+    }
+}
+
+type Thumbnail = TextureHandle;
+
+impl Storable for Thumbnail {
+    type Id = ImageId;
+    type ReceiveAs = DynamicImage;
+
+    fn load(app: &App, id: Self::Id) -> OneshotJobHandle<Self::ReceiveAs> {
+        app.get_thumbnail(id, 128)
+    }
+}
+
+impl CtxInto<Thumbnail> for DynamicImage {
+    fn ctx_into(self, ctx: &egui::Context) -> Thumbnail {
+        let rgba = self.into_rgba8();
+        let texture_id = format!("thumbnail-{}", Uuid::new_v4());
+        ctx.load_texture(
+            &texture_id,
+            egui::ColorImage::from_rgba_unmultiplied(
+                [rgba.width() as _, rgba.height() as _],
+                rgba.as_raw(),
+            ),
+            Default::default(),
+        )
     }
 }
 
 pub struct AppProxy {
-    app: Arc<photos_app::App>,
+    app: Rc<App>,
     thumbnail_size: u32,
     pub image_ids: Vec<ImageId>,
     pub face_clusters: Vec<(Uuid, Vec<Uuid>)>,
+    thumbnail_storage: Storage<Thumbnail>,
     face_detection_thumbnail_receivers: HashMap<Uuid, oneshot::Receiver<AppEvent>>,
-    thumbnail_receivers: HashMap<ImageId, Receiver<AppEvent>>,
     import_thumbnail_receivers: HashMap<PathBuf, Receiver<AppEvent>>,
     import_discovery_receiver: Option<Receiver<AppEvent>>,
     import_workflow_receiver: Option<Receiver<AppEvent>>,
-    thumbnail_cache: HashMap<ImageId, DynamicImage>,
     face_detection_thumbnail_cache: HashMap<Uuid, DynamicImage>,
     import_thumbnail_cache: HashMap<PathBuf, DynamicImage>,
     discovered_items: Option<Vec<PathBuf>>,
@@ -60,7 +109,7 @@ impl AppProxy {
         app_options: photos_app::config::Options,
     ) -> anyhow::Result<Self> {
         let thumbnail_size = app_options.thumbnail_sizes[0];
-        let app = Arc::new(photos_app::App::new(gallery_dir, app_options)?);
+        let app = Rc::new(photos_app::App::new(gallery_dir, app_options)?);
 
         let mut receiver = app.get_image_ids();
         let mut image_ids = Vec::new();
@@ -73,18 +122,18 @@ impl AppProxy {
                 image_ids = ids;
             }
         });
+        let thumbnail_storage = Storage::<Thumbnail>::new(app.clone());
 
         Ok(Self {
             app,
             thumbnail_size,
             image_ids,
             face_clusters: Vec::new(),
-            thumbnail_receivers: HashMap::new(),
+            thumbnail_storage,
             face_detection_thumbnail_receivers: HashMap::new(),
             import_thumbnail_receivers: HashMap::new(),
             import_discovery_receiver: None,
             import_workflow_receiver: None,
-            thumbnail_cache: HashMap::new(),
             face_detection_thumbnail_cache: HashMap::new(),
             import_thumbnail_cache: HashMap::new(),
             discovered_items: None,
@@ -95,16 +144,12 @@ impl AppProxy {
         self.image_ids.len()
     }
 
-    pub fn request_thumbnail(&mut self, id: ImageId) -> &mut Receiver<AppEvent> {
-        if !self.thumbnail_receivers.contains_key(&id) && !self.thumbnail_cache.contains_key(&id) {
-            let receiver = self.app.get_thumbnail(id, self.thumbnail_size);
-            self.thumbnail_receivers.insert(id, receiver);
-        }
-        self.thumbnail_receivers.get_mut(&id).unwrap()
-    }
-
-    pub fn get_cached_thumbnail(&self, id: &ImageId) -> Option<&DynamicImage> {
-        self.thumbnail_cache.get(id)
+    pub(crate) fn get_thumbnail(
+        &mut self,
+        id: <Thumbnail as Storable>::Id,
+        ctx: &egui::Context,
+    ) -> Option<Thumbnail> {
+        self.thumbnail_storage.get(id, ctx).cloned()
     }
 
     pub fn request_face_detection_thumbnail(
@@ -175,19 +220,6 @@ impl AppProxy {
     }
 
     pub fn process_events(&mut self) {
-        let mut completed_thumbnails = Vec::new();
-        for (id, receiver) in &mut self.thumbnail_receivers {
-            if let Ok(AppEvent::ThumbnailReady { image_id, result }) = receiver.try_recv() {
-                if let Ok(image) = result {
-                    self.thumbnail_cache.insert(image_id, image);
-                }
-                completed_thumbnails.push(*id);
-            }
-        }
-        for id in completed_thumbnails {
-            self.thumbnail_receivers.remove(&id);
-        }
-
         let mut completed_detection_thumbnails = Vec::new();
         for (id, receiver) in &mut self.face_detection_thumbnail_receivers {
             if let Ok(AppEvent::FaceDetectionThumbnailReady {
