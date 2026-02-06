@@ -158,10 +158,10 @@ impl App {
         &self,
         detection_id: &Uuid,
         thumbnail_size: u32,
+        cancel: CancellationToken,
     ) -> OneshotJobHandle<RgbaImage> {
         let (tx, rx) = oneshot::channel();
         let service_registry = self.service_registry.clone();
-        let cancel = CancellationToken::new();
         let cancel_clone = cancel.clone();
         let detection_id = *detection_id;
 
@@ -348,10 +348,10 @@ impl App {
         &self,
         image_id: &ImageId,
         thumbnail_size: u32,
+        cancel: CancellationToken,
     ) -> OneshotJobHandle<RgbaImage> {
         let (tx, rx) = oneshot::channel();
         let service_registry = self.service_registry.clone();
-        let cancel = CancellationToken::new();
         let cancel_clone = cancel.clone();
         let image_id = *image_id;
 

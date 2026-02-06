@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
 
 pub(crate) trait CtxInto<T: Sized> {
     fn ctx_into(self, ctx: &egui::Context) -> T;
@@ -16,7 +17,11 @@ pub(crate) trait CtxInto<T: Sized> {
 pub(crate) trait Storable: Sized {
     type Id: Eq + std::hash::Hash + Copy;
     type ReceiveAs: Sized + CtxInto<Self>;
-    fn load(app: &App, id: &Self::Id) -> OneshotJobHandle<Self::ReceiveAs>;
+    fn load(
+        app: &App,
+        id: &Self::Id,
+        cancel: CancellationToken,
+    ) -> OneshotJobHandle<Self::ReceiveAs>;
 }
 
 struct Storage<T: Storable> {
@@ -34,7 +39,7 @@ impl<T: Storable> Storage<T> {
         }
     }
 
-    fn get(&mut self, id: &T::Id, ctx: &egui::Context) -> Option<&T> {
+    fn get(&mut self, id: &T::Id, ctx: &egui::Context, cancel: CancellationToken) -> Option<&T> {
         if self.cache.contains_key(&id) {
             return self.cache.get(&id);
         }
@@ -54,7 +59,7 @@ impl<T: Storable> Storage<T> {
             };
         }
 
-        let job = T::load(self.app.as_ref(), id);
+        let job = T::load(self.app.as_ref(), id, cancel);
         self.jobs.insert(*id, job);
         None
     }
@@ -67,8 +72,12 @@ impl Storable for Thumbnail {
     type Id = ImageId;
     type ReceiveAs = RgbaImage;
 
-    fn load(app: &App, id: &Self::Id) -> OneshotJobHandle<Self::ReceiveAs> {
-        app.get_thumbnail(id, 128)
+    fn load(
+        app: &App,
+        id: &Self::Id,
+        cancel: CancellationToken,
+    ) -> OneshotJobHandle<Self::ReceiveAs> {
+        app.get_thumbnail(id, 128, cancel)
     }
 }
 
@@ -93,8 +102,12 @@ impl Storable for FaceThumbnail {
     type Id = ImageId;
     type ReceiveAs = RgbaImage;
 
-    fn load(app: &App, id: &Self::Id) -> OneshotJobHandle<Self::ReceiveAs> {
-        app.get_face_detection_thumbnail(id, 128)
+    fn load(
+        app: &App,
+        id: &Self::Id,
+        cancel: CancellationToken,
+    ) -> OneshotJobHandle<Self::ReceiveAs> {
+        app.get_face_detection_thumbnail(id, 128, cancel)
     }
 }
 
@@ -169,17 +182,22 @@ impl AppProxy {
         &mut self,
         id: &<Thumbnail as Storable>::Id,
         ctx: &egui::Context,
+        cancel: CancellationToken,
     ) -> Option<TextureHandle> {
-        self.thumbnail_storage.get(id, ctx).cloned().map(|x| x.0)
+        self.thumbnail_storage
+            .get(id, ctx, cancel)
+            .cloned()
+            .map(|x| x.0)
     }
 
     pub fn get_face_detection_thumbnail(
         &mut self,
         id: &Uuid,
         ctx: &egui::Context,
+        cancel: CancellationToken,
     ) -> Option<TextureHandle> {
         self.face_detection_thumbnail_storage
-            .get(id, ctx)
+            .get(id, ctx, cancel)
             .cloned()
             .map(|x| x.0)
     }

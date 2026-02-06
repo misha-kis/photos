@@ -1,22 +1,20 @@
 use crate::app_proxy::AppProxy;
 use crate::components::image::image_view;
 use eframe::egui;
-use photos_core::Uuid;
-use std::collections::HashMap;
+use tokio_util::sync::CancellationToken;
 
 const THUMBNAIL_SIZE: f32 = 128.0;
 
 pub struct FacesView {
-    /// Detection id -> texture handle for face thumbnails
-    texture_handles: HashMap<Uuid, egui::TextureHandle>,
     should_update_clusters: bool,
+    cancel: CancellationToken,
 }
 
 impl FacesView {
     pub fn new() -> Self {
         Self {
-            texture_handles: HashMap::new(),
             should_update_clusters: true,
+            cancel: CancellationToken::new(),
         }
     }
 
@@ -56,8 +54,11 @@ impl FacesView {
                                 ui.horizontal(|ui| {
                                     for detection_id in detection_ids {
                                         let is_visible = true;
-                                        let texture_opt = app_proxy
-                                            .get_face_detection_thumbnail(detection_id, ctx);
+                                        let texture_opt = app_proxy.get_face_detection_thumbnail(
+                                            detection_id,
+                                            ctx,
+                                            self.cancel.clone(),
+                                        );
                                         let current_index = item_index;
                                         let mut click_cb = || on_item_clicked(current_index);
                                         ui.push_id(*detection_id, |ui| {
@@ -76,5 +77,11 @@ impl FacesView {
                     });
                 }
             });
+    }
+}
+
+impl Drop for FacesView {
+    fn drop(&mut self) {
+        self.cancel.cancel();
     }
 }

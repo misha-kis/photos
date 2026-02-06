@@ -2,12 +2,11 @@ mod app_proxy;
 mod components;
 mod views;
 
-use std::path::PathBuf;
-
 use crate::components::navbar::{NavAction, show_navbar};
 use crate::views::faces::FacesView;
 use eframe::egui;
 use photos_app::config::Options;
+use std::path::PathBuf;
 use views::gallery::GalleryView;
 use views::import::ImportView;
 

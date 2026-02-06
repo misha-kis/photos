@@ -3288,6 +3288,7 @@ dependencies = [
  "photos-domain",
  "rfd",
  "tokio",
+ "tokio-util",
  "tracing-subscriber",
 ]
 

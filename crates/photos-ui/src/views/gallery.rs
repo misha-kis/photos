@@ -3,15 +3,18 @@ use crate::components::dynamic_grid::DynamicGrid;
 use crate::components::image::image_view;
 use eframe::egui;
 use photos_domain::ImageId;
+use tokio_util::sync::CancellationToken;
 
 pub struct GalleryView {
     dynamic_grid: DynamicGrid<ImageId, egui::TextureHandle>,
+    cancel: CancellationToken,
 }
 
 impl GalleryView {
     pub fn new() -> Self {
         Self {
             dynamic_grid: DynamicGrid::new(128.0),
+            cancel: CancellationToken::new(),
         }
     }
 
@@ -26,7 +29,7 @@ impl GalleryView {
 
         let image_ids = app_proxy.image_ids.clone();
         let get_item_data = |image_id: &ImageId| -> Option<egui::TextureHandle> {
-            app_proxy.get_thumbnail(image_id, ctx)
+            app_proxy.get_thumbnail(image_id, ctx, self.cancel.clone())
         };
 
         self.dynamic_grid.show(
@@ -39,5 +42,11 @@ impl GalleryView {
             on_item_clicked,
             true,
         );
+    }
+}
+
+impl Drop for GalleryView {
+    fn drop(&mut self) {
+        self.cancel.cancel();
     }
 }
