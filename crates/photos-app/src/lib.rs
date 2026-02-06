@@ -7,7 +7,7 @@ use photos_infra_fs_repository::FSImageRepository;
 use photos_infra_import_item_discovery::discover_import_items;
 use photos_infra_sqlite_image_metadata_repository::SqliteImageMetadataRepository;
 use photos_services::{ImageMetadataRepository, ServiceRegistry};
-use photos_task_queue::{TaskFn, TaskPriority, TaskQueue};
+use photos_task_queue::{TaskFn, TaskInnerFn, TaskPriority, TaskQueue};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -165,9 +165,7 @@ impl App {
         let cancel_clone = cancel.clone();
         let detection_id = *detection_id;
 
-        let task: Box<
-            dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
-        > = Box::new(move || {
+        let task: TaskFn = Box::new(move || {
             let service_registry = service_registry.clone();
             let tx = tx;
 
@@ -196,7 +194,7 @@ impl App {
                 };
 
                 let _ = tx.send(result);
-            }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
+            }) as TaskInnerFn
         });
 
         let _ = self.runtime.block_on(async {
@@ -212,9 +210,7 @@ impl App {
         let (tx, rx) = mpsc::channel(1);
         let cancel = CancellationToken::new();
 
-        let task: Box<
-            dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
-        > = Box::new(move || {
+        let task: TaskFn = Box::new(move || {
             let tx = tx;
             let path_clone = path.clone();
 
@@ -225,7 +221,7 @@ impl App {
 
                 let event = AppEvent::ImportItemsDiscovered { path, result };
                 let _ = tx.send(event).await;
-            }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
+            }) as TaskInnerFn
         });
 
         let _ = self.runtime.block_on(async {
@@ -273,9 +269,7 @@ impl App {
             let task_queue = self.task_queue.clone();
             let cancel_clone = cancel.clone();
 
-            let task: Box<
-                dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
-            > = Box::new(move || {
+            let task: TaskFn = Box::new(move || {
                 Box::pin(import_item_task(
                     service_registry,
                     path,
@@ -285,7 +279,7 @@ impl App {
                     import_jobs,
                     task_queue,
                     cancel_clone,
-                )) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
+                )) as TaskInnerFn
             });
 
             let _ = self.runtime.block_on(async {
@@ -323,15 +317,13 @@ impl App {
         let task_queue = self.task_queue.clone();
         let cancel_clone = cancel.clone();
 
-        let task: Box<
-            dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
-        > = Box::new(move || {
+        let task: TaskFn = Box::new(move || {
             Box::pin(tasks::dispatch_face_detection_task(
                 service_registry,
                 task_queue,
                 tx,
                 cancel_clone,
-            )) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
+            )) as TaskInnerFn
         });
 
         let _ = self.runtime.block_on(async {
@@ -355,9 +347,7 @@ impl App {
         let cancel_clone = cancel.clone();
         let image_id = *image_id;
 
-        let task: Box<
-            dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
-        > = Box::new(move || {
+        let task: TaskFn = Box::new(move || {
             let service_registry = service_registry.clone();
             let tx = tx;
 
@@ -380,7 +370,7 @@ impl App {
                 };
 
                 let _ = tx.send(result);
-            }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
+            }) as TaskInnerFn
         });
 
         let _ = self.runtime.block_on(async {
@@ -402,9 +392,7 @@ impl App {
         let service_registry = self.service_registry.clone();
         let cancel_clone = cancel.clone();
 
-        let task: Box<
-            dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
-        > = Box::new(move || {
+        let task: TaskFn = Box::new(move || {
             let service_registry = service_registry.clone();
             let tx = tx;
             let path_clone = path.clone();
@@ -428,7 +416,7 @@ impl App {
                 };
 
                 let _ = tx.send(result);
-            }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
+            }) as TaskInnerFn
         });
 
         let _ = self.runtime.block_on(async {
