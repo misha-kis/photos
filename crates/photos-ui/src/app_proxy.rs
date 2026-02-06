@@ -1,5 +1,5 @@
 use eframe::egui::{self, TextureHandle};
-use image::DynamicImage;
+use image::{DynamicImage, RgbaImage};
 use photos_app::{App, AppEvent, OneshotJobHandle};
 use photos_core::Uuid;
 use photos_domain::ImageId;
@@ -50,10 +50,8 @@ impl<T: Storable> Storage<T> {
                     self.jobs.remove(&id);
                     None
                 }
-                Err(oneshot::error::TryRecvError::Empty) => {
-                    None
-                }
-            }
+                Err(oneshot::error::TryRecvError::Empty) => None,
+            };
         }
 
         let job = T::load(self.app.as_ref(), id);
@@ -66,22 +64,21 @@ type Thumbnail = TextureHandle;
 
 impl Storable for Thumbnail {
     type Id = ImageId;
-    type ReceiveAs = DynamicImage;
+    type ReceiveAs = RgbaImage;
 
     fn load(app: &App, id: Self::Id) -> OneshotJobHandle<Self::ReceiveAs> {
         app.get_thumbnail(id, 128)
     }
 }
 
-impl CtxInto<Thumbnail> for DynamicImage {
+impl CtxInto<Thumbnail> for RgbaImage {
     fn ctx_into(self, ctx: &egui::Context) -> Thumbnail {
-        let rgba = self.into_rgba8();
         let texture_id = format!("thumbnail-{}", Uuid::new_v4());
         ctx.load_texture(
             &texture_id,
             egui::ColorImage::from_rgba_unmultiplied(
-                [rgba.width() as _, rgba.height() as _],
-                rgba.as_raw(),
+                [self.width() as _, self.height() as _],
+                self.as_raw(),
             ),
             Default::default(),
         )

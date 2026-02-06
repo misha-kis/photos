@@ -1,7 +1,7 @@
 use crate::errors::AppError;
 use crate::service_registry::AppServiceRegistry;
 use photos_core::{JobId, Uuid};
-use photos_domain::{DynamicImage, ImageId, ImageRecord};
+use photos_domain::{ImageId, ImageRecord, RgbaImage};
 use photos_infra_fast_image_resize_resizer::FastImageResizeResizer;
 use photos_infra_fs_repository::FSImageRepository;
 use photos_infra_import_item_discovery::discover_import_items;
@@ -350,7 +350,7 @@ impl App {
         &self,
         image_id: ImageId,
         thumbnail_size: u32,
-    ) -> OneshotJobHandle<DynamicImage> {
+    ) -> OneshotJobHandle<RgbaImage> {
         let (tx, rx) = oneshot::channel();
         let service_registry = self.service_registry.clone();
         let cancel = CancellationToken::new();
@@ -371,6 +371,7 @@ impl App {
                         service_registry
                             .image_repo()
                             .get_thumbnail(&image_id, thumbnail_size)
+                            .map(|image| image.into_rgba8())
                     }
                 })
                 .await

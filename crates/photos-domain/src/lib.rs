@@ -7,8 +7,8 @@ use chrono::{DateTime, Utc};
 pub use errors::DomainError;
 use std::cmp::Ordering;
 
-pub use image::DynamicImage;
 use image::ImageFormat;
+pub use image::{DynamicImage, RgbaImage};
 pub use image_features::{
     BoundingBox, ClusteredFaceDetection, FaceDetection, FaceDetectionWithEmbedding,
 };
