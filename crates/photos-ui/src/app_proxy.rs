@@ -60,7 +60,8 @@ impl<T: Storable> Storage<T> {
     }
 }
 
-type Thumbnail = TextureHandle;
+#[derive(Clone)]
+pub(crate) struct Thumbnail(TextureHandle);
 
 impl Storable for Thumbnail {
     type Id = ImageId;
@@ -74,14 +75,14 @@ impl Storable for Thumbnail {
 impl CtxInto<Thumbnail> for RgbaImage {
     fn ctx_into(self, ctx: &egui::Context) -> Thumbnail {
         let texture_id = format!("thumbnail-{}", Uuid::new_v4());
-        ctx.load_texture(
+        Thumbnail(ctx.load_texture(
             texture_id,
             egui::ColorImage::from_rgba_unmultiplied(
                 [self.width() as _, self.height() as _],
                 self.as_raw(),
             ),
             Default::default(),
-        )
+        ))
     }
 }
 
@@ -145,8 +146,8 @@ impl AppProxy {
         &mut self,
         id: <Thumbnail as Storable>::Id,
         ctx: &egui::Context,
-    ) -> Option<Thumbnail> {
-        self.thumbnail_storage.get(id, ctx).cloned()
+    ) -> Option<TextureHandle> {
+        self.thumbnail_storage.get(id, ctx).cloned().map(|x| x.0)
     }
 
     pub fn request_face_detection_thumbnail(
