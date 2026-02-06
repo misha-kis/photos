@@ -26,7 +26,7 @@ impl GalleryView {
 
         let image_ids = app_proxy.image_ids.clone();
         let get_item_data = |image_id: &ImageId| -> Option<egui::TextureHandle> {
-            app_proxy.get_thumbnail(*image_id, ctx)
+            app_proxy.get_thumbnail(image_id, ctx)
         };
 
         self.dynamic_grid.show(

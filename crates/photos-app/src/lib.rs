@@ -156,12 +156,14 @@ impl App {
 
     pub fn get_face_detection_thumbnail(
         &self,
-        detection_id: Uuid,
+        detection_id: &Uuid,
         thumbnail_size: u32,
-    ) -> oneshot::Receiver<AppEvent> {
+    ) -> OneshotJobHandle<RgbaImage> {
         let (tx, rx) = oneshot::channel();
         let service_registry = self.service_registry.clone();
         let cancel = CancellationToken::new();
+        let cancel_clone = cancel.clone();
+        let detection_id = *detection_id;
 
         let task: Box<
             dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
@@ -172,7 +174,6 @@ impl App {
             Box::pin(async move {
                 let result = match tokio::task::spawn_blocking({
                     let service_registry = service_registry.clone();
-                    let detection_id = detection_id;
                     let detection_info = service_registry
                         .image_meta_repo()
                         .get_bbox_and_image_for_detection_id(detection_id)
@@ -183,6 +184,7 @@ impl App {
                         service_registry
                             .image_repo()
                             .get_face_thumbnail(&image_record, bounding_box, thumbnail_size)
+                            .map(|image| image.to_rgba8())
                             .map_err(|e| AppError::ImageRepositoryError { err: e.to_string() })
                     }
                 })
@@ -193,11 +195,7 @@ impl App {
                     Err(e) => Err(AppError::TaskSpawnFailed { err: e.to_string() }),
                 };
 
-                let event = AppEvent::FaceDetectionThumbnailReady {
-                    detection_id,
-                    result,
-                };
-                let _ = tx.send(event);
+                let _ = tx.send(result);
             }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
         });
 
@@ -205,9 +203,9 @@ impl App {
             self.task_queue
                 .lock()
                 .await
-                .submit(task, TaskPriority::High, cancel)
+                .submit(task, TaskPriority::High, cancel_clone)
         });
-        rx
+        OneshotJobHandle { cancel, rx }
     }
 
     pub fn discover_import_items(&self, path: PathBuf) -> mpsc::Receiver<AppEvent> {
@@ -348,20 +346,20 @@ impl App {
 
     pub fn get_thumbnail(
         &self,
-        image_id: ImageId,
+        image_id: &ImageId,
         thumbnail_size: u32,
     ) -> OneshotJobHandle<RgbaImage> {
         let (tx, rx) = oneshot::channel();
         let service_registry = self.service_registry.clone();
         let cancel = CancellationToken::new();
         let cancel_clone = cancel.clone();
+        let image_id = *image_id;
 
         let task: Box<
             dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
         > = Box::new(move || {
             let service_registry = service_registry.clone();
             let tx = tx;
-            let image_id = image_id;
 
             Box::pin(async move {
                 let result = match tokio::task::spawn_blocking({

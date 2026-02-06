@@ -16,7 +16,7 @@ pub(crate) trait CtxInto<T: Sized> {
 pub(crate) trait Storable: Sized {
     type Id: Eq + std::hash::Hash + Copy;
     type ReceiveAs: Sized + CtxInto<Self>;
-    fn load(app: &App, id: Self::Id) -> OneshotJobHandle<Self::ReceiveAs>;
+    fn load(app: &App, id: &Self::Id) -> OneshotJobHandle<Self::ReceiveAs>;
 }
 
 struct Storage<T: Storable> {
@@ -34,7 +34,7 @@ impl<T: Storable> Storage<T> {
         }
     }
 
-    fn get(&mut self, id: T::Id, ctx: &egui::Context) -> Option<&T> {
+    fn get(&mut self, id: &T::Id, ctx: &egui::Context) -> Option<&T> {
         if self.cache.contains_key(&id) {
             return self.cache.get(&id);
         }
@@ -43,7 +43,7 @@ impl<T: Storable> Storage<T> {
             return match job.rx.try_recv() {
                 Ok(Ok(value)) => {
                     self.jobs.remove(&id);
-                    self.cache.insert(id, value.ctx_into(ctx));
+                    self.cache.insert(*id, value.ctx_into(ctx));
                     self.cache.get(&id)
                 }
                 Ok(Err(_)) | Err(oneshot::error::TryRecvError::Closed) => {
@@ -55,7 +55,7 @@ impl<T: Storable> Storage<T> {
         }
 
         let job = T::load(self.app.as_ref(), id);
-        self.jobs.insert(id, job);
+        self.jobs.insert(*id, job);
         None
     }
 }
@@ -67,7 +67,7 @@ impl Storable for Thumbnail {
     type Id = ImageId;
     type ReceiveAs = RgbaImage;
 
-    fn load(app: &App, id: Self::Id) -> OneshotJobHandle<Self::ReceiveAs> {
+    fn load(app: &App, id: &Self::Id) -> OneshotJobHandle<Self::ReceiveAs> {
         app.get_thumbnail(id, 128)
     }
 }
@@ -86,17 +86,42 @@ impl CtxInto<Thumbnail> for RgbaImage {
     }
 }
 
+#[derive(Clone)]
+pub(crate) struct FaceThumbnail(TextureHandle);
+
+impl Storable for FaceThumbnail {
+    type Id = ImageId;
+    type ReceiveAs = RgbaImage;
+
+    fn load(app: &App, id: &Self::Id) -> OneshotJobHandle<Self::ReceiveAs> {
+        app.get_face_detection_thumbnail(id, 128)
+    }
+}
+
+impl CtxInto<FaceThumbnail> for RgbaImage {
+    fn ctx_into(self, ctx: &egui::Context) -> FaceThumbnail {
+        let texture_id = format!("face-thumbnail-{}", Uuid::new_v4());
+        FaceThumbnail(ctx.load_texture(
+            texture_id,
+            egui::ColorImage::from_rgba_unmultiplied(
+                [self.width() as _, self.height() as _],
+                self.as_raw(),
+            ),
+            Default::default(),
+        ))
+    }
+}
+
 pub struct AppProxy {
     app: Rc<App>,
     thumbnail_size: u32,
     pub image_ids: Vec<ImageId>,
     pub face_clusters: Vec<(Uuid, Vec<Uuid>)>,
     thumbnail_storage: Storage<Thumbnail>,
-    face_detection_thumbnail_receivers: HashMap<Uuid, oneshot::Receiver<AppEvent>>,
+    face_detection_thumbnail_storage: Storage<FaceThumbnail>,
     import_thumbnail_receivers: HashMap<PathBuf, Receiver<AppEvent>>,
     import_discovery_receiver: Option<Receiver<AppEvent>>,
     import_workflow_receiver: Option<Receiver<AppEvent>>,
-    face_detection_thumbnail_cache: HashMap<Uuid, DynamicImage>,
     import_thumbnail_cache: HashMap<PathBuf, DynamicImage>,
     discovered_items: Option<Vec<PathBuf>>,
 }
@@ -120,19 +145,17 @@ impl AppProxy {
                 image_ids = ids;
             }
         });
-        let thumbnail_storage = Storage::<Thumbnail>::new(app.clone());
 
         Ok(Self {
-            app,
+            app: app.clone(),
             thumbnail_size,
             image_ids,
             face_clusters: Vec::new(),
-            thumbnail_storage,
-            face_detection_thumbnail_receivers: HashMap::new(),
+            thumbnail_storage: Storage::new(app.clone()),
+            face_detection_thumbnail_storage: Storage::new(app.clone()),
             import_thumbnail_receivers: HashMap::new(),
             import_discovery_receiver: None,
             import_workflow_receiver: None,
-            face_detection_thumbnail_cache: HashMap::new(),
             import_thumbnail_cache: HashMap::new(),
             discovered_items: None,
         })
@@ -144,36 +167,21 @@ impl AppProxy {
 
     pub(crate) fn get_thumbnail(
         &mut self,
-        id: <Thumbnail as Storable>::Id,
+        id: &<Thumbnail as Storable>::Id,
         ctx: &egui::Context,
     ) -> Option<TextureHandle> {
         self.thumbnail_storage.get(id, ctx).cloned().map(|x| x.0)
     }
 
-    pub fn request_face_detection_thumbnail(
+    pub fn get_face_detection_thumbnail(
         &mut self,
-        detection_id: Uuid,
-    ) -> &mut oneshot::Receiver<AppEvent> {
-        if !self
-            .face_detection_thumbnail_receivers
-            .contains_key(&detection_id)
-            && !self
-                .face_detection_thumbnail_cache
-                .contains_key(&detection_id)
-        {
-            let receiver = self
-                .app
-                .get_face_detection_thumbnail(detection_id, self.thumbnail_size);
-            self.face_detection_thumbnail_receivers
-                .insert(detection_id, receiver);
-        }
-        self.face_detection_thumbnail_receivers
-            .get_mut(&detection_id)
-            .unwrap()
-    }
-
-    pub fn get_cached_face_detection_thumbnail(&self, id: &Uuid) -> Option<&DynamicImage> {
-        self.face_detection_thumbnail_cache.get(id)
+        id: &Uuid,
+        ctx: &egui::Context,
+    ) -> Option<TextureHandle> {
+        self.face_detection_thumbnail_storage
+            .get(id, ctx)
+            .cloned()
+            .map(|x| x.0)
     }
 
     pub fn request_import_thumbnail(&mut self, path: &PathBuf) -> &mut Receiver<AppEvent> {
@@ -218,24 +226,6 @@ impl AppProxy {
     }
 
     pub fn process_events(&mut self) {
-        let mut completed_detection_thumbnails = Vec::new();
-        for (id, receiver) in &mut self.face_detection_thumbnail_receivers {
-            if let Ok(AppEvent::FaceDetectionThumbnailReady {
-                detection_id,
-                result,
-            }) = receiver.try_recv()
-            {
-                if let Ok(image) = result {
-                    self.face_detection_thumbnail_cache
-                        .insert(detection_id, image);
-                }
-                completed_detection_thumbnails.push(*id);
-            }
-        }
-        for id in completed_detection_thumbnails {
-            self.face_detection_thumbnail_receivers.remove(&id);
-        }
-
         let mut completed_import_thumbnails = Vec::new();
         for receiver in self.import_thumbnail_receivers.values_mut() {
             if let Ok(AppEvent::ThumbnailFromFileReady { path, result }) = receiver.try_recv() {
