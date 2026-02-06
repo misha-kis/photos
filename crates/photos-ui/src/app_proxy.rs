@@ -75,7 +75,7 @@ impl CtxInto<Thumbnail> for RgbaImage {
     fn ctx_into(self, ctx: &egui::Context) -> Thumbnail {
         let texture_id = format!("thumbnail-{}", Uuid::new_v4());
         ctx.load_texture(
-            &texture_id,
+            texture_id,
             egui::ColorImage::from_rgba_unmultiplied(
                 [self.width() as _, self.height() as _],
                 self.as_raw(),
