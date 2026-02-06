@@ -13,26 +13,26 @@ enum ImportState {
     Preview {
         files_to_import: Vec<PathBuf>,
         dynamic_grid: DynamicGrid<usize, egui::TextureHandle>,
-        cancel: CancellationToken,
     },
     Importing {
         files_to_import: Vec<PathBuf>,
         dynamic_grid: DynamicGrid<usize, egui::TextureHandle>,
         done: u64,
         total: u64,
-        cancel: CancellationToken,
     },
     Done,
 }
 
 pub struct ImportView {
     import_state: ImportState,
+    cancel: CancellationToken,
 }
 
 impl ImportView {
     pub fn new() -> Self {
         Self {
             import_state: ImportState::SelectingDirectory,
+            cancel: CancellationToken::new(),
         }
     }
 
@@ -56,22 +56,20 @@ impl ImportView {
                 if ui.button("Cancel").clicked() {
                     on_cancel_or_done();
                 }
-                app_proxy.request_discover_import_items(dir_to_import);
-                app_proxy.process_events();
-                if let Some(items) = app_proxy.get_discovered_items() {
+                if let Some(items) =
+                    app_proxy.get_discovered_import_items(dir_to_import, ctx, self.cancel.clone())
+                {
                     self.import_state = ImportState::Preview {
                         files_to_import: items.clone(),
                         dynamic_grid: DynamicGrid::new(128.0),
-                        cancel: CancellationToken::new(),
                     };
                 }
             }
             ImportState::Preview {
                 files_to_import,
                 dynamic_grid,
-                cancel,
             } => {
-                if cancel.is_cancelled() {
+                if self.cancel.is_cancelled() {
                     on_cancel_or_done();
                     self.import_state = ImportState::Done;
                     return;
@@ -93,7 +91,7 @@ impl ImportView {
                 ui.vertical(|ui| {
                     ui.horizontal(|ui| {
                         if ui.button("Cancel").clicked() {
-                            cancel.cancel();
+                            self.cancel.cancel();
                             return;
                         }
                         if ui.button("Import").clicked() {
@@ -112,7 +110,7 @@ impl ImportView {
                             .get(*import_image_id)
                             .context("invalid id")
                             .ok()?;
-                        app_proxy.get_import_thumbnail(path, ctx, cancel.clone())
+                        app_proxy.get_import_thumbnail(path, ctx, self.cancel.clone())
                     };
 
                     dynamic_grid.show(
@@ -127,7 +125,7 @@ impl ImportView {
                     );
                 });
 
-                if cancel.is_cancelled() {
+                if self.cancel.is_cancelled() {
                     on_cancel_or_done();
                     self.import_state = ImportState::Done;
                 } else if should_import {
@@ -137,7 +135,6 @@ impl ImportView {
                         dynamic_grid: DynamicGrid::new(128.0),
                         done: 0,
                         total: 0,
-                        cancel: cancel.clone(),
                     };
                 }
             }
@@ -146,7 +143,6 @@ impl ImportView {
                 dynamic_grid,
                 done,
                 total,
-                cancel,
             } => {
                 app_proxy.process_events();
 
@@ -189,7 +185,7 @@ impl ImportView {
                             .get(*import_image_id)
                             .context("invalid id")
                             .ok()?;
-                        app_proxy.get_import_thumbnail(path, ctx, cancel.clone())
+                        app_proxy.get_import_thumbnail(path, ctx, self.cancel.clone())
                     };
 
                     dynamic_grid.show(
@@ -208,5 +204,11 @@ impl ImportView {
                 on_cancel_or_done();
             }
         };
+    }
+}
+
+impl Drop for ImportView {
+    fn drop(&mut self) {
+        self.cancel.cancel();
     }
 }

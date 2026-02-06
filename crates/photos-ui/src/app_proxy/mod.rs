@@ -9,7 +9,7 @@ use std::rc::Rc;
 use tokio::sync::mpsc::Receiver;
 use tokio_util::sync::CancellationToken;
 
-use storage::{FaceThumbnail, ImportThumbnail, Storable, Storage, Thumbnail};
+use storage::{FaceThumbnail, ImportItemPaths, ImportThumbnail, Storable, Storage, Thumbnail};
 
 pub struct AppProxy {
     app: Rc<App>,
@@ -18,9 +18,8 @@ pub struct AppProxy {
     thumbnail_storage: Storage<Thumbnail>,
     face_detection_thumbnail_storage: Storage<FaceThumbnail>,
     import_thumbnail_storage: Storage<ImportThumbnail>,
-    import_discovery_receiver: Option<Receiver<AppEvent>>,
+    discovered_items_storage: Storage<ImportItemPaths>,
     import_workflow_receiver: Option<Receiver<AppEvent>>,
-    discovered_items: Option<Vec<PathBuf>>,
 }
 
 impl AppProxy {
@@ -30,17 +29,11 @@ impl AppProxy {
     ) -> anyhow::Result<Self> {
         let app = Rc::new(photos_app::App::new(gallery_dir, app_options)?);
 
-        let mut receiver = app.get_image_ids();
+        let receiver = app.get_image_ids();
         let mut image_ids = Vec::new();
-
-        let rt = tokio::runtime::Runtime::new()?;
-        rt.block_on(async {
-            if let Some(AppEvent::ImageIdsReady { result }) = receiver.recv().await
-                && let Ok(ids) = result
-            {
-                image_ids = ids;
-            }
-        });
+        if let Ok(Ok(ids)) = receiver.rx.blocking_recv() {
+            image_ids = ids;
+        }
 
         Ok(Self {
             app: app.clone(),
@@ -49,9 +42,8 @@ impl AppProxy {
             thumbnail_storage: Storage::new(app.clone()),
             face_detection_thumbnail_storage: Storage::new(app.clone()),
             import_thumbnail_storage: Storage::new(app.clone()),
-            import_discovery_receiver: None,
+            discovered_items_storage: Storage::new(app.clone()),
             import_workflow_receiver: None,
-            discovered_items: None,
         })
     }
 
@@ -67,8 +59,7 @@ impl AppProxy {
     ) -> Option<TextureHandle> {
         self.thumbnail_storage
             .get(id, ctx, cancel)
-            .cloned()
-            .map(|x| x.0)
+            .map(|x| x.0.clone())
     }
 
     pub fn get_face_detection_thumbnail(
@@ -79,8 +70,7 @@ impl AppProxy {
     ) -> Option<TextureHandle> {
         self.face_detection_thumbnail_storage
             .get(id, ctx, cancel)
-            .cloned()
-            .map(|x| x.0)
+            .map(|x| x.0.clone())
     }
 
     pub fn get_import_thumbnail(
@@ -91,19 +81,18 @@ impl AppProxy {
     ) -> Option<TextureHandle> {
         self.import_thumbnail_storage
             .get(path, ctx, cancel)
-            .cloned()
-            .map(|x| x.0)
+            .map(|x| x.0.clone())
     }
 
-    pub fn request_discover_import_items(&mut self, path: &Path) {
-        if self.import_discovery_receiver.is_none() {
-            let receiver = self.app.discover_import_items(path.to_path_buf());
-            self.import_discovery_receiver = Some(receiver);
-        }
-    }
-
-    pub fn get_discovered_items(&self) -> Option<&Vec<PathBuf>> {
-        self.discovered_items.as_ref()
+    pub fn get_discovered_import_items(
+        &mut self,
+        path: &Path,
+        ctx: &egui::Context,
+        cancel: CancellationToken,
+    ) -> Option<&Vec<PathBuf>> {
+        self.discovered_items_storage
+            .get(&path.to_path_buf(), ctx, cancel)
+            .map(|x| &x.0)
     }
 
     pub fn start_import(&mut self, paths: Vec<PathBuf>) {
@@ -115,31 +104,13 @@ impl AppProxy {
         self.import_workflow_receiver.as_mut()
     }
 
-    pub fn get_discovery_receiver(&mut self) -> Option<&mut Receiver<AppEvent>> {
-        self.import_discovery_receiver.as_mut()
-    }
-
-    pub fn process_events(&mut self) {
-        if let Some(receiver) = &mut self.import_discovery_receiver
-            && let Ok(AppEvent::ImportItemsDiscovered { result, .. }) = receiver.try_recv()
-        {
-            if let Ok(items) = result {
-                self.discovered_items = Some(items);
-            }
-            self.import_discovery_receiver = None;
-        }
-    }
+    pub fn process_events(&mut self) {}
 
     pub fn refresh_images(&mut self) {
         let mut receiver = self.app.get_image_ids();
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            if let Some(AppEvent::ImageIdsReady { result }) = receiver.recv().await
-                && let Ok(ids) = result
-            {
-                self.image_ids = ids;
-            }
-        });
+        if let Ok(Ok(ids)) = receiver.rx.try_recv() {
+            self.image_ids = ids;
+        }
     }
 
     pub fn refresh_face_clusters(&mut self) {

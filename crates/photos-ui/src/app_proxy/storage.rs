@@ -157,3 +157,23 @@ impl CtxInto<ImportThumbnail> for RgbaImage {
         ))
     }
 }
+
+pub(crate) struct ImportItemPaths(pub(crate) Vec<PathBuf>);
+
+impl Storable for ImportItemPaths {
+    type Id = PathBuf;
+    type ReceiveAs = Vec<PathBuf>;
+    fn load(
+        app: &App,
+        id: &Self::Id,
+        cancel: CancellationToken,
+    ) -> OneshotJobHandle<Self::ReceiveAs> {
+        app.discover_import_items(id.to_path_buf(), cancel)
+    }
+}
+
+impl CtxInto<ImportItemPaths> for <ImportItemPaths as Storable>::ReceiveAs {
+    fn ctx_into(self, _: &egui::Context) -> ImportItemPaths {
+        ImportItemPaths(self)
+    }
+}
