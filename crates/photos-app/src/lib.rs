@@ -7,7 +7,7 @@ use photos_infra_fs_repository::FSImageRepository;
 use photos_infra_import_item_discovery::discover_import_items;
 use photos_infra_sqlite_image_metadata_repository::SqliteImageMetadataRepository;
 use photos_services::{ImageMetadataRepository, ServiceRegistry};
-use photos_task_queue::{TaskFn, TaskInnerFn, TaskPriority, TaskQueue};
+use photos_task_queue::{TaskFn, TaskPriority, TaskQueue};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -99,8 +99,8 @@ impl App {
         Ok(app)
     }
 
-    pub fn get_image_ids(&self) -> mpsc::Receiver<AppEvent> {
-        let (tx, rx) = mpsc::channel(1);
+    pub fn get_image_ids(&self) -> OneshotJobHandle<Vec<ImageId>> {
+        let (tx, rx) = oneshot::channel();
         let service_registry = self.service_registry.clone();
         let cancel = CancellationToken::new();
 
@@ -115,17 +115,16 @@ impl App {
                     .await
                     .map_err(|e| AppError::InvalidDatabaseState { err: e.to_string() });
 
-                let event = AppEvent::ImageIdsReady { result };
-                let _ = tx.send(event).await;
+                let _ = tx.send(result);
             })
         });
         let _ = self.runtime.block_on(async {
             self.task_queue
                 .lock()
                 .await
-                .submit(task, TaskPriority::High, cancel)
+                .submit(task, TaskPriority::High, cancel.clone())
         });
-        rx
+        OneshotJobHandle { cancel, rx }
     }
 
     pub fn get_face_clusters(&self) -> oneshot::Receiver<AppEvent> {
@@ -162,7 +161,6 @@ impl App {
     ) -> OneshotJobHandle<RgbaImage> {
         let (tx, rx) = oneshot::channel();
         let service_registry = self.service_registry.clone();
-        let cancel_clone = cancel.clone();
         let detection_id = *detection_id;
 
         let task: TaskFn = Box::new(move || {
@@ -194,21 +192,24 @@ impl App {
                 };
 
                 let _ = tx.send(result);
-            }) as TaskInnerFn
+            })
         });
 
         let _ = self.runtime.block_on(async {
             self.task_queue
                 .lock()
                 .await
-                .submit(task, TaskPriority::High, cancel_clone)
+                .submit(task, TaskPriority::High, cancel.clone())
         });
         OneshotJobHandle { cancel, rx }
     }
 
-    pub fn discover_import_items(&self, path: PathBuf) -> mpsc::Receiver<AppEvent> {
-        let (tx, rx) = mpsc::channel(1);
-        let cancel = CancellationToken::new();
+    pub fn discover_import_items(
+        &self,
+        path: PathBuf,
+        cancel: CancellationToken,
+    ) -> OneshotJobHandle<Vec<PathBuf>> {
+        let (tx, rx) = oneshot::channel();
 
         let task: TaskFn = Box::new(move || {
             let tx = tx;
@@ -219,18 +220,17 @@ impl App {
                     .await
                     .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() });
 
-                let event = AppEvent::ImportItemsDiscovered { path, result };
-                let _ = tx.send(event).await;
-            }) as TaskInnerFn
+                let _ = tx.send(result);
+            })
         });
 
         let _ = self.runtime.block_on(async {
             self.task_queue
                 .lock()
                 .await
-                .submit(task, TaskPriority::High, cancel)
+                .submit(task, TaskPriority::High, cancel.clone())
         });
-        rx
+        OneshotJobHandle { cancel, rx }
     }
 
     pub fn import_items(&self, paths: Vec<PathBuf>) -> mpsc::Receiver<AppEvent> {
@@ -279,7 +279,7 @@ impl App {
                     import_jobs,
                     task_queue,
                     cancel_clone,
-                )) as TaskInnerFn
+                ))
             });
 
             let _ = self.runtime.block_on(async {
@@ -323,7 +323,7 @@ impl App {
                 task_queue,
                 tx,
                 cancel_clone,
-            )) as TaskInnerFn
+            ))
         });
 
         let _ = self.runtime.block_on(async {
@@ -344,7 +344,6 @@ impl App {
     ) -> OneshotJobHandle<RgbaImage> {
         let (tx, rx) = oneshot::channel();
         let service_registry = self.service_registry.clone();
-        let cancel_clone = cancel.clone();
         let image_id = *image_id;
 
         let task: TaskFn = Box::new(move || {
@@ -370,14 +369,14 @@ impl App {
                 };
 
                 let _ = tx.send(result);
-            }) as TaskInnerFn
+            })
         });
 
         let _ = self.runtime.block_on(async {
             self.task_queue
                 .lock()
                 .await
-                .submit(task, TaskPriority::High, cancel_clone)
+                .submit(task, TaskPriority::High, cancel.clone())
         });
         OneshotJobHandle { cancel, rx }
     }
@@ -390,7 +389,6 @@ impl App {
     ) -> OneshotJobHandle<RgbaImage> {
         let (tx, rx) = oneshot::channel();
         let service_registry = self.service_registry.clone();
-        let cancel_clone = cancel.clone();
 
         let task: TaskFn = Box::new(move || {
             let service_registry = service_registry.clone();
@@ -416,14 +414,14 @@ impl App {
                 };
 
                 let _ = tx.send(result);
-            }) as TaskInnerFn
+            })
         });
 
         let _ = self.runtime.block_on(async {
             self.task_queue
                 .lock()
                 .await
-                .submit(task, TaskPriority::High, cancel_clone)
+                .submit(task, TaskPriority::High, cancel.clone())
         });
         OneshotJobHandle { cancel, rx }
     }

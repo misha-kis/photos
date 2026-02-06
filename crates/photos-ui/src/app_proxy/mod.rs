@@ -4,6 +4,7 @@ use eframe::egui::{self, TextureHandle};
 use photos_app::{App, AppEvent};
 use photos_core::Uuid;
 use photos_domain::ImageId;
+use std::num::NonZero;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use tokio::sync::mpsc::Receiver;
@@ -15,10 +16,10 @@ pub struct AppProxy {
     app: Rc<App>,
     pub image_ids: Vec<ImageId>,
     pub face_clusters: Vec<(Uuid, Vec<Uuid>)>,
-    thumbnail_storage: Storage<Thumbnail>,
-    face_detection_thumbnail_storage: Storage<FaceThumbnail>,
-    import_thumbnail_storage: Storage<ImportThumbnail>,
-    discovered_items_storage: Storage<ImportItemPaths>,
+    thumbnails: Storage<Thumbnail>,
+    face_detection_thumbnails: Storage<FaceThumbnail>,
+    import_thumbnails: Storage<ImportThumbnail>,
+    discovered_items: Storage<ImportItemPaths>,
     import_workflow_receiver: Option<Receiver<AppEvent>>,
 }
 
@@ -39,10 +40,10 @@ impl AppProxy {
             app: app.clone(),
             image_ids,
             face_clusters: Vec::new(),
-            thumbnail_storage: Storage::new(app.clone()),
-            face_detection_thumbnail_storage: Storage::new(app.clone()),
-            import_thumbnail_storage: Storage::new(app.clone()),
-            discovered_items_storage: Storage::new(app.clone()),
+            thumbnails: Storage::new(app.clone(), NonZero::new(2048).unwrap()),
+            face_detection_thumbnails: Storage::new(app.clone(), NonZero::new(2048).unwrap()),
+            import_thumbnails: Storage::new(app.clone(), NonZero::new(2048).unwrap()),
+            discovered_items: Storage::new(app.clone(), NonZero::new(2048).unwrap()),
             import_workflow_receiver: None,
         })
     }
@@ -57,9 +58,7 @@ impl AppProxy {
         ctx: &egui::Context,
         cancel: CancellationToken,
     ) -> Option<TextureHandle> {
-        self.thumbnail_storage
-            .get(id, ctx, cancel)
-            .map(|x| x.0.clone())
+        self.thumbnails.get(id, ctx, cancel).map(|x| x.0.clone())
     }
 
     pub fn get_face_detection_thumbnail(
@@ -68,7 +67,7 @@ impl AppProxy {
         ctx: &egui::Context,
         cancel: CancellationToken,
     ) -> Option<TextureHandle> {
-        self.face_detection_thumbnail_storage
+        self.face_detection_thumbnails
             .get(id, ctx, cancel)
             .map(|x| x.0.clone())
     }
@@ -79,7 +78,7 @@ impl AppProxy {
         ctx: &egui::Context,
         cancel: CancellationToken,
     ) -> Option<TextureHandle> {
-        self.import_thumbnail_storage
+        self.import_thumbnails
             .get(path, ctx, cancel)
             .map(|x| x.0.clone())
     }
@@ -90,7 +89,7 @@ impl AppProxy {
         ctx: &egui::Context,
         cancel: CancellationToken,
     ) -> Option<&Vec<PathBuf>> {
-        self.discovered_items_storage
+        self.discovered_items
             .get(&path.to_path_buf(), ctx, cancel)
             .map(|x| &x.0)
     }

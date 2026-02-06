@@ -1,7 +1,8 @@
-use std::{path::PathBuf, rc::Rc};
+use std::{num::NonZero, path::PathBuf, rc::Rc};
 
 use eframe::egui::{self, TextureHandle, ahash::HashMap};
 use image::RgbaImage;
+use lru::LruCache;
 use photos_app::{App, OneshotJobHandle};
 use photos_core::Uuid;
 use photos_domain::ImageId;
@@ -24,15 +25,15 @@ pub(crate) trait Storable: Sized {
 
 pub(crate) struct Storage<T: Storable> {
     app: Rc<App>,
-    cache: HashMap<T::Id, T>,
+    cache: LruCache<T::Id, T>,
     jobs: HashMap<T::Id, OneshotJobHandle<T::ReceiveAs>>,
 }
 
 impl<T: Storable> Storage<T> {
-    pub(crate) fn new(app: Rc<App>) -> Self {
+    pub(crate) fn new(app: Rc<App>, lru_size: NonZero<usize>) -> Self {
         Self {
             app,
-            cache: Default::default(),
+            cache: LruCache::new(lru_size),
             jobs: Default::default(),
         }
     }
@@ -43,7 +44,7 @@ impl<T: Storable> Storage<T> {
         ctx: &egui::Context,
         cancel: CancellationToken,
     ) -> Option<&T> {
-        if self.cache.contains_key(id) {
+        if self.cache.contains(id) {
             return self.cache.get(id);
         }
 
@@ -51,7 +52,7 @@ impl<T: Storable> Storage<T> {
             return match job.rx.try_recv() {
                 Ok(Ok(value)) => {
                     self.jobs.remove(id);
-                    self.cache.insert(id.clone(), value.ctx_into(ctx));
+                    self.cache.put(id.clone(), value.ctx_into(ctx));
                     self.cache.get(id)
                 }
                 Ok(Err(_)) | Err(oneshot::error::TryRecvError::Closed) => {
