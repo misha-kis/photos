@@ -396,10 +396,11 @@ impl App {
         &self,
         path: PathBuf,
         thumbnail_size: u32,
-    ) -> mpsc::Receiver<AppEvent> {
-        let (tx, rx) = mpsc::channel(1);
+        cancel: CancellationToken,
+    ) -> OneshotJobHandle<RgbaImage> {
+        let (tx, rx) = oneshot::channel();
         let service_registry = self.service_registry.clone();
-        let cancel = CancellationToken::new();
+        let cancel_clone = cancel.clone();
 
         let task: Box<
             dyn FnOnce() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
@@ -416,6 +417,7 @@ impl App {
                         service_registry
                             .image_repo()
                             .get_thumbnail_from_file(&path, thumbnail_size)
+                            .map(|image| image.into_rgba8())
                     }
                 })
                 .await
@@ -425,11 +427,7 @@ impl App {
                     Err(e) => Err(AppError::TaskSpawnFailed { err: e.to_string() }),
                 };
 
-                let event = AppEvent::ThumbnailFromFileReady {
-                    path: path_clone,
-                    result,
-                };
-                let _ = tx.send(event).await;
+                let _ = tx.send(result);
             }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
         });
 
@@ -437,8 +435,8 @@ impl App {
             self.task_queue
                 .lock()
                 .await
-                .submit(task, TaskPriority::High, cancel)
+                .submit(task, TaskPriority::High, cancel_clone)
         });
-        rx
+        OneshotJobHandle { cancel, rx }
     }
 }

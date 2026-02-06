@@ -1,5 +1,5 @@
 use eframe::egui::{self, TextureHandle};
-use image::{DynamicImage, RgbaImage};
+use image::RgbaImage;
 use photos_app::{App, AppEvent, OneshotJobHandle};
 use photos_core::Uuid;
 use photos_domain::ImageId;
@@ -15,7 +15,7 @@ pub(crate) trait CtxInto<T: Sized> {
 }
 
 pub(crate) trait Storable: Sized {
-    type Id: Eq + std::hash::Hash + Copy;
+    type Id: Eq + std::hash::Hash + Clone;
     type ReceiveAs: Sized + CtxInto<Self>;
     fn load(
         app: &App,
@@ -40,19 +40,19 @@ impl<T: Storable> Storage<T> {
     }
 
     fn get(&mut self, id: &T::Id, ctx: &egui::Context, cancel: CancellationToken) -> Option<&T> {
-        if self.cache.contains_key(&id) {
-            return self.cache.get(&id);
+        if self.cache.contains_key(id) {
+            return self.cache.get(id);
         }
 
-        if let Some(job) = self.jobs.get_mut(&id) {
+        if let Some(job) = self.jobs.get_mut(id) {
             return match job.rx.try_recv() {
                 Ok(Ok(value)) => {
-                    self.jobs.remove(&id);
-                    self.cache.insert(*id, value.ctx_into(ctx));
-                    self.cache.get(&id)
+                    self.jobs.remove(id);
+                    self.cache.insert(id.clone(), value.ctx_into(ctx));
+                    self.cache.get(id)
                 }
                 Ok(Err(_)) | Err(oneshot::error::TryRecvError::Closed) => {
-                    self.jobs.remove(&id);
+                    self.jobs.remove(id);
                     None
                 }
                 Err(oneshot::error::TryRecvError::Empty) => None,
@@ -60,7 +60,7 @@ impl<T: Storable> Storage<T> {
         }
 
         let job = T::load(self.app.as_ref(), id, cancel);
-        self.jobs.insert(*id, job);
+        self.jobs.insert(id.clone(), job);
         None
     }
 }
@@ -125,17 +125,45 @@ impl CtxInto<FaceThumbnail> for RgbaImage {
     }
 }
 
+#[derive(Clone)]
+pub(crate) struct ImportThumbnail(TextureHandle);
+
+impl Storable for ImportThumbnail {
+    type Id = PathBuf;
+    type ReceiveAs = RgbaImage;
+
+    fn load(
+        app: &App,
+        id: &Self::Id,
+        cancel: CancellationToken,
+    ) -> OneshotJobHandle<Self::ReceiveAs> {
+        app.get_thumbnail_from_file(id.clone(), 128, cancel)
+    }
+}
+
+impl CtxInto<ImportThumbnail> for RgbaImage {
+    fn ctx_into(self, ctx: &egui::Context) -> ImportThumbnail {
+        let texture_id = format!("import-thumbnail-{}", Uuid::new_v4());
+        ImportThumbnail(ctx.load_texture(
+            texture_id,
+            egui::ColorImage::from_rgba_unmultiplied(
+                [self.width() as _, self.height() as _],
+                self.as_raw(),
+            ),
+            Default::default(),
+        ))
+    }
+}
+
 pub struct AppProxy {
     app: Rc<App>,
-    thumbnail_size: u32,
     pub image_ids: Vec<ImageId>,
     pub face_clusters: Vec<(Uuid, Vec<Uuid>)>,
     thumbnail_storage: Storage<Thumbnail>,
     face_detection_thumbnail_storage: Storage<FaceThumbnail>,
-    import_thumbnail_receivers: HashMap<PathBuf, Receiver<AppEvent>>,
+    import_thumbnail_storage: Storage<ImportThumbnail>,
     import_discovery_receiver: Option<Receiver<AppEvent>>,
     import_workflow_receiver: Option<Receiver<AppEvent>>,
-    import_thumbnail_cache: HashMap<PathBuf, DynamicImage>,
     discovered_items: Option<Vec<PathBuf>>,
 }
 
@@ -144,7 +172,6 @@ impl AppProxy {
         gallery_dir: PathBuf,
         app_options: photos_app::config::Options,
     ) -> anyhow::Result<Self> {
-        let thumbnail_size = app_options.thumbnail_sizes[0];
         let app = Rc::new(photos_app::App::new(gallery_dir, app_options)?);
 
         let mut receiver = app.get_image_ids();
@@ -161,15 +188,13 @@ impl AppProxy {
 
         Ok(Self {
             app: app.clone(),
-            thumbnail_size,
             image_ids,
             face_clusters: Vec::new(),
             thumbnail_storage: Storage::new(app.clone()),
             face_detection_thumbnail_storage: Storage::new(app.clone()),
-            import_thumbnail_receivers: HashMap::new(),
+            import_thumbnail_storage: Storage::new(app.clone()),
             import_discovery_receiver: None,
             import_workflow_receiver: None,
-            import_thumbnail_cache: HashMap::new(),
             discovered_items: None,
         })
     }
@@ -202,21 +227,16 @@ impl AppProxy {
             .map(|x| x.0)
     }
 
-    pub fn request_import_thumbnail(&mut self, path: &PathBuf) -> &mut Receiver<AppEvent> {
-        if !self.import_thumbnail_receivers.contains_key(path)
-            && !self.import_thumbnail_cache.contains_key(path)
-        {
-            let receiver = self
-                .app
-                .get_thumbnail_from_file(path.clone(), self.thumbnail_size);
-            self.import_thumbnail_receivers
-                .insert(path.clone(), receiver);
-        }
-        self.import_thumbnail_receivers.get_mut(path).unwrap()
-    }
-
-    pub fn get_cached_import_thumbnail(&self, path: &PathBuf) -> Option<&DynamicImage> {
-        self.import_thumbnail_cache.get(path)
+    pub fn get_import_thumbnail(
+        &mut self,
+        path: &PathBuf,
+        ctx: &egui::Context,
+        cancel: CancellationToken,
+    ) -> Option<TextureHandle> {
+        self.import_thumbnail_storage
+            .get(path, ctx, cancel)
+            .cloned()
+            .map(|x| x.0)
     }
 
     pub fn request_discover_import_items(&mut self, path: &Path) {
@@ -244,19 +264,6 @@ impl AppProxy {
     }
 
     pub fn process_events(&mut self) {
-        let mut completed_import_thumbnails = Vec::new();
-        for receiver in self.import_thumbnail_receivers.values_mut() {
-            if let Ok(AppEvent::ThumbnailFromFileReady { path, result }) = receiver.try_recv() {
-                if let Ok(image) = result {
-                    self.import_thumbnail_cache.insert(path.clone(), image);
-                }
-                completed_import_thumbnails.push(path);
-            }
-        }
-        for path in completed_import_thumbnails {
-            self.import_thumbnail_receivers.remove(&path);
-        }
-
         if let Some(receiver) = &mut self.import_discovery_receiver
             && let Ok(AppEvent::ImportItemsDiscovered { result, .. }) = receiver.try_recv()
         {
@@ -289,11 +296,6 @@ impl AppProxy {
                 self.face_clusters = clusters;
             }
         })
-    }
-
-    pub fn cancel_import_thumbnail_requests(&mut self) {
-        self.import_thumbnail_receivers.clear();
-        self.import_thumbnail_cache.clear();
     }
 }
 

@@ -1,12 +1,11 @@
-use std::cell::Cell;
 use std::path::PathBuf;
 
 use crate::app_proxy::AppProxy;
 use crate::components::dynamic_grid::DynamicGrid;
 use crate::components::image::image_view;
 use anyhow::Context;
-use eframe::egui::{self, ColorImage};
-use std::collections::HashMap;
+use eframe::egui;
+use tokio_util::sync::CancellationToken;
 
 enum ImportState {
     SelectingDirectory,
@@ -14,15 +13,14 @@ enum ImportState {
     Preview {
         files_to_import: Vec<PathBuf>,
         dynamic_grid: DynamicGrid<usize, egui::TextureHandle>,
-        texture_handles: HashMap<usize, egui::TextureHandle>,
-        cancelled: Cell<bool>,
+        cancel: CancellationToken,
     },
     Importing {
         files_to_import: Vec<PathBuf>,
         dynamic_grid: DynamicGrid<usize, egui::TextureHandle>,
-        texture_handles: HashMap<usize, egui::TextureHandle>,
         done: u64,
         total: u64,
+        cancel: CancellationToken,
     },
     Done,
 }
@@ -64,19 +62,16 @@ impl ImportView {
                     self.import_state = ImportState::Preview {
                         files_to_import: items.clone(),
                         dynamic_grid: DynamicGrid::new(128.0),
-                        texture_handles: Default::default(),
-                        cancelled: Cell::new(false),
+                        cancel: CancellationToken::new(),
                     };
                 }
             }
             ImportState::Preview {
                 files_to_import,
                 dynamic_grid,
-                texture_handles,
-                cancelled,
+                cancel,
             } => {
-                if cancelled.get() {
-                    app_proxy.cancel_import_thumbnail_requests();
+                if cancel.is_cancelled() {
                     on_cancel_or_done();
                     self.import_state = ImportState::Done;
                     return;
@@ -84,39 +79,21 @@ impl ImportView {
 
                 app_proxy.process_events();
 
-                let has_pending_thumbnails = files_to_import
-                    .iter()
-                    .enumerate()
-                    .any(|(idx, _)| !texture_handles.contains_key(&idx));
+                // let has_pending_thumbnails = files_to_import
+                //     .iter()
+                //     .enumerate()
+                //     .any(|(idx, _)| !texture_handles.contains_key(&idx));
 
-                for (idx, path) in files_to_import.iter().enumerate() {
-                    if !texture_handles.contains_key(&idx)
-                        && let Some(image) = app_proxy.get_cached_import_thumbnail(path)
-                    {
-                        let rgba = image.clone().into_rgba8();
-                        let texture_id = format!("import-{}", idx);
-                        let tex = ctx.load_texture(
-                            &texture_id,
-                            ColorImage::from_rgba_unmultiplied(
-                                [rgba.width() as _, rgba.height() as _],
-                                rgba.as_raw(),
-                            ),
-                            Default::default(),
-                        );
-                        texture_handles.insert(idx, tex);
-                    }
-                }
-
-                if has_pending_thumbnails {
-                    ctx.request_repaint();
-                }
+                // if has_pending_thumbnails {
+                //     ctx.request_repaint();
+                // }
 
                 let mut should_import = false;
 
                 ui.vertical(|ui| {
                     ui.horizontal(|ui| {
                         if ui.button("Cancel").clicked() {
-                            cancelled.set(true);
+                            cancel.cancel();
                             return;
                         }
                         if ui.button("Import").clicked() {
@@ -131,19 +108,11 @@ impl ImportView {
                         files_to_import.iter().enumerate().map(|(i, _)| i).collect();
 
                     let get_item_data = |import_image_id: &usize| -> Option<egui::TextureHandle> {
-                        if cancelled.get() {
-                            return None;
-                        }
-
-                        if let Some(cached_handle) = texture_handles.get(import_image_id) {
-                            return Some(cached_handle.clone());
-                        }
                         let path = files_to_import
                             .get(*import_image_id)
                             .context("invalid id")
                             .ok()?;
-                        app_proxy.request_import_thumbnail(path);
-                        None
+                        app_proxy.get_import_thumbnail(path, ctx, cancel.clone())
                     };
 
                     dynamic_grid.show(
@@ -158,8 +127,7 @@ impl ImportView {
                     );
                 });
 
-                if cancelled.get() {
-                    app_proxy.cancel_import_thumbnail_requests();
+                if cancel.is_cancelled() {
                     on_cancel_or_done();
                     self.import_state = ImportState::Done;
                 } else if should_import {
@@ -167,38 +135,20 @@ impl ImportView {
                     self.import_state = ImportState::Importing {
                         files_to_import: files_to_import.clone(),
                         dynamic_grid: DynamicGrid::new(128.0),
-                        texture_handles: texture_handles.clone(),
                         done: 0,
                         total: 0,
+                        cancel: cancel.clone(),
                     };
                 }
             }
             ImportState::Importing {
                 files_to_import,
                 dynamic_grid,
-                texture_handles,
                 done,
                 total,
+                cancel,
             } => {
                 app_proxy.process_events();
-
-                for (idx, path) in files_to_import.iter().enumerate() {
-                    if !texture_handles.contains_key(&idx)
-                        && let Some(image) = app_proxy.get_cached_import_thumbnail(path)
-                    {
-                        let rgba = image.clone().into_rgba8();
-                        let texture_id = format!("import-{}", idx);
-                        let tex = ctx.load_texture(
-                            &texture_id,
-                            ColorImage::from_rgba_unmultiplied(
-                                [rgba.width() as _, rgba.height() as _],
-                                rgba.as_raw(),
-                            ),
-                            Default::default(),
-                        );
-                        texture_handles.insert(idx, tex);
-                    }
-                }
 
                 let mut should_finish = false;
                 if let Some(receiver) = app_proxy.get_import_workflow_receiver() {
@@ -235,15 +185,11 @@ impl ImportView {
                     ui.add_space(10.0);
 
                     let get_item_data = |import_image_id: &usize| -> Option<egui::TextureHandle> {
-                        if let Some(cached_handle) = texture_handles.get(import_image_id) {
-                            return Some(cached_handle.clone());
-                        }
                         let path = files_to_import
                             .get(*import_image_id)
                             .context("invalid id")
                             .ok()?;
-                        app_proxy.request_import_thumbnail(path);
-                        None
+                        app_proxy.get_import_thumbnail(path, ctx, cancel.clone())
                     };
 
                     dynamic_grid.show(
