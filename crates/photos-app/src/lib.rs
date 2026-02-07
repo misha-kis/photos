@@ -20,7 +20,8 @@ mod jobs;
 mod service_registry;
 
 use crate::jobs::{
-    Dispatchable, TaskContext, get_embeddings_detection_job, get_face_detection_job, get_import_job,
+    Dispatchable, GetImageTask, OneshotDispatchable, TaskContext, get_embeddings_detection_job,
+    get_face_detection_job, get_import_job,
 };
 pub use crate::jobs::{JobEvent, JobHandle};
 pub use events::AppEvent;
@@ -138,6 +139,25 @@ impl App {
                 .submit(task, TaskPriority::High, cancel)
         });
         rx
+    }
+
+    pub fn get_image(
+        &self,
+        image_id: ImageId,
+        size: (u32, u32),
+        cancel: CancellationToken,
+    ) -> OneshotJobHandle<RgbaImage> {
+        let ctx = TaskContext {
+            service_registry: self.service_registry.clone(),
+            task_queue: self.task_queue.clone(),
+            cancel: cancel.clone(),
+        };
+        let task = Arc::new(GetImageTask { ctx: ctx.clone() });
+        let rx = self.runtime.block_on(async {
+            task.dispatch(ctx, image_id, TaskPriority::High, cancel.clone())
+                .await
+        });
+        OneshotJobHandle { cancel, rx }
     }
 
     pub fn get_face_detection_thumbnail(

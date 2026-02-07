@@ -55,6 +55,63 @@ pub(crate) trait Dispatchable<I: Send + Sync + 'static, O: Send + Sync + 'static
 }
 
 #[async_trait]
+pub(crate) trait OneshotDispatchable<I: Send + Sync + 'static, O: Send + Sync + 'static> {
+    async fn dispatch(
+        &self,
+        ctx: TaskContext,
+        input: I,
+        task_priority: TaskPriority,
+        cancel: CancellationToken,
+    ) -> oneshot::Receiver<Result<O, AppError>>;
+}
+
+// #[async_trait]
+// impl<I: Send + Sync + 'static, O: Send + Sync + 'static> OneshotDispatchable<I, O> for Arc<dyn Map<I, O>> {
+//     async fn dispatch(&self, ctx: TaskContext, input: I, task_priority: TaskPriority, cancel: CancellationToken) -> oneshot::Receiver<Result<O, AppError>> {
+//         let (tx, rx) = oneshot::channel();
+//         let map = self.clone();
+//         let task: TaskFn = Box::new(move || {
+//             Box::pin(async move {
+//                 let output = map.map(input).await;
+//                 let _ = tx.send(output);
+//             })
+//         });
+//         ctx.task_queue.lock().await.submit(task, task_priority, cancel).expect("couldn't dispatch");
+//         rx
+//     }
+// }
+#[async_trait]
+impl<T, I, O> OneshotDispatchable<I, O> for Arc<T>
+where
+    T: Map<I, O> + Send + Sync + 'static,
+    I: Send + Sync + 'static,
+    O: Send + Sync + 'static,
+{
+    async fn dispatch(
+        &self,
+        ctx: TaskContext,
+        input: I,
+        task_priority: TaskPriority,
+        cancel: CancellationToken,
+    ) -> oneshot::Receiver<Result<O, AppError>> {
+        let (tx, rx) = oneshot::channel();
+        let map = self.clone();
+        let task: TaskFn = Box::new(move || {
+            Box::pin(async move {
+                let output = map.map(input).await;
+                let _ = tx.send(output);
+            })
+        });
+        ctx.task_queue
+            .lock()
+            .await
+            .submit(task, task_priority, cancel)
+            .expect("couldn't dispatch");
+        rx
+    }
+}
+
+#[async_trait]
 impl<
     I: Send + Sync + 'static,
     M1: Send + Sync + 'static,
@@ -142,82 +199,6 @@ impl Reduce<(), ()> for () {
         Ok(())
     }
 }
-
-// #[async_trait]
-// impl Dispatchable<(), ()> for (dyn Dispatchable<(), ()>, dyn Dispatchable<(), ()>) {
-//     async fn dispatch(&self, ctx: TaskContext, input: (), cancel: CancellationToken) -> JobHandle {
-//         let (res_tx, res_rx) = oneshot::channel();
-//         let (evt_tx, evt_rx) = mpsc::channel(32);
-//
-//         let task_1: TaskFn = Box::new(move || {
-//             Box::pin(async move {
-//                 let JobHandle {
-//                     res_rx: res_rx_1,
-//                     evt_rx: evt_rx_1,
-//                 } = self.0.dispatch(ctx, input, cancel).await;
-//
-//                 let (jh_2_tx, jh_2_rx) = oneshot::channel();
-//                 let task_await: TaskFn = Box::new(move || {
-//                     Box::pin(async move {
-//                         let _ = res_rx_1.await;
-//                         let task_2: TaskFn = Box::new(move || {
-//                             Box::pin(async move {
-//                                 let jh_2 = self.1.dispatch(ctx, (), cancel).await;
-//                                 let _ = jh_2_tx.send(jh_2);
-//                                 let _ = res_tx.send(());
-//                             })
-//                         });
-//                         let _ = ctx.task_queue.lock().await.submit(
-//                             task_2,
-//                             TaskPriority::Lowest,
-//                             cancel,
-//                         );
-//                     })
-//                 });
-//                 let _ =
-//                     ctx.task_queue
-//                         .lock()
-//                         .await
-//                         .submit(task_await, TaskPriority::Lowest, cancel);
-//                 let jh_2 = jh_2_rx.await.expect("failed to dispatch job 2");
-//             })
-//         });
-//
-//         let _ = ctx
-//             .task_queue
-//             .lock()
-//             .await
-//             .submit(task_1, TaskPriority::Lowest, cancel);
-//         JobHandle { res_rx, evt_rx }
-//     }
-// }
-//
-// async fn fan_in<T: Send + 'static>(
-//     mut rx1: mpsc::Receiver<T>,
-//     mut rx2: mpsc::Receiver<T>,
-// ) -> mpsc::Receiver<T> {
-//     let (tx, rx) = mpsc::channel(32);
-//
-//     tokio::spawn(async move {
-//         loop {
-//             tokio::select! {
-//                 Some(v) = rx1.recv() => {
-//                     if tx.send(v).await.is_err() {
-//                         break;
-//                     }
-//                 }
-//                 Some(v) = rx2.recv() => {
-//                     if tx.send(v).await.is_err() {
-//                         break;
-//                     }
-//                 }
-//                 else => break,
-//             }
-//         }
-//     });
-//
-//     rx
-// }
 
 #[async_trait]
 impl<I, J1, J2> Dispatchable<I, ()> for (Arc<J1>, Arc<J2>)

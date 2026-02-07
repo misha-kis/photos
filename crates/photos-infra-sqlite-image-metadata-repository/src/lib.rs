@@ -168,8 +168,13 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         tracing::debug!("sqlite getting image record for {}", image_id);
 
         let row = sqlx::query_as::<_, ImageRecordRow>(
-            r#"SELECT image_uuid, image_format_id, image_exif_timestamp, image_os_timestamp, image_import_timestamp FROM image"#,
+            r#"
+SELECT image_uuid, image_format_id, image_exif_timestamp, image_os_timestamp, image_import_timestamp
+FROM image
+WHERE image_uuid = ?
+"#,
         )
+        .bind(image_id)
         .fetch_one(&self.pool)
         .await
         .internal()?;

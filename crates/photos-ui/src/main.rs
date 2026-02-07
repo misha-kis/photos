@@ -56,7 +56,7 @@ impl InitializedApp {
             });
 
         egui::CentralPanel::default().show(ctx, |ui| match &mut self.state {
-            InitializedAppState::Gallery(view) => view.show(ui, ctx, &mut self.app_proxy, |_| {}),
+            InitializedAppState::Gallery(view) => view.show(ui, ctx, &mut self.app_proxy),
             InitializedAppState::Faces(view) => view.show(ui, ctx, &mut self.app_proxy, |_| {}),
             InitializedAppState::Import(view) => {
                 let mut new_state = None;

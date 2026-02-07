@@ -158,6 +158,36 @@ impl CtxInto<ImportThumbnail> for RgbaImage {
     }
 }
 
+pub(crate) struct FullImage(pub(crate) TextureHandle);
+
+impl Storable for FullImage {
+    type Id = (ImageId, (u32, u32));
+    type ReceiveAs = RgbaImage;
+
+    fn load(
+        app: &App,
+        id: &Self::Id,
+        cancel: CancellationToken,
+    ) -> OneshotJobHandle<Self::ReceiveAs> {
+        let (id, size) = id;
+        app.get_image(*id, *size, cancel)
+    }
+}
+
+impl CtxInto<FullImage> for RgbaImage {
+    fn ctx_into(self, ctx: &egui::Context) -> FullImage {
+        let texture_id = format!("import-thumbnail-{}", Uuid::new_v4());
+        FullImage(ctx.load_texture(
+            texture_id,
+            egui::ColorImage::from_rgba_unmultiplied(
+                [self.width() as _, self.height() as _],
+                self.as_raw(),
+            ),
+            Default::default(),
+        ))
+    }
+}
+
 pub(crate) struct ImportItemPaths(pub(crate) Vec<PathBuf>);
 
 impl Storable for ImportItemPaths {

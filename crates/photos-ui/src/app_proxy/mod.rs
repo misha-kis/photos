@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use tokio_util::sync::CancellationToken;
 
+use crate::app_proxy::storage::FullImage;
 use storage::{FaceThumbnail, ImportItemPaths, ImportThumbnail, Storable, Storage, Thumbnail};
 
 pub struct AppProxy {
@@ -18,6 +19,7 @@ pub struct AppProxy {
     face_detection_thumbnails: Storage<FaceThumbnail>,
     import_thumbnails: Storage<ImportThumbnail>,
     discovered_items: Storage<ImportItemPaths>,
+    full_images: Storage<FullImage>,
     import_job_handle: Option<JobHandle>,
 }
 
@@ -42,12 +44,22 @@ impl AppProxy {
             face_detection_thumbnails: Storage::new(app.clone(), NonZero::new(2048).unwrap()),
             import_thumbnails: Storage::new(app.clone(), NonZero::new(2048).unwrap()),
             discovered_items: Storage::new(app.clone(), NonZero::new(2048).unwrap()),
+            full_images: Storage::new(app.clone(), NonZero::new(32).unwrap()),
             import_job_handle: None,
         })
     }
 
     pub fn number_of_images(&self) -> usize {
         self.image_ids.len()
+    }
+
+    pub(crate) fn get_image(
+        &mut self,
+        id: &<FullImage as Storable>::Id,
+        ctx: &egui::Context,
+        cancel: CancellationToken,
+    ) -> Option<TextureHandle> {
+        self.full_images.get(id, ctx, cancel).map(|x| x.0.clone())
     }
 
     pub(crate) fn get_thumbnail(
