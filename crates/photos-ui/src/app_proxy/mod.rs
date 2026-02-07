@@ -19,7 +19,7 @@ pub struct AppProxy {
     face_detection_thumbnails: Storage<FaceThumbnail>,
     import_thumbnails: Storage<ImportThumbnail>,
     discovered_items: Storage<ImportItemPaths>,
-    import_job_handle: Option<JobHandle<()>>,
+    import_job_handle: Option<JobHandle>,
 }
 
 impl AppProxy {
@@ -98,15 +98,15 @@ impl AppProxy {
         self.import_job_handle = Some(receiver);
     }
 
-    pub fn get_import_job_handle(&mut self) -> Option<&mut JobHandle<()>> {
+    pub fn get_import_job_handle(&mut self) -> Option<&mut JobHandle> {
         self.import_job_handle.as_mut()
     }
 
     pub fn process_events(&mut self) {}
 
     pub fn refresh_images(&mut self) {
-        let mut receiver = self.app.get_image_ids();
-        if let Ok(Ok(ids)) = receiver.rx.try_recv() {
+        let jh = self.app.get_image_ids();
+        if let Ok(Ok(ids)) = jh.rx.blocking_recv() {
             self.image_ids = ids;
         }
     }

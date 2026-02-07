@@ -5,8 +5,8 @@ use crate::components::dynamic_grid::DynamicGrid;
 use crate::components::image::image_view;
 use anyhow::Context;
 use eframe::egui;
-use tokio_util::sync::CancellationToken;
 use photos_app::JobEvent;
+use tokio_util::sync::CancellationToken;
 
 enum ImportState {
     SelectingDirectory,
@@ -149,17 +149,16 @@ impl ImportView {
 
                 let mut should_finish = false;
                 if let Some(jh) = app_proxy.get_import_job_handle() {
-                    while let Ok(event) = jh.event_rx.try_recv() {
-                            match event {
-                                JobEvent::Progress(new_done, new_total) => {
-                                    *done = new_done as u64;
-                                    *total = new_total as u64;
-                                }
-                                JobEvent::Done => {
-                                    should_finish = true;
-                                }
+                    while let Ok(event) = jh.evt_rx.try_recv() {
+                        match event {
+                            JobEvent::Progress(new_done, new_total) => {
+                                *done = new_done as u64;
+                                *total = new_total as u64;
                             }
-
+                            JobEvent::Done | JobEvent::NextJob(_) => {
+                                should_finish = true;
+                            }
+                        }
                     }
                 }
 
@@ -199,6 +198,7 @@ impl ImportView {
                 });
             }
             ImportState::Done => {
+                app_proxy.refresh_images();
                 on_cancel_or_done();
             }
         };

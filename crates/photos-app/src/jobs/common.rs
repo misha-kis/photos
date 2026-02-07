@@ -33,11 +33,12 @@ pub(crate) trait Expand<I: Send + Sync, O: Send + Sync>: Send + Sync {
 pub enum JobEvent {
     Progress(usize, usize),
     Done,
+    NextJob(Box<JobHandle>),
 }
 
-pub struct JobHandle<Output> {
-    pub result_rx: Option<oneshot::Receiver<Output>>,
-    pub event_rx: mpsc::Receiver<JobEvent>,
+pub struct JobHandle {
+    pub res_rx: oneshot::Receiver<()>,
+    pub evt_rx: mpsc::Receiver<JobEvent>,
 }
 
 pub(crate) struct ExpandMapReduce<I, M1, M2, O> {
@@ -47,8 +48,10 @@ pub(crate) struct ExpandMapReduce<I, M1, M2, O> {
 }
 
 #[async_trait]
-pub(crate) trait Dispatchable<I: Send + Sync + 'static, O: Send + Sync + 'static> {
-    async fn dispatch(&self, ctx: TaskContext, input: I, cancel: CancellationToken) -> JobHandle<O>;
+pub(crate) trait Dispatchable<I: Send + Sync + 'static, O: Send + Sync + 'static>:
+    Send + Sync
+{
+    async fn dispatch(&self, ctx: TaskContext, input: I, cancel: CancellationToken) -> JobHandle;
 }
 
 #[async_trait]
@@ -56,25 +59,20 @@ impl<
     I: Send + Sync + 'static,
     M1: Send + Sync + 'static,
     M2: Send + Sync + 'static,
-    O: Send + Sync + 'static,
-> Dispatchable<I, O> for ExpandMapReduce<I, M1, M2, O>
+    // O: Send + Sync + 'static,
+> Dispatchable<I, ()> for ExpandMapReduce<I, M1, M2, ()>
 {
-    async fn dispatch(
-        &self,
-        ctx: TaskContext,
-        input: I,
-        cancel: CancellationToken,
-    ) -> JobHandle<O> {
+    async fn dispatch(&self, ctx: TaskContext, input: I, cancel: CancellationToken) -> JobHandle {
         let queue = ctx.task_queue.clone();
         let expand = self.expand.clone();
         let map = self.map.clone();
         let reduce = self.reduce.clone();
         let cancel_clone = cancel.clone();
 
-        let (tx, rx) = oneshot::channel();
+        let (res_tx, res_rx) = oneshot::channel();
         let (evt_tx, evt_rx) = mpsc::channel(16);
-        let mut total = Arc::new(AtomicUsize::default());
-        let mut completed = Arc::new(AtomicUsize::default());
+        let total = Arc::new(AtomicUsize::default());
+        let completed = Arc::new(AtomicUsize::default());
 
         let task: TaskFn = Box::new(move || {
             Box::pin(async move {
@@ -87,14 +85,17 @@ impl<
                     let completed = completed.clone();
                     let total = total.clone();
                     let evt_tx = evt_tx.clone();
-                    let map_task: TaskFn = Box::new(move || { Box::pin(async move {
+                    let map_task: TaskFn = Box::new(move || {
+                        Box::pin(async move {
                             let m2 = map.map(m1).await.unwrap();
                             let _ = map_tx.send(m2);
                             completed.fetch_add(1, Ordering::Relaxed);
-                            let _ = evt_tx.send(JobEvent::Progress(
-                                completed.load(Ordering::Relaxed),
-                                total.load(Ordering::Relaxed),
-                            )).await;
+                            let _ = evt_tx
+                                .send(JobEvent::Progress(
+                                    completed.load(Ordering::Relaxed),
+                                    total.load(Ordering::Relaxed),
+                                ))
+                                .await;
                         })
                     });
                     let _ = queue.lock().await.submit(
@@ -113,7 +114,7 @@ impl<
                             .filter_map(|r| r.ok())
                             .collect();
                         let o = reduce.reduce(vec_m2).await.unwrap();
-                        let _ = tx.send(o);
+                        let _ = res_tx.send(o);
                         let _ = evt_tx.send(JobEvent::Done).await;
                     })
                 });
@@ -131,17 +132,158 @@ impl<
             .await
             .submit(task, TaskPriority::Low, cancel);
 
-        JobHandle {
-            result_rx: Some(rx),
-            event_rx: evt_rx,
-        }
+        JobHandle { res_rx, evt_rx }
     }
 }
 
 #[async_trait]
-impl Reduce<(),()> for () {
+impl Reduce<(), ()> for () {
     async fn reduce(&self, _inputs: Vec<()>) -> Result<(), AppError> {
         Ok(())
     }
 }
 
+// #[async_trait]
+// impl Dispatchable<(), ()> for (dyn Dispatchable<(), ()>, dyn Dispatchable<(), ()>) {
+//     async fn dispatch(&self, ctx: TaskContext, input: (), cancel: CancellationToken) -> JobHandle {
+//         let (res_tx, res_rx) = oneshot::channel();
+//         let (evt_tx, evt_rx) = mpsc::channel(32);
+//
+//         let task_1: TaskFn = Box::new(move || {
+//             Box::pin(async move {
+//                 let JobHandle {
+//                     res_rx: res_rx_1,
+//                     evt_rx: evt_rx_1,
+//                 } = self.0.dispatch(ctx, input, cancel).await;
+//
+//                 let (jh_2_tx, jh_2_rx) = oneshot::channel();
+//                 let task_await: TaskFn = Box::new(move || {
+//                     Box::pin(async move {
+//                         let _ = res_rx_1.await;
+//                         let task_2: TaskFn = Box::new(move || {
+//                             Box::pin(async move {
+//                                 let jh_2 = self.1.dispatch(ctx, (), cancel).await;
+//                                 let _ = jh_2_tx.send(jh_2);
+//                                 let _ = res_tx.send(());
+//                             })
+//                         });
+//                         let _ = ctx.task_queue.lock().await.submit(
+//                             task_2,
+//                             TaskPriority::Lowest,
+//                             cancel,
+//                         );
+//                     })
+//                 });
+//                 let _ =
+//                     ctx.task_queue
+//                         .lock()
+//                         .await
+//                         .submit(task_await, TaskPriority::Lowest, cancel);
+//                 let jh_2 = jh_2_rx.await.expect("failed to dispatch job 2");
+//             })
+//         });
+//
+//         let _ = ctx
+//             .task_queue
+//             .lock()
+//             .await
+//             .submit(task_1, TaskPriority::Lowest, cancel);
+//         JobHandle { res_rx, evt_rx }
+//     }
+// }
+//
+// async fn fan_in<T: Send + 'static>(
+//     mut rx1: mpsc::Receiver<T>,
+//     mut rx2: mpsc::Receiver<T>,
+// ) -> mpsc::Receiver<T> {
+//     let (tx, rx) = mpsc::channel(32);
+//
+//     tokio::spawn(async move {
+//         loop {
+//             tokio::select! {
+//                 Some(v) = rx1.recv() => {
+//                     if tx.send(v).await.is_err() {
+//                         break;
+//                     }
+//                 }
+//                 Some(v) = rx2.recv() => {
+//                     if tx.send(v).await.is_err() {
+//                         break;
+//                     }
+//                 }
+//                 else => break,
+//             }
+//         }
+//     });
+//
+//     rx
+// }
+
+#[async_trait]
+impl<I, J1, J2> Dispatchable<I, ()> for (Arc<J1>, Arc<J2>)
+where
+    I: Send + Sync + 'static,
+    J1: Dispatchable<I, ()> + ?Sized + 'static,
+    J2: Dispatchable<(), ()> + ?Sized + 'static,
+{
+    async fn dispatch(&self, ctx: TaskContext, input: I, cancel: CancellationToken) -> JobHandle {
+        let (res_tx, res_rx) = oneshot::channel();
+        let (evt_tx, evt_rx) = mpsc::channel(32);
+
+        let (job1, job2) = self.clone();
+
+        let ctx1 = ctx.clone();
+        let ctx2 = ctx.clone();
+        let cancel1 = cancel.clone();
+        let cancel2 = cancel.clone();
+
+        // ---- Task 1: dispatch job1 and wire listeners
+        let start_job1: TaskFn = Box::new(move || {
+            Box::pin(async move {
+                let JobHandle {
+                    evt_rx: mut evt_rx_1,
+                    res_rx: res_rx_1,
+                } = job1.dispatch(ctx1.clone(), input, cancel1.clone()).await;
+
+                // Forward job1 events (non-blocking, separate task)
+                let evt_tx_clone = evt_tx.clone();
+                tokio::spawn(async move {
+                    while let Some(evt) = evt_rx_1.recv().await {
+                        let _ = evt_tx_clone.send(evt).await;
+                    }
+                });
+
+                // ---- Task 2: triggered when job1 finishes
+                let trigger_job2: TaskFn = Box::new(move || {
+                    Box::pin(async move {
+                        let _ = res_rx_1.await;
+
+                        let jh_2 = job2.dispatch(ctx2.clone(), (), cancel2.clone()).await;
+
+                        let _ = evt_tx.send(JobEvent::NextJob(Box::new(jh_2))).await;
+
+                        // Final completion is driven by job2
+                        // tokio::spawn(async move {
+                        //     let _ = jh_2.res_rx.await;
+                        //     let _ = res_tx.send(());
+                        // });
+                    })
+                });
+
+                let _ = ctx1.task_queue.lock().await.submit(
+                    trigger_job2,
+                    TaskPriority::Lowest,
+                    cancel1,
+                );
+            })
+        });
+
+        let _ = ctx
+            .task_queue
+            .lock()
+            .await
+            .submit(start_job1, TaskPriority::Lowest, cancel);
+
+        JobHandle { res_rx, evt_rx }
+    }
+}

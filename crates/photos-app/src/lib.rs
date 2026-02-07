@@ -1,18 +1,16 @@
 use crate::errors::AppError;
 use crate::service_registry::AppServiceRegistry;
-use photos_core::{JobId, Uuid};
-use photos_domain::{ImageId, ImageRecord, RgbaImage};
+use photos_core::Uuid;
+use photos_domain::{ImageId, RgbaImage};
 use photos_infra_fast_image_resize_resizer::FastImageResizeResizer;
 use photos_infra_fs_repository::FSImageRepository;
 use photos_infra_import_item_discovery::discover_import_items;
 use photos_infra_sqlite_image_metadata_repository::SqliteImageMetadataRepository;
 use photos_services::{ImageMetadataRepository, ServiceRegistry};
 use photos_task_queue::{TaskFn, TaskPriority, TaskQueue};
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc;
 use tokio::sync::{Mutex, oneshot};
 use tokio_util::sync::CancellationToken;
 
@@ -22,16 +20,12 @@ pub mod events;
 mod jobs;
 mod service_registry;
 
-use crate::jobs::{TaskContext, get_import_job, Dispatchable};
-pub use events::AppEvent;
+use crate::jobs::{
+    Dispatchable, TaskContext, get_embeddings_detection_job, get_face_detection_job, get_import_job,
+};
 pub use crate::jobs::{JobEvent, JobHandle};
+pub use events::AppEvent;
 use photos_infra_cv::ImageAnalysis;
-
-struct ImportJobState {
-    total: u64,
-    completed: u64,
-    image_records: Vec<ImageRecord>,
-}
 
 pub struct OneshotJobHandle<T> {
     pub cancel: CancellationToken,
@@ -41,7 +35,6 @@ pub struct OneshotJobHandle<T> {
 pub struct App {
     service_registry: Arc<AppServiceRegistry>,
     task_queue: Arc<Mutex<TaskQueue>>,
-    import_jobs: Arc<Mutex<HashMap<JobId, Arc<Mutex<ImportJobState>>>>>,
     runtime: Runtime,
 }
 
@@ -86,7 +79,6 @@ impl App {
         let app = Self {
             service_registry,
             task_queue,
-            import_jobs: Arc::new(Mutex::new(HashMap::new())),
             runtime,
         };
 
@@ -229,60 +221,36 @@ impl App {
         OneshotJobHandle { cancel, rx }
     }
 
-    pub fn import_items(&self, paths: Vec<PathBuf>) -> JobHandle<()> {
+    pub fn import_items(&self, paths: Vec<PathBuf>) -> JobHandle {
         let cancel = CancellationToken::new();
         let ctx = TaskContext {
             service_registry: self.service_registry.clone(),
             task_queue: self.task_queue.clone(),
             cancel: CancellationToken::new(),
         };
-        let expand_map_reduce = get_import_job(ctx.clone());
-        let jh = self
+        let import_job = Arc::new(get_import_job(ctx.clone()));
+        let face_detection_job = Arc::new(get_face_detection_job(ctx.clone()));
+        let embedding_job = Arc::new(get_embeddings_detection_job(ctx.clone()));
+        let processing_job = Arc::new((face_detection_job, embedding_job));
+        let jobs = (import_job, processing_job);
+        self
             .runtime
-            .block_on(async { expand_map_reduce.dispatch(ctx, paths, cancel).await });
-        jh
+            .block_on(async { jobs.dispatch(ctx, paths, cancel).await })
     }
 
-    pub fn dispatch_image_analysis(&self) -> mpsc::Receiver<AppEvent> {
-        let (tx, rx) = mpsc::channel(16);
-        let job_id = JobId::new_v4();
-        let service_registry = self.service_registry.clone();
-        let import_jobs = self.import_jobs.clone();
+    pub fn dispatch_image_analysis(&self) -> JobHandle {
         let cancel = CancellationToken::new();
-
-        let job_state = Arc::new(Mutex::new(ImportJobState {
-            total: 0,
-            completed: 0,
-            image_records: Vec::new(),
-        }));
-
-        {
-            let mut jobs = self.runtime.block_on(async { import_jobs.lock().await });
-            jobs.insert(job_id, job_state.clone());
-        }
-
-        let service_registry = service_registry.clone();
-        let tx = tx.clone();
-        let task_queue = self.task_queue.clone();
-        let cancel_clone = cancel.clone();
-
-        let task: TaskFn = Box::new(move || {
-            Box::pin(jobs::dispatch_face_detection_task(
-                service_registry,
-                task_queue,
-                tx,
-                cancel_clone,
-            ))
-        });
-
-        let _ = self.runtime.block_on(async {
-            self.task_queue
-                .lock()
-                .await
-                .submit(task, TaskPriority::Low, cancel)
-        });
-
-        rx
+        let ctx = TaskContext {
+            service_registry: self.service_registry.clone(),
+            task_queue: self.task_queue.clone(),
+            cancel: CancellationToken::new(),
+        };
+        let face_detection_job = Arc::new(get_face_detection_job(ctx.clone()));
+        let embedding_job = Arc::new(get_embeddings_detection_job(ctx.clone()));
+        let jobs = (face_detection_job, embedding_job);
+        self
+            .runtime
+            .block_on(async { jobs.dispatch(ctx, (), cancel).await })
     }
 
     pub fn get_thumbnail(
