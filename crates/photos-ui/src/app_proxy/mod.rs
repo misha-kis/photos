@@ -1,13 +1,12 @@
 mod storage;
 
 use eframe::egui::{self, TextureHandle};
-use photos_app::{App, AppEvent};
+use photos_app::{App, AppEvent, JobHandle};
 use photos_core::Uuid;
 use photos_domain::ImageId;
 use std::num::NonZero;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use tokio::sync::mpsc::Receiver;
 use tokio_util::sync::CancellationToken;
 
 use storage::{FaceThumbnail, ImportItemPaths, ImportThumbnail, Storable, Storage, Thumbnail};
@@ -20,7 +19,7 @@ pub struct AppProxy {
     face_detection_thumbnails: Storage<FaceThumbnail>,
     import_thumbnails: Storage<ImportThumbnail>,
     discovered_items: Storage<ImportItemPaths>,
-    import_workflow_receiver: Option<Receiver<AppEvent>>,
+    import_job_handle: Option<JobHandle<()>>,
 }
 
 impl AppProxy {
@@ -44,7 +43,7 @@ impl AppProxy {
             face_detection_thumbnails: Storage::new(app.clone(), NonZero::new(2048).unwrap()),
             import_thumbnails: Storage::new(app.clone(), NonZero::new(2048).unwrap()),
             discovered_items: Storage::new(app.clone(), NonZero::new(2048).unwrap()),
-            import_workflow_receiver: None,
+            import_job_handle: None,
         })
     }
 
@@ -96,11 +95,11 @@ impl AppProxy {
 
     pub fn start_import(&mut self, paths: Vec<PathBuf>) {
         let receiver = self.app.import_items(paths);
-        self.import_workflow_receiver = Some(receiver);
+        self.import_job_handle = Some(receiver);
     }
 
-    pub fn get_import_workflow_receiver(&mut self) -> Option<&mut Receiver<AppEvent>> {
-        self.import_workflow_receiver.as_mut()
+    pub fn get_import_job_handle(&mut self) -> Option<&mut JobHandle<()>> {
+        self.import_job_handle.as_mut()
     }
 
     pub fn process_events(&mut self) {}
@@ -122,22 +121,5 @@ impl AppProxy {
                 self.face_clusters = clusters;
             }
         })
-    }
-}
-
-pub enum ImportProgress {
-    Progress(u64, u64),
-    Done,
-}
-
-impl ImportProgress {
-    pub fn from_app_event(event: &photos_app::AppEvent) -> Option<Self> {
-        match event {
-            photos_app::AppEvent::ImportProgress { current, total, .. } => {
-                Some(ImportProgress::Progress(*current, *total))
-            }
-            photos_app::AppEvent::ImportFinished { .. } => Some(ImportProgress::Done),
-            _ => None,
-        }
     }
 }

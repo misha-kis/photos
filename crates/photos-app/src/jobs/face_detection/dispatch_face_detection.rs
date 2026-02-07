@@ -1,7 +1,7 @@
 use crate::AppEvent;
 use crate::service_registry::AppServiceRegistry;
-use crate::tasks::detect_faces::detect_faces_task;
-use crate::tasks::dispatch_embedding_generation::dispatch_embedding_generation_task;
+use crate::jobs::face_detection::detect_faces::detect_faces_task;
+use crate::jobs::embedding_generation::dispatch_embedding_generation::dispatch_embedding_generation_task;
 use photos_services::ImageMetadataRepository;
 use photos_task_queue::{TaskFn, TaskPriority, TaskQueue};
 use std::sync::Arc;
@@ -10,7 +10,7 @@ use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
 use photos_domain::ImageRecord;
 use crate::errors::AppError;
-use crate::tasks::common::{Expand, TaskContext};
+use crate::jobs::common::{Expand, TaskContext};
 
 pub(crate) async fn dispatch_face_detection_task(
     service_registry: Arc<AppServiceRegistry>,
@@ -24,7 +24,7 @@ pub(crate) async fn dispatch_face_detection_task(
         .get_image_records_without_detections()
         .await
     {
-        tracing::debug!("dispatching tasks for face detection");
+        tracing::debug!("dispatching jobs for face detection");
 
         let mut new_tasks = Vec::new();
         for image_record in image_records_without_detections {
@@ -54,8 +54,8 @@ pub(crate) async fn dispatch_face_detection_task(
     }
 }
 
-struct DiscoverImagesToDetect {
-    ctx: TaskContext
+pub(crate) struct DiscoverImagesToDetect {
+    pub(crate) ctx: TaskContext
 }
 
 #[async_trait]

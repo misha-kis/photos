@@ -19,11 +19,12 @@ use tokio_util::sync::CancellationToken;
 pub mod config;
 mod errors;
 pub mod events;
+mod jobs;
 mod service_registry;
-mod tasks;
 
-use crate::tasks::import_item_task;
+use crate::jobs::{TaskContext, get_import_job, Dispatchable};
 pub use events::AppEvent;
+pub use crate::jobs::{JobEvent, JobHandle};
 use photos_infra_cv::ImageAnalysis;
 
 struct ImportJobState {
@@ -35,11 +36,6 @@ struct ImportJobState {
 pub struct OneshotJobHandle<T> {
     pub cancel: CancellationToken,
     pub rx: oneshot::Receiver<Result<T, AppError>>,
-}
-
-pub struct JobHandle {
-    pub cancel: CancellationToken,
-    pub rx: mpsc::Receiver<AppEvent>,
 }
 
 pub struct App {
@@ -233,65 +229,18 @@ impl App {
         OneshotJobHandle { cancel, rx }
     }
 
-    pub fn import_items(&self, paths: Vec<PathBuf>) -> mpsc::Receiver<AppEvent> {
-        let (tx, rx) = mpsc::channel(16);
-        let job_id = JobId::new_v4();
-        let total = paths.len() as u64;
-        let service_registry = self.service_registry.clone();
-        let import_jobs = self.import_jobs.clone();
+    pub fn import_items(&self, paths: Vec<PathBuf>) -> JobHandle<()> {
         let cancel = CancellationToken::new();
-
-        let job_state = Arc::new(Mutex::new(ImportJobState {
-            total,
-            completed: 0,
-            image_records: Vec::new(),
-        }));
-
-        {
-            let mut jobs = self.runtime.block_on(async { import_jobs.lock().await });
-            jobs.insert(job_id, job_state.clone());
-        }
-
-        let initial_event = AppEvent::ImportProgress {
-            job_id,
-            current: 0,
-            total,
+        let ctx = TaskContext {
+            service_registry: self.service_registry.clone(),
+            task_queue: self.task_queue.clone(),
+            cancel: CancellationToken::new(),
         };
-        let _ = self
+        let expand_map_reduce = get_import_job(ctx.clone());
+        let jh = self
             .runtime
-            .block_on(async { tx.send(initial_event).await });
-
-        for path in paths.into_iter() {
-            let job_state = job_state.clone();
-            let service_registry = service_registry.clone();
-            let tx = tx.clone();
-            let import_jobs = import_jobs.clone();
-            let task_queue = self.task_queue.clone();
-            let cancel_clone = cancel.clone();
-
-            let task: TaskFn = Box::new(move || {
-                Box::pin(import_item_task(
-                    service_registry,
-                    path,
-                    job_state,
-                    tx,
-                    job_id,
-                    import_jobs,
-                    task_queue,
-                    cancel_clone,
-                ))
-            });
-
-            let _ = self.runtime.block_on(async {
-                self.task_queue
-                    .lock()
-                    .await
-                    .submit(task, TaskPriority::Low, cancel.clone())
-            });
-        }
-
-        // JobHandle { cancel, rx }
-        rx
+            .block_on(async { expand_map_reduce.dispatch(ctx, paths, cancel).await });
+        jh
     }
 
     pub fn dispatch_image_analysis(&self) -> mpsc::Receiver<AppEvent> {
@@ -318,7 +267,7 @@ impl App {
         let cancel_clone = cancel.clone();
 
         let task: TaskFn = Box::new(move || {
-            Box::pin(tasks::dispatch_face_detection_task(
+            Box::pin(jobs::dispatch_face_detection_task(
                 service_registry,
                 task_queue,
                 tx,

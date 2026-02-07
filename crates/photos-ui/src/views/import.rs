@@ -6,6 +6,7 @@ use crate::components::image::image_view;
 use anyhow::Context;
 use eframe::egui;
 use tokio_util::sync::CancellationToken;
+use photos_app::JobEvent;
 
 enum ImportState {
     SelectingDirectory,
@@ -147,21 +148,18 @@ impl ImportView {
                 app_proxy.process_events();
 
                 let mut should_finish = false;
-                if let Some(receiver) = app_proxy.get_import_workflow_receiver() {
-                    while let Ok(event) = receiver.try_recv() {
-                        if let Some(progress) =
-                            crate::app_proxy::ImportProgress::from_app_event(&event)
-                        {
-                            match progress {
-                                crate::app_proxy::ImportProgress::Progress(new_done, new_total) => {
-                                    *done = new_done;
-                                    *total = new_total;
+                if let Some(jh) = app_proxy.get_import_job_handle() {
+                    while let Ok(event) = jh.event_rx.try_recv() {
+                            match event {
+                                JobEvent::Progress(new_done, new_total) => {
+                                    *done = new_done as u64;
+                                    *total = new_total as u64;
                                 }
-                                crate::app_proxy::ImportProgress::Done => {
+                                JobEvent::Done => {
                                     should_finish = true;
                                 }
                             }
-                        }
+
                     }
                 }
 

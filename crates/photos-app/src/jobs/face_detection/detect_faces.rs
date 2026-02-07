@@ -1,6 +1,6 @@
 use crate::errors::AppError;
 use crate::service_registry::AppServiceRegistry;
-use crate::tasks::common::{Expand, Job, Map, Task, TaskContext};
+use crate::jobs::common::{Expand, Map, TaskContext};
 use photos_domain::{FaceDetection, ImageRecord};
 use photos_services::{ImageAnalysisService, ImageMetadataRepository, ImageRepository, ServiceRegistry};
 use std::sync::Arc;
@@ -24,13 +24,13 @@ pub(crate) async fn detect_faces_task(
 }
 
 
-struct DetectFacesTask {
-    ctx: TaskContext,
+pub(crate) struct DetectFacesTask {
+    pub(crate) ctx: TaskContext,
 }
 
 #[async_trait]
-impl Map<ImageRecord, (ImageRecord, Vec<FaceDetection>)> for DetectFacesTask {
-    async fn map(&self, input: ImageRecord) -> Result<(ImageRecord, Vec<FaceDetection>), AppError> {
+impl Map<ImageRecord, ()> for DetectFacesTask {
+    async fn map(&self, input: ImageRecord) -> Result<(), AppError> {
         let image = self.ctx
             .service_registry
             .image_repository
@@ -43,9 +43,9 @@ impl Map<ImageRecord, (ImageRecord, Vec<FaceDetection>)> for DetectFacesTask {
             .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?;
         self.ctx.service_registry
             .image_metadata_repository
-            .add_detections_to_image(&input.id, detections.clone())
+            .add_detections_to_image(&input.id, detections)
             .await
             .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?;
-        Ok((input, detections))
+        Ok(())
     }
 }

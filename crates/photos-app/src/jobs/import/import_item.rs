@@ -1,7 +1,7 @@
 use crate::errors::AppError;
 use crate::service_registry::AppServiceRegistry;
-use crate::tasks::common::{Job, Map, Reduce, Task, TaskContext};
-use crate::tasks::dispatch_face_detection::dispatch_face_detection_task;
+use crate::jobs::common::{Map, Reduce, TaskContext};
+use crate::jobs::face_detection::dispatch_face_detection::dispatch_face_detection_task;
 use crate::{AppEvent, ImportJobState};
 use photos_core::JobId;
 use photos_domain::ImageRecord;
@@ -135,8 +135,8 @@ pub(crate) async fn import_item_task(
     }
 }
 
-struct CopyItemTask {
-    ctx: TaskContext,
+pub(crate) struct CopyItemTask {
+    pub(crate) ctx: TaskContext,
 }
 
 #[async_trait]
@@ -150,8 +150,8 @@ impl Map<PathBuf, ImageRecord> for CopyItemTask {
     }
 }
 
-struct InsertRecordsTask {
-    ctx: TaskContext,
+pub(crate) struct InsertRecordsTask {
+    pub(crate) ctx: TaskContext,
 }
 
 #[async_trait]
