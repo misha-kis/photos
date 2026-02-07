@@ -1,13 +1,16 @@
 use crate::errors::AppError;
 use crate::service_registry::AppServiceRegistry;
+use crate::tasks::common::{Job, Map, Reduce, Task, TaskContext};
 use crate::tasks::dispatch_face_detection::dispatch_face_detection_task;
 use crate::{AppEvent, ImportJobState};
 use photos_core::JobId;
+use photos_domain::ImageRecord;
 use photos_services::{ImageMetadataRepository, ServiceRegistry};
 use photos_task_queue::{TaskFn, TaskPriority, TaskQueue};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use async_trait::async_trait;
 use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
 
@@ -129,5 +132,36 @@ pub(crate) async fn import_item_task(
                 jobs.remove(&job_id_final);
             }
         }
+    }
+}
+
+struct CopyItemTask {
+    ctx: TaskContext,
+}
+
+#[async_trait]
+impl Map<PathBuf, ImageRecord> for CopyItemTask {
+    async fn map(&self, input: PathBuf) -> Result<ImageRecord, AppError> {
+        self.ctx
+            .service_registry
+            .image_repo()
+            .insert_image(&input)
+            .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })
+    }
+}
+
+struct InsertRecordsTask {
+    ctx: TaskContext,
+}
+
+#[async_trait]
+impl Reduce<ImageRecord, ()> for InsertRecordsTask {
+    async fn reduce(&self, inputs: Vec<ImageRecord>) -> Result<(), AppError> {
+        self.ctx
+            .service_registry
+            .image_metadata_repository
+            .add_image_record_bulk(&inputs)
+            .await
+            .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })
     }
 }

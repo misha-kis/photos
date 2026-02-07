@@ -5,8 +5,12 @@ use crate::tasks::dispatch_embedding_generation::dispatch_embedding_generation_t
 use photos_services::ImageMetadataRepository;
 use photos_task_queue::{TaskFn, TaskPriority, TaskQueue};
 use std::sync::Arc;
+use async_trait::async_trait;
 use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
+use photos_domain::ImageRecord;
+use crate::errors::AppError;
+use crate::tasks::common::{Expand, TaskContext};
 
 pub(crate) async fn dispatch_face_detection_task(
     service_registry: Arc<AppServiceRegistry>,
@@ -47,5 +51,19 @@ pub(crate) async fn dispatch_face_detection_task(
         for (task, priority) in new_tasks {
             let _ = task_queue.submit(task, priority, cancel.clone());
         }
+    }
+}
+
+struct DiscoverImagesToDetect {
+    ctx: TaskContext
+}
+
+#[async_trait]
+impl Expand<(), ImageRecord> for DiscoverImagesToDetect {
+    async fn expand(&self, _input: ()) -> Result<Vec<ImageRecord>, AppError> {
+        self.ctx.service_registry
+            .image_metadata_repository
+            .get_image_records_without_detections()
+            .await.map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })
     }
 }
