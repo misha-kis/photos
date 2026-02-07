@@ -52,7 +52,7 @@ impl ImageAnalysisService for ImageAnalysis {
             .map(|v| {
                 v.into_iter()
                     .map(|d| photos_domain::FaceDetection {
-                        uuid: photos_core::Uuid::now_v7(),
+                        uuid: photos_domain::Uuid::now_v7(),
                         bounding_box: d.bounding_box,
                         confidence: d.confidence,
                     })

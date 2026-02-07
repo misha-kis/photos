@@ -1,7 +1,6 @@
-use photos_core::Uuid;
 use photos_domain::{
     BoundingBox, ClusteredFaceDetection, DynamicImage, FaceDetection, FaceDetectionWithEmbedding,
-    ImageId, ImageRecord,
+    ImageId, ImageRecord, Uuid,
 };
 use std::path::Path;
 
@@ -148,11 +147,4 @@ pub trait ImageAnalysisService {
         &self,
         detections_with_embeddings: Vec<FaceDetectionWithEmbedding>,
     ) -> Result<Vec<ClusteredFaceDetection>, ImageAnalysisServiceError>;
-}
-
-pub trait ServiceRegistry: Send + Sync {
-    fn image_repo(&self) -> &dyn ImageRepository;
-    fn image_meta_repo(&self) -> &dyn ImageMetadataRepository;
-    fn resize_service(&self) -> &dyn ResizeService;
-    fn analysis_service(&self) -> &dyn ImageAnalysisService;
 }

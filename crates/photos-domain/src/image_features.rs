@@ -1,4 +1,4 @@
-use photos_core::Uuid;
+use uuid::Uuid;
 
 #[derive(Copy, Clone, PartialEq)]
 pub struct BoundingBox {

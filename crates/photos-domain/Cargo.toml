@@ -4,6 +4,6 @@ edition = "2024"
 
 [dependencies]
 thiserror = { workspace = true }
-photos-core = { path = "../photos-core" }
 image = { workspace = true }
 chrono = { workspace = true }
+uuid = { version = "1.19.0", features = ["v4", "v7"] }

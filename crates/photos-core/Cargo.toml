@@ -1,6 +1,0 @@
-[package]
-name = "photos-core"
-edition = "2024"
-
-[dependencies]
-uuid = { version = "1.19.0", features = ["v4", "v7"] }

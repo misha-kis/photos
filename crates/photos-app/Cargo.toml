@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-photos-core = { path = "../photos-core" }
 photos-domain = { path = "../photos-domain" }
 photos-services = { path = "../photos-services" }
 photos-infra-fast-image-resize-resizer = { path = "../photos-infra-fast-image-resize-resizer" }

@@ -1,12 +1,11 @@
 use crate::errors::AppError;
 use crate::service_registry::AppServiceRegistry;
-use photos_core::Uuid;
-use photos_domain::{ImageId, RgbaImage};
+use photos_domain::{ImageId, RgbaImage, Uuid};
 use photos_infra_fast_image_resize_resizer::FastImageResizeResizer;
 use photos_infra_fs_repository::FSImageRepository;
 use photos_infra_import_item_discovery::discover_import_items;
 use photos_infra_sqlite_image_metadata_repository::SqliteImageMetadataRepository;
-use photos_services::{ImageMetadataRepository, ServiceRegistry};
+use photos_services::{ImageMetadataRepository, ImageRepository};
 use photos_task_queue::{TaskFn, TaskPriority, TaskQueue};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -123,7 +122,7 @@ impl App {
         let task: TaskFn = Box::new(move || {
             Box::pin(async move {
                 let result = service_registry
-                    .image_meta_repo()
+                    .image_metadata_repository
                     .get_face_clusters()
                     .await
                     .map_err(|e| AppError::InvalidDatabaseState { err: e.to_string() });
@@ -159,14 +158,14 @@ impl App {
                 let result = match tokio::task::spawn_blocking({
                     let service_registry = service_registry.clone();
                     let detection_info = service_registry
-                        .image_meta_repo()
+                        .image_metadata_repository
                         .get_bbox_and_image_for_detection_id(detection_id)
                         .await
                         .map_err(|e| AppError::InvalidDatabaseState { err: e.to_string() });
                     move || {
                         let (bounding_box, image_record) = detection_info?;
                         service_registry
-                            .image_repo()
+                            .image_repository
                             .get_face_thumbnail(&image_record, bounding_box, thumbnail_size)
                             .map(|image| image.to_rgba8())
                             .map_err(|e| AppError::ImageRepositoryError { err: e.to_string() })
@@ -233,8 +232,7 @@ impl App {
         let embedding_job = Arc::new(get_embeddings_detection_job(ctx.clone()));
         let processing_job = Arc::new((face_detection_job, embedding_job));
         let jobs = (import_job, processing_job);
-        self
-            .runtime
+        self.runtime
             .block_on(async { jobs.dispatch(ctx, paths, cancel).await })
     }
 
@@ -248,8 +246,7 @@ impl App {
         let face_detection_job = Arc::new(get_face_detection_job(ctx.clone()));
         let embedding_job = Arc::new(get_embeddings_detection_job(ctx.clone()));
         let jobs = (face_detection_job, embedding_job);
-        self
-            .runtime
+        self.runtime
             .block_on(async { jobs.dispatch(ctx, (), cancel).await })
     }
 
@@ -273,7 +270,7 @@ impl App {
                     let image_id = image_id;
                     move || {
                         service_registry
-                            .image_repo()
+                            .image_repository
                             .get_thumbnail(&image_id, thumbnail_size)
                             .map(|image| image.into_rgba8())
                     }
@@ -318,7 +315,7 @@ impl App {
                     let path = path_clone.clone();
                     move || {
                         service_registry
-                            .image_repo()
+                            .image_repository
                             .get_thumbnail_from_file(&path, thumbnail_size)
                             .map(|image| image.into_rgba8())
                     }

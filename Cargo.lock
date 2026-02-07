@@ -3192,7 +3192,6 @@ dependencies = [
  "async-trait",
  "env",
  "futures",
- "photos-core",
  "photos-domain",
  "photos-infra-cv",
  "photos-infra-fast-image-resize-resizer",
@@ -3208,20 +3207,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "photos-core"
-version = "0.0.0"
-dependencies = [
- "uuid",
-]
-
-[[package]]
 name = "photos-domain"
 version = "0.0.0"
 dependencies = [
  "chrono",
  "image",
- "photos-core",
  "thiserror 2.0.17",
+ "uuid",
 ]
 
 [[package]]
@@ -3232,7 +3224,6 @@ dependencies = [
  "image",
  "ndarray",
  "ort",
- "photos-core",
  "photos-domain",
  "photos-services",
  "tracing",
@@ -3279,7 +3270,6 @@ dependencies = [
  "bytemuck",
  "chrono",
  "image",
- "photos-core",
  "photos-domain",
  "photos-services",
  "sqlx",
@@ -3291,7 +3281,6 @@ name = "photos-services"
 version = "0.0.0"
 dependencies = [
  "async-trait",
- "photos-core",
  "photos-domain",
  "thiserror 2.0.17",
 ]
@@ -3314,7 +3303,6 @@ dependencies = [
  "image",
  "lru",
  "photos-app",
- "photos-core",
  "photos-domain",
  "rfd",
  "tokio",

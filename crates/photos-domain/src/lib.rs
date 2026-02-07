@@ -13,7 +13,9 @@ pub use image_features::{
     BoundingBox, ClusteredFaceDetection, FaceDetection, FaceDetectionWithEmbedding,
 };
 
-pub type ImageId = photos_core::Uuid;
+pub type Uuid = uuid::Uuid;
+pub type ImageId = Uuid;
+pub type JobId = Uuid;
 
 pub struct Dimensions {
     pub width: u32,

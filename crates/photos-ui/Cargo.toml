@@ -8,7 +8,6 @@ eframe = { version = "0.33.0", features = ["persistence"] }
 image = { workspace = true }
 photos-app = { path = "../photos-app" }
 photos-domain = { path = "../photos-domain" }
-photos-core = { path = "../photos-core" }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 anyhow = { workspace = true }

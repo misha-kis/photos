@@ -3,7 +3,7 @@ use crate::jobs::TaskContext;
 use crate::jobs::common::Map;
 use async_trait::async_trait;
 use photos_domain::{FaceDetection, ImageRecord};
-use photos_services::{ImageRepository, ServiceRegistry};
+use photos_services::{ImageAnalysisService, ImageMetadataRepository, ImageRepository};
 
 pub(crate) struct GenerateEmbeddings {
     pub(crate) ctx: TaskContext,
@@ -21,16 +21,16 @@ impl Map<(ImageRecord, FaceDetection), ()> for GenerateEmbeddings {
         let detection_with_embedding = self
             .ctx
             .service_registry
-            .analysis_service()
+            .analysis_service
             .get_face_embedding(
                 &image,
                 detection,
-                self.ctx.service_registry.resize_service(),
+                self.ctx.service_registry.resize_service.as_ref(),
             )
             .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?;
         self.ctx
             .service_registry
-            .image_meta_repo()
+            .image_metadata_repository
             .update_face_detection_with_embedding(detection_with_embedding)
             .await
             .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?;

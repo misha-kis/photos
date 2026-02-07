@@ -4,8 +4,7 @@ use eframe::egui::{self, TextureHandle, ahash::HashMap};
 use image::RgbaImage;
 use lru::LruCache;
 use photos_app::{App, OneshotJobHandle};
-use photos_core::Uuid;
-use photos_domain::ImageId;
+use photos_domain::{ImageId, Uuid};
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 

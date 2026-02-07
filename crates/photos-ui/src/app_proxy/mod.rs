@@ -2,8 +2,7 @@ mod storage;
 
 use eframe::egui::{self, TextureHandle};
 use photos_app::{App, AppEvent, JobHandle};
-use photos_core::Uuid;
-use photos_domain::ImageId;
+use photos_domain::{ImageId, Uuid};
 use std::num::NonZero;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;

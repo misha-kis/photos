@@ -2,9 +2,7 @@ use crate::errors::AppError;
 use crate::jobs::common::{Map, TaskContext};
 use async_trait::async_trait;
 use photos_domain::ImageRecord;
-use photos_services::{
-    ImageAnalysisService, ImageMetadataRepository, ImageRepository, ServiceRegistry,
-};
+use photos_services::{ImageAnalysisService, ImageMetadataRepository, ImageRepository};
 
 pub(crate) struct DetectFacesTask {
     pub(crate) ctx: TaskContext,
@@ -23,7 +21,7 @@ impl Map<ImageRecord, ()> for DetectFacesTask {
             .ctx
             .service_registry
             .analysis_service
-            .get_face_detections(&image, self.ctx.service_registry.resize_service())
+            .get_face_detections(&image, self.ctx.service_registry.resize_service.as_ref())
             .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?;
         self.ctx
             .service_registry

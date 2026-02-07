@@ -1,9 +1,8 @@
 use chrono::{DateTime, Utc};
 use image::ImageFormat;
-use photos_core::Uuid;
 use photos_domain::{
     BoundingBox, ClusteredFaceDetection, FaceDetection, FaceDetectionWithEmbedding, ImageId,
-    ImageRecord, Timestamps,
+    ImageRecord, Timestamps, Uuid,
 };
 use photos_services::{ImageMetadataRepository, ImageMetadataRepositoryError};
 use sqlx::FromRow;

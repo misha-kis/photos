@@ -1,6 +1,5 @@
 use crate::errors::AppError;
-use photos_core::{JobId, Uuid};
-use photos_domain::{DynamicImage, ImageId};
+use photos_domain::{DynamicImage, ImageId, JobId, Uuid};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]

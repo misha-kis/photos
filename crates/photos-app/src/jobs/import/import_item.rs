@@ -2,7 +2,7 @@ use crate::errors::AppError;
 use crate::jobs::common::{Map, Reduce, TaskContext};
 use async_trait::async_trait;
 use photos_domain::ImageRecord;
-use photos_services::{ImageMetadataRepository, ServiceRegistry};
+use photos_services::{ImageMetadataRepository, ImageRepository};
 use std::path::PathBuf;
 
 pub(crate) struct CopyItemTask {
@@ -14,7 +14,7 @@ impl Map<PathBuf, ImageRecord> for CopyItemTask {
     async fn map(&self, input: PathBuf) -> Result<ImageRecord, AppError> {
         self.ctx
             .service_registry
-            .image_repo()
+            .image_repository
             .insert_image(&input)
             .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })
     }
