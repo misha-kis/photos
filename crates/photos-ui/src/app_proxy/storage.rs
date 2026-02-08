@@ -48,7 +48,7 @@ impl<T: Storable> Storage<T> {
         }
 
         if let Some(job) = self.jobs.get_mut(id) {
-            return match job.rx.try_recv() {
+            return match job.try_recv() {
                 Ok(Ok(value)) => {
                     self.jobs.remove(id);
                     self.cache.put(id.clone(), value.ctx_into(ctx));
@@ -62,7 +62,7 @@ impl<T: Storable> Storage<T> {
             };
         }
 
-        let job = T::load(self.app.as_ref(), id, cancel);
+        let job = T::load(self.app.as_ref(), id, cancel.child_token());
         self.jobs.insert(id.clone(), job);
         None
     }

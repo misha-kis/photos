@@ -28,8 +28,32 @@ pub use events::AppEvent;
 use photos_infra_cv::ImageAnalysis;
 
 pub struct OneshotJobHandle<T> {
-    pub cancel: CancellationToken,
-    pub rx: oneshot::Receiver<Result<T, AppError>>,
+    cancel: CancellationToken,
+    rx: Option<oneshot::Receiver<Result<T, AppError>>>,
+}
+
+impl<T> Drop for OneshotJobHandle<T> {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+    }
+}
+
+impl<T> OneshotJobHandle<T> {
+    pub fn new(cancel: CancellationToken, rx: oneshot::Receiver<Result<T, AppError>>) -> Self {
+        Self {
+            cancel,
+            rx: Some(rx),
+        }
+    }
+
+    pub fn try_recv(&mut self) -> Result<Result<T, AppError>, oneshot::error::TryRecvError> {
+        let rx = self.rx.as_mut().expect("receiver already taken");
+        rx.try_recv()
+    }
+
+    pub fn blocking_recv(mut self) -> Result<Result<T, AppError>, oneshot::error::RecvError> {
+        self.rx.take().expect("rx already taken").blocking_recv()
+    }
 }
 
 pub struct App {
@@ -112,7 +136,7 @@ impl App {
                 .await
                 .submit(task, TaskPriority::High, cancel.clone())
         });
-        OneshotJobHandle { cancel, rx }
+        OneshotJobHandle::new(cancel, rx)
     }
 
     pub fn get_face_clusters(&self) -> oneshot::Receiver<AppEvent> {
@@ -141,6 +165,7 @@ impl App {
         rx
     }
 
+    #[allow(clippy::async_yields_async)]
     pub fn get_image(
         &self,
         image_id: ImageId,
@@ -154,10 +179,10 @@ impl App {
         };
         let task = Arc::new(GetImageTask { ctx: ctx.clone() });
         let rx = self.runtime.block_on(async {
-            task.dispatch(ctx, image_id, TaskPriority::High, cancel.clone())
+            task.dispatch(ctx, (image_id, size), TaskPriority::High, cancel.clone())
                 .await
         });
-        OneshotJobHandle { cancel, rx }
+        OneshotJobHandle::new(cancel, rx)
     }
 
     pub fn get_face_detection_thumbnail(
@@ -208,7 +233,7 @@ impl App {
                 .await
                 .submit(task, TaskPriority::High, cancel.clone())
         });
-        OneshotJobHandle { cancel, rx }
+        OneshotJobHandle::new(cancel, rx)
     }
 
     pub fn discover_import_items(
@@ -237,7 +262,7 @@ impl App {
                 .await
                 .submit(task, TaskPriority::High, cancel.clone())
         });
-        OneshotJobHandle { cancel, rx }
+        OneshotJobHandle::new(cancel, rx)
     }
 
     pub fn import_items(&self, paths: Vec<PathBuf>) -> JobHandle {
@@ -312,7 +337,7 @@ impl App {
                 .await
                 .submit(task, TaskPriority::High, cancel.clone())
         });
-        OneshotJobHandle { cancel, rx }
+        OneshotJobHandle::new(cancel, rx)
     }
 
     pub fn get_thumbnail_from_file(
@@ -357,6 +382,6 @@ impl App {
                 .await
                 .submit(task, TaskPriority::High, cancel.clone())
         });
-        OneshotJobHandle { cancel, rx }
+        OneshotJobHandle::new(cancel, rx)
     }
 }

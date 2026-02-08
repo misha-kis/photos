@@ -65,21 +65,6 @@ pub(crate) trait OneshotDispatchable<I: Send + Sync + 'static, O: Send + Sync + 
     ) -> oneshot::Receiver<Result<O, AppError>>;
 }
 
-// #[async_trait]
-// impl<I: Send + Sync + 'static, O: Send + Sync + 'static> OneshotDispatchable<I, O> for Arc<dyn Map<I, O>> {
-//     async fn dispatch(&self, ctx: TaskContext, input: I, task_priority: TaskPriority, cancel: CancellationToken) -> oneshot::Receiver<Result<O, AppError>> {
-//         let (tx, rx) = oneshot::channel();
-//         let map = self.clone();
-//         let task: TaskFn = Box::new(move || {
-//             Box::pin(async move {
-//                 let output = map.map(input).await;
-//                 let _ = tx.send(output);
-//             })
-//         });
-//         ctx.task_queue.lock().await.submit(task, task_priority, cancel).expect("couldn't dispatch");
-//         rx
-//     }
-// }
 #[async_trait]
 impl<T, I, O> OneshotDispatchable<I, O> for Arc<T>
 where

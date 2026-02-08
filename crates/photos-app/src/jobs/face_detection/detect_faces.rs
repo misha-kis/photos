@@ -15,7 +15,7 @@ impl Map<ImageRecord, ()> for DetectFacesTask {
             .ctx
             .service_registry
             .image_repository
-            .get_image(&input)
+            .get_image(&input, None)
             .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?;
         let detections = self
             .ctx

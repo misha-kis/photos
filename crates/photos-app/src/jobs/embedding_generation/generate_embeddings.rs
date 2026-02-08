@@ -16,7 +16,7 @@ impl Map<(ImageRecord, FaceDetection), ()> for GenerateEmbeddings {
             .ctx
             .service_registry
             .image_repository
-            .get_image(&image)
+            .get_image(&image, None)
             .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?;
         let detection_with_embedding = self
             .ctx

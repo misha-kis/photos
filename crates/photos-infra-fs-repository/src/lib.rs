@@ -177,16 +177,29 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
         Ok(())
     }
 
-    fn get_image(&self, image_record: &ImageRecord) -> Result<DynamicImage, ImageRepositoryError> {
+    fn get_image(
+        &self,
+        image_record: &ImageRecord,
+        resize: Option<(u32, u32)>,
+    ) -> Result<DynamicImage, ImageRepositoryError> {
+        // todo(static assert size >= 0)
         tracing::info!("getting image {:?}", image_record.id);
         let path = self.original_path(image_record.id, image_record.format.extensions_str()[0]);
         if !path.exists() {
             return Err(ImageRepositoryError::ImageDoesNotExist);
         }
         let image = image::open(&path).internal()?;
-        match read_orientation(&path) {
-            None => Ok(image),
-            Some(orientation) => Ok(apply_orientation(image, orientation)),
+        let image = match read_orientation(&path) {
+            None => image,
+            Some(orientation) => apply_orientation(image, orientation),
+        };
+
+        if let Some(size) = resize {
+            self.resize_service
+                .resize(&image, size.0, size.1)
+                .internal()
+        } else {
+            Ok(image)
         }
     }
 
@@ -231,7 +244,7 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
         bounding_box: BoundingBox,
         thumbnail_size: u32,
     ) -> Result<DynamicImage, ImageRepositoryError> {
-        let image = self.get_image(image_record).internal()?;
+        let image = self.get_image(image_record, None).internal()?;
         let image = image.crop_imm(
             bounding_box.x as u32,
             bounding_box.y as u32,

@@ -103,7 +103,11 @@ pub enum ImageRepositoryError {
 pub trait ImageRepository {
     fn insert_image(&self, path: &Path) -> Result<ImageRecord, ImageRepositoryError>;
     fn delete_image(&self, image_record: &ImageRecord) -> Result<(), ImageRepositoryError>;
-    fn get_image(&self, image_record: &ImageRecord) -> Result<DynamicImage, ImageRepositoryError>;
+    fn get_image(
+        &self,
+        image_record: &ImageRecord,
+        resize: Option<(u32, u32)>,
+    ) -> Result<DynamicImage, ImageRepositoryError>;
     fn get_thumbnail(
         &self,
         image_id: &ImageId,

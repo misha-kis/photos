@@ -10,8 +10,8 @@ pub(crate) struct GetImageTask {
 }
 
 #[async_trait]
-impl Map<ImageId, RgbaImage> for GetImageTask {
-    async fn map(&self, id: ImageId) -> Result<RgbaImage, AppError> {
+impl Map<(ImageId, (u32, u32)), RgbaImage> for GetImageTask {
+    async fn map(&self, (id, size): (ImageId, (u32, u32))) -> Result<RgbaImage, AppError> {
         let record = self
             .ctx
             .service_registry
@@ -23,7 +23,7 @@ impl Map<ImageId, RgbaImage> for GetImageTask {
             .ctx
             .service_registry
             .image_repository
-            .get_image(&record)
+            .get_image(&record, Some(size))
             .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?;
         Ok(tokio::task::spawn_blocking(move || img.to_rgba8())
             .await
