@@ -175,7 +175,6 @@ impl App {
         let ctx = TaskContext {
             service_registry: self.service_registry.clone(),
             task_queue: self.task_queue.clone(),
-            cancel: cancel.clone(),
         };
         let task = Arc::new(GetImageTask { ctx: ctx.clone() });
         let rx = self.runtime.block_on(async {
@@ -270,7 +269,6 @@ impl App {
         let ctx = TaskContext {
             service_registry: self.service_registry.clone(),
             task_queue: self.task_queue.clone(),
-            cancel: CancellationToken::new(),
         };
         let import_job = Arc::new(get_import_job(ctx.clone()));
         let face_detection_job = Arc::new(get_face_detection_job(ctx.clone()));
@@ -286,7 +284,6 @@ impl App {
         let ctx = TaskContext {
             service_registry: self.service_registry.clone(),
             task_queue: self.task_queue.clone(),
-            cancel: CancellationToken::new(),
         };
         let face_detection_job = Arc::new(get_face_detection_job(ctx.clone()));
         let embedding_job = Arc::new(get_embeddings_detection_job(ctx.clone()));

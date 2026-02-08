@@ -30,7 +30,7 @@ impl AppProxy {
     ) -> anyhow::Result<Self> {
         let app = Rc::new(photos_app::App::new(gallery_dir, app_options)?);
 
-        let mut receiver = app.get_image_ids();
+        let receiver = app.get_image_ids();
         let mut image_ids = Vec::new();
         if let Ok(Ok(ids)) = receiver.blocking_recv() {
             image_ids = ids;

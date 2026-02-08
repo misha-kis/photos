@@ -12,7 +12,6 @@ use tokio_util::sync::CancellationToken;
 pub(crate) struct TaskContext {
     pub(crate) service_registry: Arc<AppServiceRegistry>,
     pub(crate) task_queue: Arc<Mutex<TaskQueue>>,
-    pub(crate) cancel: CancellationToken,
 }
 
 #[async_trait]
