@@ -10,7 +10,6 @@ use std::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
 const THUMBNAIL_SIZE: f32 = 128.0;
-const FULL_IMAGE_GET_SIZE: (u32, u32) = (1000, 700);
 
 enum State {
     Gallery {
@@ -102,7 +101,7 @@ impl GalleryView {
                 let mut available_size = ui.available_size();
                 available_size.y -= THUMBNAIL_SIZE - ui.style().spacing.item_spacing.y;
                 for id in ids_to_load {
-                    let id = (*id, FULL_IMAGE_GET_SIZE);
+                    let id = (*id, None);
                     app_proxy.get_image(&id, ctx, cancel.clone());
                     if *selected_id == id.0 {
                         let try_get = || app_proxy.get_image(&id, ctx, cancel.clone());

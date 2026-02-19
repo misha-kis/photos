@@ -169,7 +169,7 @@ impl App {
     pub fn get_image(
         &self,
         image_id: ImageId,
-        size: (u32, u32),
+        size: Option<(u32, u32)>,
         cancel: CancellationToken,
     ) -> OneshotJobHandle<RgbaImage> {
         let ctx = TaskContext {

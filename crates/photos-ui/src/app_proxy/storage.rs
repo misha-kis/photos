@@ -161,7 +161,7 @@ impl CtxInto<ImportThumbnail> for RgbaImage {
 pub(crate) struct FullImage(pub(crate) TextureHandle);
 
 impl Storable for FullImage {
-    type Id = (ImageId, (u32, u32));
+    type Id = (ImageId, Option<(u32, u32)>);
     type ReceiveAs = RgbaImage;
 
     fn load(
