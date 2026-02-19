@@ -152,10 +152,10 @@ fn show_gallery_row<FGet, FRender, FClick>(
     mut render_item: FRender,
     mut on_item_clicked: FClick,
 ) where
-    FGet: FnMut(&ImageId) -> Option<egui::TextureHandle>,
+    FGet: FnMut(&ImageId) -> Option<TextureHandle>,
     FRender: FnMut(
         &mut egui::Ui,
-        bool, // visible
+        bool,
         (f32, f32),
         Option<TextureHandle>,
         &mut dyn FnMut(),
@@ -170,8 +170,6 @@ fn show_gallery_row<FGet, FRender, FClick>(
         .max(1.0) as usize;
     let show_extra = n_columns.div(2);
 
-    // let actual_size =
-    //     ((available_width + spacing) / n_columns as f32 - spacing).clamp(50.0, 500.0);
     let min_index = selected_item_index.saturating_sub(show_extra);
     let max_index = selected_item_index
         .saturating_add(show_extra)
