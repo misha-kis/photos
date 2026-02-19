@@ -119,7 +119,7 @@ impl ImportView {
                         &ids,
                         get_item_data,
                         |ui, visible, size, texture_opt, click| {
-                            image_view(ui, visible, size, || Ok(texture_opt.clone()), Some(click));
+                            image_view(ui, visible, size, || texture_opt.clone(), Some(click));
                         },
                         |_| {},
                         false,
@@ -190,7 +190,7 @@ impl ImportView {
                         &ids,
                         get_item_data,
                         |ui, visible, size, texture_opt, click| {
-                            image_view(ui, visible, size, || Ok(texture_opt.clone()), Some(click));
+                            image_view(ui, visible, size, || texture_opt.clone(), Some(click));
                         },
                         |_| {},
                         false,

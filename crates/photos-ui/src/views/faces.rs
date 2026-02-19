@@ -66,7 +66,7 @@ impl FacesView {
                                                 ui,
                                                 is_visible,
                                                 (THUMBNAIL_SIZE, THUMBNAIL_SIZE),
-                                                || Ok(texture_opt.clone()),
+                                                || texture_opt.clone(),
                                                 Some(&mut click_cb),
                                             );
                                         });
