@@ -10,10 +10,11 @@ use std::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
 const THUMBNAIL_SIZE: f32 = 128.0;
+const FULL_IMAGE_GET_SIZE: (u32, u32) = (1000, 700);
 
 enum State {
     Gallery {
-        grid: DynamicGrid<ImageId, egui::TextureHandle>,
+        grid: DynamicGrid<ImageId, TextureHandle>,
         cancel: CancellationToken,
     },
     FullImage {
@@ -101,7 +102,7 @@ impl GalleryView {
                 let mut available_size = ui.available_size();
                 available_size.y -= THUMBNAIL_SIZE - ui.style().spacing.item_spacing.y;
                 for id in ids_to_load {
-                    let id = (*id, (available_size.x as u32, available_size.y as u32));
+                    let id = (*id, FULL_IMAGE_GET_SIZE);
                     app_proxy.get_image(&id, ctx, cancel.clone());
                     if *selected_id == id.0 {
                         let try_get = || app_proxy.get_image(&id, ctx, cancel.clone());
@@ -153,13 +154,7 @@ fn show_gallery_row<FGet, FRender, FClick>(
     mut on_item_clicked: FClick,
 ) where
     FGet: FnMut(&ImageId) -> Option<TextureHandle>,
-    FRender: FnMut(
-        &mut egui::Ui,
-        bool,
-        (f32, f32),
-        Option<TextureHandle>,
-        &mut dyn FnMut(),
-    ),
+    FRender: FnMut(&mut egui::Ui, bool, (f32, f32), Option<TextureHandle>, &mut dyn FnMut()),
     FClick: FnMut(usize),
 {
     let available_width = ui.available_width();
