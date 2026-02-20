@@ -41,7 +41,7 @@ impl GalleryView {
         match &mut self.state {
             State::Gallery { grid, cancel } => {
                 let image_ids = Rc::new(app_proxy.image_ids.clone());
-                let get_item_data = |image_id: &ImageId| -> Option<egui::TextureHandle> {
+                let get_item_data = |image_id: &ImageId| -> Option<TextureHandle> {
                     app_proxy.get_thumbnail(image_id, ctx, cancel.child_token())
                 };
                 let selected_index = Rc::new(RwLock::new(None));
