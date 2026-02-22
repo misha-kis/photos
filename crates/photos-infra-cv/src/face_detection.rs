@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use crate::errors::IntoInternal;
 use image::{DynamicImage, GenericImageView};
 use ndarray::{Array, Axis, s};
-use ort::ep::CoreMLExecutionProvider;
+use ort::ep::{CPUExecutionProvider, CoreMLExecutionProvider};
 use ort::{
     inputs,
     session::{Session, SessionOutputs},
@@ -49,7 +49,10 @@ impl FaceDetector {
         image_size: u32,
     ) -> Result<Self, ImageAnalysisServiceError> {
         ort::init()
-            .with_execution_providers([CoreMLExecutionProvider::default().build()])
+            .with_execution_providers([
+                CoreMLExecutionProvider::default().build(),
+                CPUExecutionProvider::default().build(),
+            ])
             .commit();
         let session = Session::builder()
             .internal()?
