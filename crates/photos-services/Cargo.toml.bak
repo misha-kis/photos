@@ -1,8 +1,0 @@
-[package]
-name = "photos-services"
-edition = "2024"
-
-[dependencies]
-thiserror = { workspace = true }
-async-trait = "0.1.89"
-photos-domain = { path = "../photos-domain" }
