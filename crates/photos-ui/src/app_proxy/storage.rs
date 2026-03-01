@@ -3,13 +3,38 @@ use std::{num::NonZero, path::PathBuf, rc::Rc};
 use eframe::egui::{self, TextureHandle, ahash::HashMap};
 use image::RgbaImage;
 use lru::LruCache;
-use photos_app::{App, OneshotJobHandle};
+use photos_app::{App, AppError};
 use photos_domain::{ImageId, Uuid};
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
 pub(crate) trait CtxInto<T: Sized> {
     fn ctx_into(self, ctx: &egui::Context) -> T;
+}
+
+struct JobHandle<T> {
+    rx: Option<oneshot::Receiver<Result<T, AppError>>>,
+    cancel: CancellationToken,
+}
+
+impl<T> JobHandle<T> {
+    pub fn new(cancel: CancellationToken, rx: oneshot::Receiver<Result<T, AppError>>) -> Self {
+        Self {
+            cancel,
+            rx: Some(rx),
+        }
+    }
+
+    pub fn try_recv(&mut self) -> Result<Result<T, AppError>, oneshot::error::TryRecvError> {
+        let rx = self.rx.as_mut().expect("receiver already taken");
+        rx.try_recv()
+    }
+}
+
+impl<T> Drop for JobHandle<T> {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+    }
 }
 
 pub(crate) trait Storable: Sized {
@@ -19,13 +44,13 @@ pub(crate) trait Storable: Sized {
         app: &App,
         id: &Self::Id,
         cancel: CancellationToken,
-    ) -> OneshotJobHandle<Self::ReceiveAs>;
+    ) -> oneshot::Receiver<Result<Self::ReceiveAs, AppError>>;
 }
 
 pub(crate) struct Storage<T: Storable> {
     app: Rc<App>,
     cache: LruCache<T::Id, T>,
-    jobs: HashMap<T::Id, OneshotJobHandle<T::ReceiveAs>>,
+    jobs: HashMap<T::Id, JobHandle<T::ReceiveAs>>,
 }
 
 impl<T: Storable> Storage<T> {
@@ -43,6 +68,7 @@ impl<T: Storable> Storage<T> {
         ctx: &egui::Context,
         cancel: CancellationToken,
     ) -> Option<&T> {
+        let cancel = cancel.child_token();
         if self.cache.contains(id) {
             return self.cache.get(id);
         }
@@ -62,8 +88,8 @@ impl<T: Storable> Storage<T> {
             };
         }
 
-        let job = T::load(self.app.as_ref(), id, cancel.child_token());
-        self.jobs.insert(id.clone(), job);
+        let rx = T::load(self.app.as_ref(), id, cancel.clone());
+        self.jobs.insert(id.clone(), JobHandle::new(cancel, rx));
         None
     }
 }
@@ -79,7 +105,7 @@ impl Storable for Thumbnail {
         app: &App,
         id: &Self::Id,
         cancel: CancellationToken,
-    ) -> OneshotJobHandle<Self::ReceiveAs> {
+    ) -> oneshot::Receiver<Result<Self::ReceiveAs, AppError>> {
         app.get_thumbnail(id, 128, cancel)
     }
 }
@@ -109,7 +135,7 @@ impl Storable for FaceThumbnail {
         app: &App,
         id: &Self::Id,
         cancel: CancellationToken,
-    ) -> OneshotJobHandle<Self::ReceiveAs> {
+    ) -> oneshot::Receiver<Result<Self::ReceiveAs, AppError>> {
         app.get_face_detection_thumbnail(id, 128, cancel)
     }
 }
@@ -139,7 +165,7 @@ impl Storable for ImportThumbnail {
         app: &App,
         id: &Self::Id,
         cancel: CancellationToken,
-    ) -> OneshotJobHandle<Self::ReceiveAs> {
+    ) -> oneshot::Receiver<Result<Self::ReceiveAs, AppError>> {
         app.get_thumbnail_from_file(id.clone(), 128, cancel)
     }
 }
@@ -168,7 +194,7 @@ impl Storable for FullImage {
         app: &App,
         id: &Self::Id,
         cancel: CancellationToken,
-    ) -> OneshotJobHandle<Self::ReceiveAs> {
+    ) -> oneshot::Receiver<Result<Self::ReceiveAs, AppError>> {
         let (id, size) = id;
         app.get_image(*id, *size, cancel)
     }
@@ -197,7 +223,7 @@ impl Storable for ImportItemPaths {
         app: &App,
         id: &Self::Id,
         cancel: CancellationToken,
-    ) -> OneshotJobHandle<Self::ReceiveAs> {
+    ) -> oneshot::Receiver<Result<Self::ReceiveAs, AppError>> {
         app.discover_import_items(id.to_path_buf(), cancel)
     }
 }

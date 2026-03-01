@@ -1,4 +1,4 @@
-use crate::errors::AppError;
+pub use crate::errors::AppError;
 use crate::service_registry::AppServiceRegistry;
 use photos_domain::{ImageId, RgbaImage, Uuid};
 use photos_infra_fast_image_resize_resizer::FastImageResizeResizer;
@@ -26,35 +26,6 @@ use crate::jobs::{
 pub use crate::jobs::{JobEvent, JobHandle};
 pub use events::AppEvent;
 use photos_infra_cv::ImageAnalysis;
-
-pub struct OneshotJobHandle<T> {
-    cancel: CancellationToken,
-    rx: Option<oneshot::Receiver<Result<T, AppError>>>,
-}
-
-impl<T> Drop for OneshotJobHandle<T> {
-    fn drop(&mut self) {
-        self.cancel.cancel();
-    }
-}
-
-impl<T> OneshotJobHandle<T> {
-    pub fn new(cancel: CancellationToken, rx: oneshot::Receiver<Result<T, AppError>>) -> Self {
-        Self {
-            cancel,
-            rx: Some(rx),
-        }
-    }
-
-    pub fn try_recv(&mut self) -> Result<Result<T, AppError>, oneshot::error::TryRecvError> {
-        let rx = self.rx.as_mut().expect("receiver already taken");
-        rx.try_recv()
-    }
-
-    pub fn blocking_recv(mut self) -> Result<Result<T, AppError>, oneshot::error::RecvError> {
-        self.rx.take().expect("rx already taken").blocking_recv()
-    }
-}
 
 pub struct App {
     service_registry: Arc<AppServiceRegistry>,
@@ -111,7 +82,7 @@ impl App {
         Ok(app)
     }
 
-    pub fn get_image_ids(&self) -> OneshotJobHandle<Vec<ImageId>> {
+    pub fn get_image_ids(&self) -> oneshot::Receiver<Result<Vec<ImageId>, AppError>> {
         let (tx, rx) = oneshot::channel();
         let service_registry = self.service_registry.clone();
         let cancel = CancellationToken::new();
@@ -134,9 +105,9 @@ impl App {
             self.task_queue
                 .lock()
                 .await
-                .submit(task, TaskPriority::High, cancel.clone())
+                .submit(task, TaskPriority::High, cancel)
         });
-        OneshotJobHandle::new(cancel, rx)
+        rx
     }
 
     pub fn get_face_clusters(&self) -> oneshot::Receiver<AppEvent> {
@@ -171,17 +142,16 @@ impl App {
         image_id: ImageId,
         size: Option<(u32, u32)>,
         cancel: CancellationToken,
-    ) -> OneshotJobHandle<RgbaImage> {
+    ) -> oneshot::Receiver<Result<RgbaImage, AppError>> {
         let ctx = TaskContext {
             service_registry: self.service_registry.clone(),
             task_queue: self.task_queue.clone(),
         };
         let task = Arc::new(GetImageTask { ctx: ctx.clone() });
-        let rx = self.runtime.block_on(async {
-            task.dispatch(ctx, (image_id, size), TaskPriority::High, cancel.clone())
+        self.runtime.block_on(async {
+            task.dispatch(ctx, (image_id, size), TaskPriority::High, cancel)
                 .await
-        });
-        OneshotJobHandle::new(cancel, rx)
+        })
     }
 
     pub fn get_face_detection_thumbnail(
@@ -189,7 +159,7 @@ impl App {
         detection_id: &Uuid,
         thumbnail_size: u32,
         cancel: CancellationToken,
-    ) -> OneshotJobHandle<RgbaImage> {
+    ) -> oneshot::Receiver<Result<RgbaImage, AppError>> {
         let (tx, rx) = oneshot::channel();
         let service_registry = self.service_registry.clone();
         let detection_id = *detection_id;
@@ -230,16 +200,16 @@ impl App {
             self.task_queue
                 .lock()
                 .await
-                .submit(task, TaskPriority::High, cancel.clone())
+                .submit(task, TaskPriority::High, cancel)
         });
-        OneshotJobHandle::new(cancel, rx)
+        rx
     }
 
     pub fn discover_import_items(
         &self,
         path: PathBuf,
         cancel: CancellationToken,
-    ) -> OneshotJobHandle<Vec<PathBuf>> {
+    ) -> oneshot::Receiver<Result<Vec<PathBuf>, AppError>> {
         let (tx, rx) = oneshot::channel();
 
         let task: TaskFn = Box::new(move || {
@@ -259,9 +229,9 @@ impl App {
             self.task_queue
                 .lock()
                 .await
-                .submit(task, TaskPriority::High, cancel.clone())
+                .submit(task, TaskPriority::High, cancel)
         });
-        OneshotJobHandle::new(cancel, rx)
+        rx
     }
 
     pub fn import_items(&self, paths: Vec<PathBuf>) -> JobHandle {
@@ -297,7 +267,7 @@ impl App {
         image_id: &ImageId,
         thumbnail_size: u32,
         cancel: CancellationToken,
-    ) -> OneshotJobHandle<RgbaImage> {
+    ) -> oneshot::Receiver<Result<RgbaImage, AppError>> {
         let (tx, rx) = oneshot::channel();
         let service_registry = self.service_registry.clone();
         let image_id = *image_id;
@@ -332,9 +302,9 @@ impl App {
             self.task_queue
                 .lock()
                 .await
-                .submit(task, TaskPriority::High, cancel.clone())
+                .submit(task, TaskPriority::High, cancel)
         });
-        OneshotJobHandle::new(cancel, rx)
+        rx
     }
 
     pub fn get_thumbnail_from_file(
@@ -342,7 +312,7 @@ impl App {
         path: PathBuf,
         thumbnail_size: u32,
         cancel: CancellationToken,
-    ) -> OneshotJobHandle<RgbaImage> {
+    ) -> oneshot::Receiver<Result<RgbaImage, AppError>> {
         let (tx, rx) = oneshot::channel();
         let service_registry = self.service_registry.clone();
 
@@ -377,8 +347,8 @@ impl App {
             self.task_queue
                 .lock()
                 .await
-                .submit(task, TaskPriority::High, cancel.clone())
+                .submit(task, TaskPriority::High, cancel)
         });
-        OneshotJobHandle::new(cancel, rx)
+        rx
     }
 }
