@@ -1,7 +1,7 @@
 mod storage;
 
 use eframe::egui::{self, TextureHandle};
-use photos_app::{App, AppEvent, JobHandle};
+use photos_app::{App, JobHandle};
 use photos_domain::{ImageId, Uuid};
 use std::num::NonZero;
 use std::path::{Path, PathBuf};
@@ -126,10 +126,10 @@ impl AppProxy {
         let receiver = self.app.get_face_clusters();
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            if let Ok(AppEvent::FaceClustersReady { result }) = receiver.await
-                && let Ok(clusters) = result
-            {
+            if let Ok(Ok(clusters)) = receiver.await {
                 self.face_clusters = clusters;
+            } else {
+                tracing::error!("Failed to get face clusters");
             }
         })
     }

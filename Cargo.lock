@@ -3510,6 +3510,7 @@ dependencies = [
  "rfd",
  "tokio",
  "tokio-util",
+ "tracing",
  "tracing-subscriber",
 ]
 

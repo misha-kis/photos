@@ -3,10 +3,8 @@ use crate::service_registry::AppServiceRegistry;
 use photos_domain::{ImageId, RgbaImage, Uuid};
 use photos_infra_fast_image_resize_resizer::FastImageResizeResizer;
 use photos_infra_fs_repository::FSImageRepository;
-use photos_infra_import_item_discovery::discover_import_items;
 use photos_infra_sqlite_image_metadata_repository::SqliteImageMetadataRepository;
-use photos_services::{ImageMetadataRepository, ImageRepository};
-use photos_task_queue::{TaskFn, TaskPriority, TaskQueue};
+use photos_task_queue::{TaskPriority, TaskQueue};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
@@ -15,16 +13,15 @@ use tokio_util::sync::CancellationToken;
 
 pub mod config;
 mod errors;
-pub mod events;
 mod jobs;
 mod service_registry;
 
 use crate::jobs::{
-    Dispatchable, GetImageTask, OneshotDispatchable, TaskContext, get_embeddings_detection_job,
-    get_face_detection_job, get_import_job,
+    DiscoverImportItemsTask, Dispatchable, GetFaceClustersTask, GetFaceDetectionThumbnailTask,
+    GetImageIdsTask, GetImageTask, GetThumbnailFromFileTask, GetThumbnailTask, OneshotDispatchable,
+    TaskContext, get_embeddings_detection_job, get_face_detection_job, get_import_job,
 };
 pub use crate::jobs::{JobEvent, JobHandle};
-pub use events::AppEvent;
 use photos_infra_cv::ImageAnalysis;
 
 pub struct App {
@@ -82,58 +79,41 @@ impl App {
         Ok(app)
     }
 
-    pub fn get_image_ids(&self) -> oneshot::Receiver<Result<Vec<ImageId>, AppError>> {
-        let (tx, rx) = oneshot::channel();
-        let service_registry = self.service_registry.clone();
-        let cancel = CancellationToken::new();
-
-        let task: TaskFn = Box::new(move || {
-            let service_registry = service_registry.clone();
-            let tx = tx;
-
-            Box::pin(async move {
-                let result = service_registry
-                    .image_metadata_repository
-                    .get_image_ids()
-                    .await
-                    .map_err(|e| AppError::InvalidDatabaseState { err: e.to_string() });
-
-                let _ = tx.send(result);
-            })
-        });
-        let _ = self.runtime.block_on(async {
-            self.task_queue
-                .lock()
-                .await
-                .submit(task, TaskPriority::High, cancel)
-        });
-        rx
+    fn task_context(&self) -> TaskContext {
+        TaskContext {
+            service_registry: self.service_registry.clone(),
+            task_queue: self.task_queue.clone(),
+        }
     }
 
-    pub fn get_face_clusters(&self) -> oneshot::Receiver<AppEvent> {
-        let (tx, rx) = oneshot::channel();
-        let service_registry = self.service_registry.clone();
-        let cancel = CancellationToken::new();
+    #[allow(clippy::async_yields_async)]
+    pub fn get_image_ids(&self) -> oneshot::Receiver<Result<Vec<ImageId>, AppError>> {
+        let ctx = self.task_context();
+        let task = Arc::new(GetImageIdsTask { ctx });
+        self.runtime.block_on(async {
+            task.dispatch(
+                self.task_context(),
+                (),
+                TaskPriority::High,
+                CancellationToken::new(), // cannot be cancelled
+            )
+            .await
+        })
+    }
 
-        let task: TaskFn = Box::new(move || {
-            Box::pin(async move {
-                let result = service_registry
-                    .image_metadata_repository
-                    .get_face_clusters()
-                    .await
-                    .map_err(|e| AppError::InvalidDatabaseState { err: e.to_string() });
-                let event = AppEvent::FaceClustersReady { result };
-                let _ = tx.send(event);
-            })
-        });
-
-        let _ = self.runtime.block_on(async {
-            self.task_queue
-                .lock()
-                .await
-                .submit(task, TaskPriority::High, cancel)
-        });
-        rx
+    #[allow(clippy::async_yields_async)]
+    pub fn get_face_clusters(&self) -> oneshot::Receiver<Result<Vec<(Uuid, Vec<Uuid>)>, AppError>> {
+        let ctx = self.task_context();
+        let task = Arc::new(GetFaceClustersTask { ctx });
+        self.runtime.block_on(async {
+            task.dispatch(
+                self.task_context(),
+                (),
+                TaskPriority::High,
+                CancellationToken::new(), // cannot be cancelled
+            )
+            .await
+        })
     }
 
     #[allow(clippy::async_yields_async)]
@@ -143,10 +123,7 @@ impl App {
         size: Option<(u32, u32)>,
         cancel: CancellationToken,
     ) -> oneshot::Receiver<Result<RgbaImage, AppError>> {
-        let ctx = TaskContext {
-            service_registry: self.service_registry.clone(),
-            task_queue: self.task_queue.clone(),
-        };
+        let ctx = self.task_context();
         let task = Arc::new(GetImageTask { ctx: ctx.clone() });
         self.runtime.block_on(async {
             task.dispatch(ctx, (image_id, size), TaskPriority::High, cancel)
@@ -154,84 +131,37 @@ impl App {
         })
     }
 
+    #[allow(clippy::async_yields_async)]
     pub fn get_face_detection_thumbnail(
         &self,
         detection_id: &Uuid,
         thumbnail_size: u32,
         cancel: CancellationToken,
     ) -> oneshot::Receiver<Result<RgbaImage, AppError>> {
-        let (tx, rx) = oneshot::channel();
-        let service_registry = self.service_registry.clone();
-        let detection_id = *detection_id;
-
-        let task: TaskFn = Box::new(move || {
-            let service_registry = service_registry.clone();
-            let tx = tx;
-
-            Box::pin(async move {
-                let result = match tokio::task::spawn_blocking({
-                    let service_registry = service_registry.clone();
-                    let detection_info = service_registry
-                        .image_metadata_repository
-                        .get_bbox_and_image_for_detection_id(detection_id)
-                        .await
-                        .map_err(|e| AppError::InvalidDatabaseState { err: e.to_string() });
-                    move || {
-                        let (bounding_box, image_record) = detection_info?;
-                        service_registry
-                            .image_repository
-                            .get_face_thumbnail(&image_record, bounding_box, thumbnail_size)
-                            .map(|image| image.to_rgba8())
-                            .map_err(|e| AppError::ImageRepositoryError { err: e.to_string() })
-                    }
-                })
-                .await
-                {
-                    Ok(Ok(image)) => Ok(image),
-                    Ok(Err(e)) => Err(e),
-                    Err(e) => Err(AppError::TaskSpawnFailed { err: e.to_string() }),
-                };
-
-                let _ = tx.send(result);
-            })
-        });
-
-        let _ = self.runtime.block_on(async {
-            self.task_queue
-                .lock()
-                .await
-                .submit(task, TaskPriority::High, cancel)
-        });
-        rx
+        let ctx = self.task_context();
+        let task = Arc::new(GetFaceDetectionThumbnailTask { ctx: ctx.clone() });
+        self.runtime.block_on(async {
+            task.dispatch(
+                ctx,
+                (*detection_id, thumbnail_size),
+                TaskPriority::High,
+                cancel,
+            )
+            .await
+        })
     }
 
+    #[allow(clippy::async_yields_async)]
     pub fn discover_import_items(
         &self,
         path: PathBuf,
         cancel: CancellationToken,
     ) -> oneshot::Receiver<Result<Vec<PathBuf>, AppError>> {
-        let (tx, rx) = oneshot::channel();
-
-        let task: TaskFn = Box::new(move || {
-            let tx = tx;
-            let path_clone = path.clone();
-
-            Box::pin(async move {
-                let result = tokio::task::spawn_blocking(move || discover_import_items(path_clone))
-                    .await
-                    .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() });
-
-                let _ = tx.send(result);
-            })
-        });
-
-        let _ = self.runtime.block_on(async {
-            self.task_queue
-                .lock()
+        let task = Arc::new(DiscoverImportItemsTask {});
+        self.runtime.block_on(async {
+            task.dispatch(self.task_context(), path, TaskPriority::High, cancel)
                 .await
-                .submit(task, TaskPriority::High, cancel)
-        });
-        rx
+        })
     }
 
     pub fn import_items(&self, paths: Vec<PathBuf>) -> JobHandle {
@@ -262,93 +192,43 @@ impl App {
             .block_on(async { jobs.dispatch(ctx, (), cancel).await })
     }
 
+    #[allow(clippy::async_yields_async)]
     pub fn get_thumbnail(
         &self,
         image_id: &ImageId,
         thumbnail_size: u32,
         cancel: CancellationToken,
     ) -> oneshot::Receiver<Result<RgbaImage, AppError>> {
-        let (tx, rx) = oneshot::channel();
-        let service_registry = self.service_registry.clone();
-        let image_id = *image_id;
-
-        let task: TaskFn = Box::new(move || {
-            let service_registry = service_registry.clone();
-            let tx = tx;
-
-            Box::pin(async move {
-                let result = match tokio::task::spawn_blocking({
-                    let service_registry = service_registry.clone();
-                    let image_id = image_id;
-                    move || {
-                        service_registry
-                            .image_repository
-                            .get_thumbnail(&image_id, thumbnail_size)
-                            .map(|image| image.into_rgba8())
-                    }
-                })
-                .await
-                {
-                    Ok(Ok(image)) => Ok(image),
-                    Ok(Err(e)) => Err(AppError::ImageRepositoryError { err: e.to_string() }),
-                    Err(e) => Err(AppError::TaskSpawnFailed { err: e.to_string() }),
-                };
-
-                let _ = tx.send(result);
-            })
-        });
-
-        let _ = self.runtime.block_on(async {
-            self.task_queue
-                .lock()
-                .await
-                .submit(task, TaskPriority::High, cancel)
-        });
-        rx
+        let ctx = self.task_context();
+        let task = Arc::new(GetThumbnailTask { ctx });
+        self.runtime.block_on(async {
+            task.dispatch(
+                self.task_context(),
+                (*image_id, thumbnail_size),
+                TaskPriority::High,
+                cancel,
+            )
+            .await
+        })
     }
 
+    #[allow(clippy::async_yields_async)]
     pub fn get_thumbnail_from_file(
         &self,
         path: PathBuf,
         thumbnail_size: u32,
         cancel: CancellationToken,
     ) -> oneshot::Receiver<Result<RgbaImage, AppError>> {
-        let (tx, rx) = oneshot::channel();
-        let service_registry = self.service_registry.clone();
-
-        let task: TaskFn = Box::new(move || {
-            let service_registry = service_registry.clone();
-            let tx = tx;
-            let path_clone = path.clone();
-
-            Box::pin(async move {
-                let result = match tokio::task::spawn_blocking({
-                    let service_registry = service_registry.clone();
-                    let path = path_clone.clone();
-                    move || {
-                        service_registry
-                            .image_repository
-                            .get_thumbnail_from_file(&path, thumbnail_size)
-                            .map(|image| image.into_rgba8())
-                    }
-                })
-                .await
-                {
-                    Ok(Ok(image)) => Ok(image),
-                    Ok(Err(e)) => Err(AppError::ImageRepositoryError { err: e.to_string() }),
-                    Err(e) => Err(AppError::TaskSpawnFailed { err: e.to_string() }),
-                };
-
-                let _ = tx.send(result);
-            })
-        });
-
-        let _ = self.runtime.block_on(async {
-            self.task_queue
-                .lock()
-                .await
-                .submit(task, TaskPriority::High, cancel)
-        });
-        rx
+        let ctx = self.task_context();
+        let task = Arc::new(GetThumbnailFromFileTask { ctx });
+        self.runtime.block_on(async {
+            task.dispatch(
+                self.task_context(),
+                (path, thumbnail_size),
+                TaskPriority::High,
+                cancel,
+            )
+            .await
+        })
     }
 }
