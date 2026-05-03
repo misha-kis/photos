@@ -21,7 +21,7 @@ impl Default for Options {
             image_analysis_config: ImageAnalysisConfig {
                 detector_model_path,
                 embedder_model_path,
-                detector_image_size: 480,
+                detector_image_size: 640,
                 embedder_image_size: 160,
             },
         }

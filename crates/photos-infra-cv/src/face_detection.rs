@@ -70,8 +70,13 @@ impl FaceDetector {
         resize_service: &dyn ResizeService,
     ) -> Result<Vec<FaceDetection>, ImageAnalysisServiceError> {
         let (img_width, img_height) = (image.width(), image.height());
+        let scale = self.image_size as f32 / img_width.max(img_height) as f32;
         let img = resize_service
-            .resize(image, self.image_size, self.image_size)
+            .resize(
+                image,
+                (img_width as f32 * scale) as u32,
+                (img_height as f32 * scale) as u32,
+            )
             .internal()?;
         let mut input = Array::zeros((1, 3, self.image_size as usize, self.image_size as usize));
         for pixel in img.pixels() {
@@ -103,20 +108,27 @@ impl FaceDetector {
                 .map(|(index, value)| (index, *value))
                 .reduce(|accum, row| if row.1 > accum.1 { row } else { accum })
                 .unwrap();
-            if prob < 0.5 {
+            if prob < 0.5 || prob > 1. {
                 continue;
             }
-            let xc = row[0] / self.image_size as f32 * (img_width as f32);
-            let yc = row[1] / self.image_size as f32 * (img_height as f32);
-            let w = row[2] / self.image_size as f32 * (img_width as f32);
-            let h = row[3] / self.image_size as f32 * (img_height as f32);
+            let xc = row[0];
+            let yc = row[1];
+            let w = row[2];
+            let h = row[3];
+
+            let xc = xc / scale;
+            let yc = yc / scale;
+            let w = w / scale;
+            let h = h / scale;
+
+            let x = xc - w / 2.;
+            let y = yc - h / 2.;
+
+            if x < 0. || y < 0. || x + w > img_width as f32 || y + h > img_height as f32 {
+                continue;
+            }
             face_detections.push(FaceDetection {
-                bounding_box: BoundingBox {
-                    x: xc - w / 2.,
-                    y: yc - h / 2.,
-                    w,
-                    h,
-                },
+                bounding_box: BoundingBox { x, y, w, h },
                 confidence: prob,
             });
         }
