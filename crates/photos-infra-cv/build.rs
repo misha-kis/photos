@@ -11,6 +11,9 @@ async fn download(model: &str) {
 
 #[tokio::main]
 async fn main() {
-    tokio::join!(download("facenet.onnx"), download("yolov12n-face.onnx"));
+    tokio::join!(
+        download("facenet_240.onnx"),
+        download("yolov12n-face_640.onnx")
+    );
     println!("cargo:rerun-if-changed=build.rs");
 }

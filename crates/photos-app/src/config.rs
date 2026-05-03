@@ -11,8 +11,8 @@ impl Default for Options {
     fn default() -> Self {
         let resources_path = resources_path();
         tracing::info!("resource path: {resources_path:?}");
-        let detector_model_path = resources_path.join("assets/models/yolov12n-face.onnx");
-        let embedder_model_path = resources_path.join("assets/models/facenet.onnx");
+        let detector_model_path = resources_path.join("assets/models/yolov12n-face_640.onnx");
+        let embedder_model_path = resources_path.join("assets/models/facenet_240.onnx");
         Self {
             thumbnail_sizes: vec![128],
             max_blocking_tasks: std::thread::available_parallelism()
@@ -22,7 +22,7 @@ impl Default for Options {
                 detector_model_path,
                 embedder_model_path,
                 detector_image_size: 640,
-                embedder_image_size: 160,
+                embedder_image_size: 240,
             },
         }
     }
