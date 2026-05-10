@@ -24,7 +24,7 @@ After that, you will be able to select a directory for your first photo library 
 
 # Architecture
 
-The app uses a hexagonal architecture, where Application (crates/photos-app) is the core, and it depends on and wires together other components: Filesystem Image Repository (crates/photos-infra-fs-repository), Metadata Repository (crates/photos-infra-sqlite-image-metadata-repository), CV Services (crates/photos-infra-cv), etc.
+The app uses hexagonal architecture, where Application (crates/photos-app) is the core, and it depends on and wires together other components: Filesystem Image Repository (crates/photos-infra-fs-repository), Metadata Repository (crates/photos-infra-sqlite-image-metadata-repository), CV Services (crates/photos-infra-cv), etc.
 
 For the UI, I used [egui](https://github.com/emilk/egui). It works for now, but sometime in the future I want to try something else, currently I'm thinking about `iced` (mainly because of its async support). That said, UI is the hardest part for me, so I will probably stick with `egui` for a while.
 
