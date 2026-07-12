@@ -1,4 +1,4 @@
-use crate::errors::AppError;
+use crate::AppError;
 use crate::jobs::common::{Map, Reduce, TaskContext};
 use async_trait::async_trait;
 use photos_domain::ImageRecord;
@@ -16,7 +16,7 @@ impl Map<PathBuf, ImageRecord> for CopyItemTask {
             .service_registry
             .image_repository
             .insert_image(&input)
-            .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })
+            .map_err(AppError::from)
     }
 }
 
@@ -32,6 +32,6 @@ impl Reduce<ImageRecord, ()> for InsertRecordsTask {
             .image_metadata_repository
             .add_image_record_bulk(&inputs)
             .await
-            .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })
+            .map_err(AppError::from)
     }
 }

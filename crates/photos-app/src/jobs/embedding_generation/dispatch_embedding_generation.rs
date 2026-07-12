@@ -1,4 +1,4 @@
-use crate::errors::AppError;
+use crate::AppError;
 use crate::jobs::TaskContext;
 use crate::jobs::common::Expand;
 use async_trait::async_trait;
@@ -17,6 +17,6 @@ impl Expand<(), (ImageRecord, FaceDetection)> for DiscoverImagesWithoutEmbedding
             .image_metadata_repository
             .get_detections_without_embeddings()
             .await
-            .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })
+            .map_err(AppError::from)
     }
 }

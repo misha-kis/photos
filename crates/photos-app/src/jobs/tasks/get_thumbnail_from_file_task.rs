@@ -3,10 +3,8 @@ use photos_domain::RgbaImage;
 use photos_services::ImageRepository;
 use std::path::PathBuf;
 
-use crate::{
-    AppError,
-    jobs::{TaskContext, common::Map},
-};
+use crate::AppError;
+use crate::jobs::{TaskContext, common::Map};
 
 pub(crate) struct GetThumbnailFromFileTask {
     pub(crate) ctx: TaskContext,
@@ -19,10 +17,7 @@ impl Map<(PathBuf, u32), RgbaImage> for GetThumbnailFromFileTask {
             .ctx
             .service_registry
             .image_repository
-            .get_thumbnail_from_file(&path, size)
-            .map_err(|e| AppError::ImageRepositoryError { err: e.to_string() })?;
-        Ok(tokio::task::spawn_blocking(move || img.to_rgba8())
-            .await
-            .expect("blocking panicked"))
+            .get_thumbnail_from_file(&path, size)?;
+        Ok(tokio::task::spawn_blocking(move || img.to_rgba8()).await?)
     }
 }

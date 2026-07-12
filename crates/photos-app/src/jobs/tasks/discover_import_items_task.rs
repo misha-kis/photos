@@ -2,7 +2,8 @@ use async_trait::async_trait;
 use photos_infra_import_item_discovery::discover_import_items;
 use std::path::PathBuf;
 
-use crate::{AppError, jobs::common::Map};
+use crate::AppError;
+use crate::jobs::common::Map;
 
 pub(crate) struct DiscoverImportItemsTask {}
 

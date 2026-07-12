@@ -46,7 +46,7 @@ enum RootState {
         path: PathBuf,
     },
     OpenGallery {
-        session: GallerySession,
+        session: Box<GallerySession>,
     },
     Error {
         message: String,
@@ -72,6 +72,7 @@ enum GalleryScene {
 }
 
 enum FullImageStatus {
+    #[allow(dead_code)]
     Idle,
     Loading,
     Loaded(image::Handle),
@@ -147,7 +148,9 @@ impl Ui {
                     grid: GridState::default(),
                 };
                 let task = session.schedule_thumbnail_tasks(0, 6);
-                self.state = RootState::OpenGallery { session };
+                self.state = RootState::OpenGallery {
+                    session: Box::new(session),
+                };
                 task
             }
             Message::GalleryInitialized(Err(message)) => {

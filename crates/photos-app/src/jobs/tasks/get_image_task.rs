@@ -1,4 +1,4 @@
-use crate::errors::AppError;
+use crate::AppError;
 use crate::jobs::TaskContext;
 use crate::jobs::common::Map;
 use async_trait::async_trait;
@@ -17,16 +17,12 @@ impl Map<(ImageId, Option<(u32, u32)>), RgbaImage> for GetImageTask {
             .service_registry
             .image_metadata_repository
             .get_image_record(id)
-            .await
-            .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?;
+            .await?;
         let img = self
             .ctx
             .service_registry
             .image_repository
-            .get_image(&record, size)
-            .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?;
-        Ok(tokio::task::spawn_blocking(move || img.to_rgba8())
-            .await
-            .expect("blocking panicked"))
+            .get_image(&record, size)?;
+        Ok(tokio::task::spawn_blocking(move || img.to_rgba8()).await?)
     }
 }

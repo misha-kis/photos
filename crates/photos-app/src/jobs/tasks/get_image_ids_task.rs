@@ -1,4 +1,4 @@
-use crate::errors::AppError;
+use crate::AppError;
 use crate::jobs::TaskContext;
 use crate::jobs::common::Map;
 use async_trait::async_trait;
@@ -17,6 +17,6 @@ impl Map<(), Vec<ImageId>> for GetImageIdsTask {
             .image_metadata_repository
             .get_image_ids()
             .await
-            .map_err(|e| AppError::InvalidDatabaseState { err: e.to_string() })
+            .map_err(AppError::from)
     }
 }

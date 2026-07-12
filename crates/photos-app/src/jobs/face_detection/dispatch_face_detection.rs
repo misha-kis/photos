@@ -1,4 +1,4 @@
-use crate::errors::AppError;
+use crate::AppError;
 use crate::jobs::common::{Expand, TaskContext};
 use async_trait::async_trait;
 use photos_domain::ImageRecord;
@@ -16,6 +16,6 @@ impl Expand<(), ImageRecord> for DiscoverImagesToDetect {
             .image_metadata_repository
             .get_image_records_without_detections()
             .await
-            .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })
+            .map_err(AppError::from)
     }
 }

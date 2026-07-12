@@ -1,7 +1,5 @@
-use crate::{
-    AppError,
-    jobs::{TaskContext, common::Map},
-};
+use crate::AppError;
+use crate::jobs::{TaskContext, common::Map};
 use async_trait::async_trait;
 use photos_domain::{ImageId, RgbaImage};
 use photos_services::ImageRepository;
@@ -17,10 +15,7 @@ impl Map<(ImageId, u32), RgbaImage> for GetThumbnailTask {
             .ctx
             .service_registry
             .image_repository
-            .get_thumbnail(&id, size)
-            .map_err(|e| AppError::ImageRepositoryError { err: e.to_string() })?;
-        Ok(tokio::task::spawn_blocking(move || img.to_rgba8())
-            .await
-            .expect("blocking panicked"))
+            .get_thumbnail(&id, size)?;
+        Ok(tokio::task::spawn_blocking(move || img.to_rgba8()).await?)
     }
 }

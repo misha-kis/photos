@@ -37,8 +37,7 @@ impl App {
         handle: Handle,
     ) -> Result<Self, AppError> {
         if !path.exists() {
-            std::fs::create_dir(&path)
-                .map_err(|e| AppError::BadDirectory { err: e.to_string() })?;
+            std::fs::create_dir(&path)?;
         }
 
         let image_repository = FSImageRepository::new(
@@ -47,12 +46,9 @@ impl App {
             FastImageResizeResizer::default(),
         );
 
-        let image_metadata_repository = SqliteImageMetadataRepository::new(path)
-            .await
-            .map_err(|e| AppError::Internal(Box::from(e)))?;
+        let image_metadata_repository = SqliteImageMetadataRepository::new(path).await?;
 
-        let analysis_service = ImageAnalysis::new(app_options.image_analysis_config)
-            .map_err(|e| AppError::Internal(Box::from(e)))?;
+        let analysis_service = ImageAnalysis::new(app_options.image_analysis_config)?;
 
         let resize_service = FastImageResizeResizer::default();
         let service_registry = Arc::new(AppServiceRegistry {
@@ -109,9 +105,7 @@ impl App {
                 CancellationToken::new(),
             )
             .await;
-        receiver
-            .await
-            .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?
+        receiver.await?
     }
 
     #[allow(clippy::async_yields_async)]
@@ -126,9 +120,7 @@ impl App {
                 CancellationToken::new(),
             )
             .await;
-        receiver
-            .await
-            .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?
+        receiver.await?
     }
 
     #[allow(clippy::async_yields_async)]
@@ -143,9 +135,7 @@ impl App {
         let receiver = task
             .dispatch(ctx, (image_id, size), TaskPriority::High, cancel)
             .await;
-        receiver
-            .await
-            .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?
+        receiver.await?
     }
 
     #[allow(clippy::async_yields_async)]
@@ -165,9 +155,7 @@ impl App {
                 cancel,
             )
             .await;
-        receiver
-            .await
-            .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?
+        receiver.await?
     }
 
     #[allow(clippy::async_yields_async)]
@@ -180,9 +168,7 @@ impl App {
         let receiver = task
             .dispatch(self.task_context(), path, TaskPriority::High, cancel)
             .await;
-        receiver
-            .await
-            .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?
+        receiver.await?
     }
 
     pub async fn import_items(&self, paths: Vec<PathBuf>) -> JobHandle {
@@ -228,9 +214,7 @@ impl App {
                 cancel,
             )
             .await;
-        receiver
-            .await
-            .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?
+        receiver.await?
     }
 
     #[allow(clippy::async_yields_async)]
@@ -250,8 +234,6 @@ impl App {
                 cancel,
             )
             .await;
-        receiver
-            .await
-            .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?
+        receiver.await?
     }
 }

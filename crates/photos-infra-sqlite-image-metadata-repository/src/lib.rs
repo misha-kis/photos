@@ -22,7 +22,9 @@ where
     fn internal(self) -> Result<T, ImageMetadataRepositoryError> {
         self.map_err(|e| {
             tracing::error!("{}", e.to_string());
-            ImageMetadataRepositoryError::Internal(Box::new(e))
+            ImageMetadataRepositoryError::Internal {
+                source: Box::new(e),
+            }
         })
     }
 }

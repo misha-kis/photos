@@ -8,6 +8,19 @@ use tokio::{runtime::Handle, sync::Semaphore};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
+#[derive(Debug)]
+pub struct TaskQueueError {
+    pub message: String,
+}
+
+impl std::fmt::Display for TaskQueueError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for TaskQueueError {}
+
 pub struct TaskQueue {
     task_sender: mpsc::UnboundedSender<QueuedTask>,
     _semaphore: Arc<Semaphore>,
@@ -128,11 +141,13 @@ impl TaskQueue {
         task: TaskFn,
         priority: TaskPriority,
         cancel: CancellationToken,
-    ) -> Result<(), String> {
+    ) -> Result<(), TaskQueueError> {
         let queued_task = QueuedTask::new(task, priority, cancel);
         self.task_sender
             .send(queued_task)
-            .map_err(|e| format!("Failed to submit task: {}", e))
+            .map_err(|e| TaskQueueError {
+                message: format!("failed to submit task: {e}"),
+            })
     }
 }
 

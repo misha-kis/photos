@@ -9,6 +9,8 @@ where
     E: std::error::Error + Send + Sync + 'static,
 {
     fn internal(self) -> Result<T, ImageAnalysisServiceError> {
-        self.map_err(|e| ImageAnalysisServiceError::Internal(Box::new(e)))
+        self.map_err(|e| ImageAnalysisServiceError::Internal {
+            source: Box::new(e),
+        })
     }
 }

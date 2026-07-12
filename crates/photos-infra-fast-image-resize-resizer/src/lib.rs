@@ -14,7 +14,9 @@ where
     E: std::error::Error + Send + Sync + 'static,
 {
     fn internal(self) -> Result<T, ResizeServiceError> {
-        self.map_err(|e| ResizeServiceError::Internal(Box::new(e)))
+        self.map_err(|e| ResizeServiceError::Internal {
+            source: Box::new(e),
+        })
     }
 }
 

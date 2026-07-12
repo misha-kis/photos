@@ -32,11 +32,11 @@ pub(crate) trait Expand<I: Send + Sync, O: Send + Sync>: Send + Sync {
 pub enum JobEvent {
     Progress(usize, usize),
     Done,
-    NextJob(Box<JobHandle>),
+    NextJob(Box<mpsc::Receiver<JobEvent>>),
 }
 
 pub struct JobHandle {
-    pub res_rx: oneshot::Receiver<()>,
+    pub res_rx: oneshot::Receiver<Result<(), AppError>>,
     pub evt_rx: mpsc::Receiver<JobEvent>,
 }
 
@@ -79,18 +79,26 @@ where
         cancel: CancellationToken,
     ) -> oneshot::Receiver<Result<O, AppError>> {
         let (tx, rx) = oneshot::channel();
+        let tx = Arc::new(Mutex::new(Some(tx)));
         let map = self.clone();
+        let tx_for_task = tx.clone();
         let task: TaskFn = Box::new(move || {
             Box::pin(async move {
                 let output = map.map(input).await;
-                let _ = tx.send(output);
+                if let Some(tx) = tx_for_task.lock().await.take() {
+                    let _ = tx.send(output);
+                }
             })
         });
-        ctx.task_queue
+        if let Err(err) = ctx
+            .task_queue
             .lock()
             .await
             .submit(task, task_priority, cancel)
-            .expect("couldn't dispatch");
+            && let Some(tx) = tx.lock().await.take()
+        {
+            let _ = tx.send(Err(err.into()));
+        }
         rx
     }
 }
@@ -111,67 +119,129 @@ impl<
         let cancel_clone = cancel.clone();
 
         let (res_tx, res_rx) = oneshot::channel();
+        let res_tx = Arc::new(Mutex::new(Some(res_tx)));
         let (evt_tx, evt_rx) = mpsc::channel(16);
+
+        let res_tx_outer = res_tx.clone();
+        let evt_tx_outer = evt_tx.clone();
         let total = Arc::new(AtomicUsize::default());
         let completed = Arc::new(AtomicUsize::default());
 
+        let res_tx_for_task = res_tx.clone();
+        let evt_tx_for_task = evt_tx.clone();
         let task: TaskFn = Box::new(move || {
             Box::pin(async move {
-                let vec_m1 = expand.expand(input).await.unwrap();
+                let vec_m1 = match expand.expand(input).await {
+                    Ok(value) => value,
+                    Err(err) => {
+                        tracing::error!("expand failed: {err}");
+                        if let Some(res_tx) = res_tx_for_task.lock().await.take() {
+                            let _ = res_tx.send(Err(err));
+                        }
+                        let _ = evt_tx_for_task.send(JobEvent::Done).await;
+                        return;
+                    }
+                };
                 total.store(vec_m1.len(), Ordering::Relaxed);
                 let mut rxs = Vec::new();
                 for m1 in vec_m1 {
                     let (map_tx, map_rx) = oneshot::channel();
+                    let map_tx = Arc::new(Mutex::new(Some(map_tx)));
                     let map = map.clone();
                     let completed = completed.clone();
                     let total = total.clone();
                     let evt_tx = evt_tx.clone();
+                    let map_tx_for_task = map_tx.clone();
                     let map_task: TaskFn = Box::new(move || {
                         Box::pin(async move {
-                            let m2 = map.map(m1).await.unwrap();
-                            let _ = map_tx.send(m2);
-                            completed.fetch_add(1, Ordering::Relaxed);
-                            let _ = evt_tx
-                                .send(JobEvent::Progress(
-                                    completed.load(Ordering::Relaxed),
-                                    total.load(Ordering::Relaxed),
-                                ))
-                                .await;
+                            let result = map.map(m1).await;
+                            if result.is_ok() {
+                                completed.fetch_add(1, Ordering::Relaxed);
+                                let _ = evt_tx
+                                    .send(JobEvent::Progress(
+                                        completed.load(Ordering::Relaxed),
+                                        total.load(Ordering::Relaxed),
+                                    ))
+                                    .await;
+                            }
+                            if let Some(map_tx) = map_tx_for_task.lock().await.take() {
+                                let _ = map_tx.send(result);
+                            }
                         })
                     });
-                    let _ = queue.lock().await.submit(
-                        map_task,
-                        TaskPriority::Low,
-                        cancel_clone.clone(),
-                    );
+                    if let Err(err) =
+                        queue
+                            .lock()
+                            .await
+                            .submit(map_task, TaskPriority::Low, cancel_clone.clone())
+                        && let Some(map_tx) = map_tx.lock().await.take()
+                    {
+                        let _ = map_tx.send(Err(err.into()));
+                    }
+
                     rxs.push(map_rx);
                 }
 
+                let res_tx_for_reduce = res_tx.clone();
+                let evt_tx_for_reduce = evt_tx.clone();
                 let reduce_task: TaskFn = Box::new(move || {
                     Box::pin(async move {
-                        let vec_m2: Vec<M2> = join_all(rxs)
-                            .await
-                            .into_iter()
-                            .filter_map(|r| r.ok())
-                            .collect();
-                        let o = reduce.reduce(vec_m2).await.unwrap();
-                        let _ = res_tx.send(o);
-                        let _ = evt_tx.send(JobEvent::Done).await;
+                        let mut vec_m2: Vec<M2> = Vec::new();
+                        for res in join_all(rxs).await {
+                            match res {
+                                Ok(Ok(value)) => vec_m2.push(value),
+                                Ok(Err(err)) => {
+                                    tracing::error!("map failed: {err}");
+                                    if let Some(res_tx) = res_tx_for_reduce.lock().await.take() {
+                                        let _ = res_tx.send(Err(err));
+                                    }
+                                    let _ = evt_tx_for_reduce.send(JobEvent::Done).await;
+                                    return;
+                                }
+                                Err(err) => {
+                                    if let Some(res_tx) = res_tx_for_reduce.lock().await.take() {
+                                        let _ = res_tx.send(Err(err.into()));
+                                    }
+                                    let _ = evt_tx_for_reduce.send(JobEvent::Done).await;
+                                    return;
+                                }
+                            }
+                        }
+
+                        let result = reduce.reduce(vec_m2).await;
+                        if let Err(err) = &result {
+                            tracing::error!("reduce failed: {err}");
+                        }
+                        if let Some(res_tx) = res_tx_for_reduce.lock().await.take() {
+                            let _ = res_tx.send(result);
+                        }
+                        let _ = evt_tx_for_reduce.send(JobEvent::Done).await;
                     })
                 });
-                let _ = queue.lock().await.submit(
+                if let Err(err) = queue.lock().await.submit(
                     reduce_task,
                     TaskPriority::Lowest,
                     cancel_clone.clone(),
-                );
+                ) {
+                    if let Some(res_tx) = res_tx.lock().await.take() {
+                        let _ = res_tx.send(Err(err.into()));
+                    }
+                    let _ = evt_tx.send(JobEvent::Done).await;
+                }
             })
         });
 
-        let _ = ctx
+        if let Err(err) = ctx
             .task_queue
             .lock()
             .await
-            .submit(task, TaskPriority::Low, cancel);
+            .submit(task, TaskPriority::Low, cancel)
+        {
+            if let Some(res_tx) = res_tx_outer.lock().await.take() {
+                let _ = res_tx.send(Err(err.into()));
+            }
+            let _ = evt_tx_outer.send(JobEvent::Done).await;
+        }
 
         JobHandle { res_rx, evt_rx }
     }
@@ -192,8 +262,12 @@ where
     J2: Dispatchable<(), ()> + ?Sized + 'static,
 {
     async fn dispatch(&self, ctx: TaskContext, input: I, cancel: CancellationToken) -> JobHandle {
-        let (_res_tx, res_rx) = oneshot::channel(); // TODO: fix res_rx usage
+        let (res_tx, res_rx) = oneshot::channel();
+        let res_tx = Arc::new(Mutex::new(Some(res_tx)));
         let (evt_tx, evt_rx) = mpsc::channel(32);
+
+        let res_tx_outer = res_tx.clone();
+        let evt_tx_outer = evt_tx.clone();
 
         let (job1, job2) = self.clone();
 
@@ -219,35 +293,58 @@ where
                 });
 
                 // ---- Task 2: triggered when job1 finishes
+                let res_tx_for_job2 = res_tx.clone();
+                let evt_tx_for_job2 = evt_tx.clone();
                 let trigger_job2: TaskFn = Box::new(move || {
                     Box::pin(async move {
-                        let _ = res_rx_1.await;
+                        let job1_result = res_rx_1.await.unwrap_or_else(|err| Err(err.into()));
+
+                        if let Err(err) = job1_result {
+                            if let Some(res_tx) = res_tx_for_job2.lock().await.take() {
+                                let _ = res_tx.send(Err(err));
+                            }
+                            let _ = evt_tx_for_job2.send(JobEvent::Done).await;
+                            return;
+                        }
 
                         let jh_2 = job2.dispatch(ctx2.clone(), (), cancel2.clone()).await;
+                        let JobHandle { res_rx, evt_rx } = jh_2;
+                        let _ = evt_tx_for_job2
+                            .send(JobEvent::NextJob(Box::new(evt_rx)))
+                            .await;
 
-                        let _ = evt_tx.send(JobEvent::NextJob(Box::new(jh_2))).await;
-
-                        // Final completion is driven by job2
-                        // tokio::spawn(async move {
-                        //     let _ = jh_2.res_rx.await;
-                        //     let _ = res_tx.send(());
-                        // });
+                        let job2_result = res_rx.await.unwrap_or_else(|err| Err(err.into()));
+                        if let Some(res_tx) = res_tx_for_job2.lock().await.take() {
+                            let _ = res_tx.send(job2_result);
+                        }
                     })
                 });
 
-                let _ = ctx1.task_queue.lock().await.submit(
-                    trigger_job2,
-                    TaskPriority::Lowest,
-                    cancel1,
-                );
+                if let Err(err) =
+                    ctx1.task_queue
+                        .lock()
+                        .await
+                        .submit(trigger_job2, TaskPriority::Lowest, cancel1)
+                {
+                    if let Some(res_tx) = res_tx.lock().await.take() {
+                        let _ = res_tx.send(Err(err.into()));
+                    }
+                    let _ = evt_tx.send(JobEvent::Done).await;
+                }
             })
         });
 
-        let _ = ctx
-            .task_queue
-            .lock()
-            .await
-            .submit(start_job1, TaskPriority::Lowest, cancel);
+        if let Err(err) =
+            ctx.task_queue
+                .lock()
+                .await
+                .submit(start_job1, TaskPriority::Lowest, cancel)
+        {
+            if let Some(res_tx) = res_tx_outer.lock().await.take() {
+                let _ = res_tx.send(Err(err.into()));
+            }
+            let _ = evt_tx_outer.send(JobEvent::Done).await;
+        }
 
         JobHandle { res_rx, evt_rx }
     }

@@ -10,8 +10,11 @@ pub enum ResizeServiceError {
     ResizeServiceError,
     #[error("failed to build image with format {format}")]
     ImageFromRaw { format: &'static str },
-    #[error("internal error")]
-    Internal(#[source] Box<dyn std::error::Error + Send + Sync>),
+    #[error("resize service internal error: {source}")]
+    Internal {
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
 }
 
 pub trait ResizeService {
@@ -29,8 +32,11 @@ pub enum ImageMetadataRepositoryError {
     QueryFailed { err: String },
     #[error("invalid image format")]
     InvalidImageFormat,
-    #[error("ImageMetadataRepositoryError {0}")]
-    Internal(#[source] Box<dyn std::error::Error + Send + Sync>),
+    #[error("image metadata repository internal error: {source}")]
+    Internal {
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
 }
 
 #[async_trait::async_trait]
@@ -96,8 +102,11 @@ pub enum ImageRepositoryError {
     FailedToReadTimestamps,
     #[error("image error: {err}")]
     ImageError { err: String },
-    #[error("ImageRepositoryError {0}")]
-    Internal(#[source] Box<dyn std::error::Error + Send + Sync>),
+    #[error("image repository internal error: {source}")]
+    Internal {
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
 }
 
 pub trait ImageRepository {
@@ -130,8 +139,11 @@ pub trait ImageRepository {
 pub enum ImageAnalysisServiceError {
     #[error("could not infer")]
     CouldNotInfer,
-    #[error("ImageAnalysisServiceError {0}")]
-    Internal(#[source] Box<dyn std::error::Error + Send + Sync>),
+    #[error("image analysis service internal error: {source}")]
+    Internal {
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
 }
 
 pub trait ImageAnalysisService {

@@ -1,4 +1,4 @@
-use crate::errors::AppError;
+use crate::AppError;
 use crate::jobs::TaskContext;
 use crate::jobs::common::Map;
 use async_trait::async_trait;
@@ -17,16 +17,12 @@ impl Map<(ImageId, u32), RgbaImage> for GetFaceDetectionThumbnailTask {
             .service_registry
             .image_metadata_repository
             .get_bbox_and_image_for_detection_id(id)
-            .await
-            .map_err(|e| AppError::InvalidDatabaseState { err: e.to_string() })?;
+            .await?;
         let img = self
             .ctx
             .service_registry
             .image_repository
-            .get_face_thumbnail(&image_record, bounding_box, size)
-            .map_err(|e| AppError::ImageRepositoryError { err: e.to_string() })?;
-        Ok(tokio::task::spawn_blocking(move || img.to_rgba8())
-            .await
-            .expect("blocking panicked"))
+            .get_face_thumbnail(&image_record, bounding_box, size)?;
+        Ok(tokio::task::spawn_blocking(move || img.to_rgba8()).await?)
     }
 }

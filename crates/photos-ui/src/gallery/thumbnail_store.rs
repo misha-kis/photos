@@ -269,12 +269,9 @@ impl ThumbnailStore {
             actions.evicted.push(id);
         }
 
-        loaded = loaded
-            .into_iter()
-            .filter(|(id, _, _)| {
-                matches!(self.states.get(id), Some(ThumbnailStatus::Loaded { .. }))
-            })
-            .collect();
+        loaded.retain(|(id, _, _)| {
+            matches!(self.states.get(id), Some(ThumbnailStatus::Loaded { .. }))
+        });
 
         if loaded.len() > config.max_loaded_thumbnails {
             loaded.sort_by_key(|(_, _, tick)| *tick);

@@ -1,4 +1,4 @@
-use crate::errors::AppError;
+use crate::AppError;
 use crate::jobs::TaskContext;
 use crate::jobs::common::Map;
 use async_trait::async_trait;
@@ -16,8 +16,7 @@ impl Map<(ImageRecord, FaceDetection), ()> for GenerateEmbeddings {
             .ctx
             .service_registry
             .image_repository
-            .get_image(&image, None)
-            .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?;
+            .get_image(&image, None)?;
         let detection_with_embedding = self
             .ctx
             .service_registry
@@ -26,14 +25,12 @@ impl Map<(ImageRecord, FaceDetection), ()> for GenerateEmbeddings {
                 &image,
                 detection,
                 self.ctx.service_registry.resize_service.as_ref(),
-            )
-            .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?;
+            )?;
         self.ctx
             .service_registry
             .image_metadata_repository
             .update_face_detection_with_embedding(detection_with_embedding)
-            .await
-            .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?;
+            .await?;
         Ok(())
     }
 }
