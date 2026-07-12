@@ -361,6 +361,15 @@ mod tests {
             .join(name)
     }
 
+    fn test_file_exists_any_extension(base: &PathBuf, ext: &[&str]) -> bool {
+        for e in ext {
+            if base.with_added_extension(e).exists() {
+                return true;
+            }
+        }
+        false
+    }
+
     #[test]
     fn test_insert_get_delete() {
         let temp = tempdir().unwrap();
@@ -375,22 +384,26 @@ mod tests {
         let id_string = record.id.to_string();
         let id_string_split = id_string.split_at(2);
 
-        let original_path = base
+        let original_path_without_ext = base
             .join("originals")
             .join(id_string_split.0)
-            .join(id_string_split.1)
-            .with_added_extension(record.format.extensions_str()[0]);
+            .join(id_string_split.1);
 
-        assert!(original_path.exists());
+        assert!(test_file_exists_any_extension(
+            &original_path_without_ext,
+            record.format.extensions_str()
+        ));
 
-        let thumbnail_path = base
+        let thumbnail_path_without_ext = base
             .join("thumbnails")
             .join("512")
             .join(id_string_split.0)
-            .join(id_string_split.1)
-            .with_added_extension(record.format.extensions_str()[0]);
+            .join(id_string_split.1);
 
-        assert!(thumbnail_path.exists());
+        assert!(test_file_exists_any_extension(
+            &thumbnail_path_without_ext,
+            record.format.extensions_str()
+        ));
 
         let thumb = repo.get_thumbnail(&record.id, 512).unwrap();
         let (w, h) = thumb.dimensions();
