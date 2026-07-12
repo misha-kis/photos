@@ -108,7 +108,7 @@ impl FaceDetector {
                 .map(|(index, value)| (index, *value))
                 .reduce(|accum, row| if row.1 > accum.1 { row } else { accum })
                 .unwrap();
-            if prob < 0.5 || prob > 1. {
+            if !(0.5..=1.).contains(&prob) {
                 continue;
             }
             let xc = row[0];
