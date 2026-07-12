@@ -192,7 +192,7 @@ where
     J2: Dispatchable<(), ()> + ?Sized + 'static,
 {
     async fn dispatch(&self, ctx: TaskContext, input: I, cancel: CancellationToken) -> JobHandle {
-        let (res_tx, res_rx) = oneshot::channel();
+        let (_res_tx, res_rx) = oneshot::channel(); // TODO: fix res_rx usage
         let (evt_tx, evt_rx) = mpsc::channel(32);
 
         let (job1, job2) = self.clone();
