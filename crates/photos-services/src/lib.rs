@@ -29,7 +29,7 @@ pub enum ImageMetadataRepositoryError {
     QueryFailed { err: String },
     #[error("invalid image format")]
     InvalidImageFormat,
-    #[error("internal error")]
+    #[error("ImageMetadataRepositoryError {0}")]
     Internal(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
@@ -96,7 +96,7 @@ pub enum ImageRepositoryError {
     FailedToReadTimestamps,
     #[error("image error: {err}")]
     ImageError { err: String },
-    #[error("internal error")]
+    #[error("ImageRepositoryError {0}")]
     Internal(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
@@ -130,7 +130,7 @@ pub trait ImageRepository {
 pub enum ImageAnalysisServiceError {
     #[error("could not infer")]
     CouldNotInfer,
-    #[error("internal error")]
+    #[error("ImageAnalysisServiceError {0}")]
     Internal(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
