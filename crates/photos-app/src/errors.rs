@@ -1,4 +1,4 @@
-#[derive(thiserror::Error, Debug, Clone)]
+#[derive(thiserror::Error, Debug)]
 pub enum AppError {
     #[error("bad directory: {err}")]
     BadDirectory { err: String },
@@ -8,4 +8,6 @@ pub enum AppError {
     TaskSpawnFailed { err: String },
     #[error("image repository error: {err}")]
     ImageRepositoryError { err: String },
+    #[error("AppError {0}")]
+    Internal(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
