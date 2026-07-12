@@ -3,26 +3,19 @@ name = "photos-ui"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "photos-ui"
+path = "src/main.rs"
+
 [dependencies]
-eframe = { version = "0.33.0", features = ["persistence"] }
-image = { workspace = true }
 photos-app = { path = "../photos-app" }
 photos-domain = { path = "../photos-domain" }
+anyhow = { workspace = true }
+image = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
-anyhow = { workspace = true }
-tracing-subscriber = { workspace = true }
-rfd = "0.17.2"
-lru = "0.16.3"
 tracing = { workspace = true }
-
-[package.metadata.bundle]
-name = "Photos"
-identifier = "com.mishakis.photos"
-icon = ["assets/icons/icon.icns"]
-version = "0.0.0"
-category = "public.app-category.photography"
-resources = [
-  "assets/models/yolov12n-face.onnx",
-  "assets/models/facenet.onnx",
-]
+tracing-subscriber = { workspace = true }
+iced = { version = "0.14.0", features = ["tokio", "image"] }
+rfd = "0.15.4"
