@@ -58,6 +58,25 @@ impl GalleryState {
         }
     }
 
+    /// Seed initial cancellation tokens for the first visible batch and spawn
+    /// thumbnail fetch tasks. Returns the batch of tasks to run.
+    pub fn spawn_initial_tasks(
+        &mut self,
+        cache: &crate::cache::ImageCache,
+        backend: &std::sync::Arc<photos_app::App>,
+    ) -> iced::Task<crate::message::InitializedAppMessage> {
+        // Set tokens for the initial visible batch (approx 4 columns × 10 rows)
+        let initial_batch = 40.min(self.image_ids.len());
+        let size = self.config.thumbnail_size;
+        for idx in 0..initial_batch {
+            if !cache.contains_thumbnail(self.image_ids[idx], size) {
+                self.tokens[idx] = Some(CancellationToken::new());
+            }
+        }
+
+        spawn_thumbnail_tasks(self, cache, backend)
+    }
+
     pub fn is_empty(&self) -> bool {
         self.image_ids.is_empty()
     }
@@ -232,6 +251,173 @@ pub fn update_gallery(
         }
         _ => iced::Task::none(),
     }
+}
+
+// ── Methods moved from app.rs ────────────────────────────────
+
+impl GalleryState {
+    /// Cancel all in-flight thumbnail tasks.
+    pub fn cancel_all_tasks(&mut self) {
+        for token in self.tokens.iter_mut().flatten() {
+            token.cancel();
+        }
+    }
+
+    /// Handle a message that may need access to the cache and backend.
+    pub fn update(
+        &mut self,
+        message: crate::message::InitializedAppMessage,
+        cache: &mut crate::cache::ImageCache,
+        backend: &std::sync::Arc<photos_app::App>,
+    ) -> iced::Task<crate::message::InitializedAppMessage> {
+        match message {
+            crate::message::InitializedAppMessage::Scrolled(viewport) => {
+                if self.image_ids.is_empty() {
+                    return iced::Task::none();
+                }
+                let _ = crate::gallery::update_gallery(
+                    self,
+                    cache,
+                    &crate::message::InitializedAppMessage::Scrolled(viewport),
+                );
+                spawn_thumbnail_tasks(self, cache, backend)
+            }
+            crate::message::InitializedAppMessage::ThumbnailLoaded(id, rgba) => {
+                crate::gallery::update_gallery(
+                    self,
+                    cache,
+                    &crate::message::InitializedAppMessage::ThumbnailLoaded(id, rgba),
+                )
+            }
+            crate::message::InitializedAppMessage::OpenImage(id) => {
+                self.open_fullscreen(id);
+                load_full_image(id, cache, backend)
+            }
+            crate::message::InitializedAppMessage::CloseImage => {
+                self.close_fullscreen();
+                iced::Task::none()
+            }
+            crate::message::InitializedAppMessage::NextImage => {
+                if let Some(next_id) = self.next_fullscreen_image() {
+                    load_full_image(next_id, cache, backend)
+                } else {
+                    iced::Task::none()
+                }
+            }
+            crate::message::InitializedAppMessage::PreviousImage => {
+                if let Some(prev_id) = self.previous_fullscreen_image() {
+                    load_full_image(prev_id, cache, backend)
+                } else {
+                    iced::Task::none()
+                }
+            }
+            crate::message::InitializedAppMessage::FullImageLoaded(id, rgba) => {
+                if self.fullscreen_current_id() == Some(id) {
+                    let handle = iced::widget::image::Handle::from_rgba(
+                        rgba.width(),
+                        rgba.height(),
+                        rgba.clone().into_raw(),
+                    );
+                    self.set_full_image_handle(id, handle.clone());
+                    cache.insert_full(id, handle);
+                }
+                iced::Task::none()
+            }
+            crate::message::InitializedAppMessage::CloseLibrary => unreachable!(),
+        }
+    }
+
+    /// Render the gallery view.
+    pub fn view(
+        &self,
+        cache: &crate::cache::ImageCache,
+    ) -> iced::Element<'_, crate::message::InitializedAppMessage> {
+        use iced::Length;
+        use iced::widget::{column, stack};
+
+        let content = column![
+            crate::gallery::gallery_top_bar("Photos"),
+            crate::gallery::gallery_view(self, cache),
+        ]
+        .spacing(4)
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+        if let Some(overlay) = crate::fullscreen::fullscreen_view(&self.fullscreen) {
+            stack![content, overlay].into()
+        } else {
+            content.into()
+        }
+    }
+}
+
+// ── Helpers ──────────────────────────────────────────────────
+
+fn spawn_thumbnail_tasks(
+    state: &mut GalleryState,
+    cache: &ImageCache,
+    backend: &std::sync::Arc<photos_app::App>,
+) -> iced::Task<crate::message::InitializedAppMessage> {
+    use crate::message::InitializedAppMessage;
+    let backend = backend.clone();
+    let mut tasks: Vec<iced::Task<InitializedAppMessage>> = Vec::new();
+    let size = state.config.thumbnail_size;
+
+    for idx in 0..state.image_ids.len() {
+        let image_id = state.image_ids[idx];
+
+        if cache.contains_thumbnail(image_id, size) {
+            state.tokens[idx] = None;
+            continue;
+        }
+
+        if let Some(token) = state.tokens[idx].as_ref() {
+            if token.is_cancelled() {
+                state.tokens[idx] = None;
+                continue;
+            }
+
+            let token = token.child_token();
+            let backend = backend.clone();
+            let task = iced::Task::perform(
+                async move {
+                    let result = backend.get_thumbnail_async(image_id, size, token).await;
+                    result.map(|rgba| (image_id, rgba))
+                },
+                |result| match result {
+                    Ok((id, rgba)) => InitializedAppMessage::ThumbnailLoaded(id, rgba),
+                    Err(_) => InitializedAppMessage::CloseImage,
+                },
+            );
+            tasks.push(task);
+        }
+    }
+
+    if tasks.is_empty() {
+        iced::Task::none()
+    } else {
+        iced::Task::batch(tasks)
+    }
+}
+
+fn load_full_image(
+    id: photos_domain::ImageId,
+    _cache: &mut crate::cache::ImageCache,
+    backend: &std::sync::Arc<photos_app::App>,
+) -> iced::Task<crate::message::InitializedAppMessage> {
+    use crate::message::InitializedAppMessage;
+    let backend = backend.clone();
+    let cancel = tokio_util::sync::CancellationToken::new();
+    iced::Task::perform(
+        async move {
+            let result = backend.get_image_async(id, None, cancel).await;
+            result.map(|rgba| (id, rgba))
+        },
+        |result| match result {
+            Ok((id, rgba)) => InitializedAppMessage::FullImageLoaded(id, rgba),
+            Err(_) => InitializedAppMessage::CloseImage,
+        },
+    )
 }
 
 /// Called when the user scrolls. Cancels out-of-range requests and
