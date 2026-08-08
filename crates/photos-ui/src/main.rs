@@ -12,8 +12,6 @@ fn main() -> iced::Result {
         )
         .init();
 
-    // tracing::info!("Starting Photos UI");
-
     iced::application(app::App::new, app::App::update, app::App::view)
         .subscription(app::App::subscription)
         .title(app::App::title)

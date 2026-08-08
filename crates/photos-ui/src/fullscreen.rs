@@ -2,7 +2,7 @@ use iced::widget::{image, mouse_area, opaque};
 use iced::{Element, Length};
 use photos_domain::ImageId;
 
-use crate::message::Message;
+use crate::message::InitializedAppMessage as Message;
 
 /// State for the fullscreen image viewer overlay.
 pub struct FullscreenState {

@@ -5,13 +5,10 @@ use photos_app::App as PhotosApp;
 use photos_domain::{ImageId, RgbaImage};
 use std::path::PathBuf;
 
-pub enum Message {
-    /// User wants to open the library selection dialog
-    SelectLibrary,
-    /// Result from the library folder picker dialog
-    LibrarySelected(Option<PathBuf>),
-    /// Backend is ready with image IDs
-    LibraryReady(Arc<PhotosApp>, Vec<ImageId>),
+// ── Initialized App (gallery/library) messages ──────────────
+
+#[derive(Debug, Clone)]
+pub enum InitializedAppMessage {
     /// Close the current library and return to welcome screen
     CloseLibrary,
     /// Gallery scroll position changed
@@ -30,38 +27,53 @@ pub enum Message {
     FullImageLoaded(ImageId, RgbaImage),
 }
 
-impl std::fmt::Debug for Message {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::SelectLibrary => write!(f, "SelectLibrary"),
-            Self::LibrarySelected(path) => f.debug_tuple("LibrarySelected").field(path).finish(),
-            Self::LibraryReady(_, ids) => f.debug_tuple("LibraryReady").field(&ids.len()).finish(),
-            Self::CloseLibrary => write!(f, "CloseLibrary"),
-            Self::Scrolled(vp) => f.debug_tuple("Scrolled").field(vp).finish(),
-            Self::ThumbnailLoaded(id, _) => f.debug_tuple("ThumbnailLoaded").field(id).finish(),
-            Self::OpenImage(id) => f.debug_tuple("OpenImage").field(id).finish(),
-            Self::CloseImage => write!(f, "CloseImage"),
-            Self::NextImage => write!(f, "NextImage"),
-            Self::PreviousImage => write!(f, "PreviousImage"),
-            Self::FullImageLoaded(id, _) => f.debug_tuple("FullImageLoaded").field(id).finish(),
-        }
-    }
+// ── App (welcome) messages ──────────────────────────────────
+
+pub enum AppMessage {
+    /// User wants to open the library selection dialog
+    SelectLibrary,
+    /// Result from the library folder picker dialog
+    LibrarySelected(Option<PathBuf>),
+    /// Backend is ready with image IDs — transition to gallery
+    LibraryReady(Arc<PhotosApp>, Vec<ImageId>),
+    /// Delegate to the initialized app
+    InitializedAppMessage(InitializedAppMessage),
 }
 
-impl Clone for Message {
+impl Clone for AppMessage {
     fn clone(&self) -> Self {
         match self {
             Self::SelectLibrary => Self::SelectLibrary,
             Self::LibrarySelected(path) => Self::LibrarySelected(path.clone()),
             Self::LibraryReady(app, ids) => Self::LibraryReady(app.clone(), ids.clone()),
-            Self::CloseLibrary => Self::CloseLibrary,
-            Self::Scrolled(viewport) => Self::Scrolled(*viewport),
-            Self::ThumbnailLoaded(id, rgba) => Self::ThumbnailLoaded(*id, rgba.clone()),
-            Self::OpenImage(id) => Self::OpenImage(*id),
-            Self::CloseImage => Self::CloseImage,
-            Self::NextImage => Self::NextImage,
-            Self::PreviousImage => Self::PreviousImage,
-            Self::FullImageLoaded(id, rgba) => Self::FullImageLoaded(*id, rgba.clone()),
+            Self::InitializedAppMessage(msg) => Self::InitializedAppMessage(msg.clone()),
         }
     }
+}
+
+impl std::fmt::Debug for AppMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SelectLibrary => write!(f, "AppMessage::SelectLibrary"),
+            Self::LibrarySelected(p) => f
+                .debug_tuple("AppMessage::LibrarySelected")
+                .field(p)
+                .finish(),
+            Self::LibraryReady(_, ids) => f
+                .debug_tuple("AppMessage::LibraryReady")
+                .field(&ids.len())
+                .finish(),
+            Self::InitializedAppMessage(msg) => f
+                .debug_tuple("AppMessage::InitializedAppMessage")
+                .field(msg)
+                .finish(),
+        }
+    }
+}
+
+// ── Top-level message ──────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    AppMessage(AppMessage),
 }

@@ -4,7 +4,7 @@ use photos_domain::ImageId;
 use tokio_util::sync::CancellationToken;
 
 use crate::cache::ImageCache;
-use crate::message::Message;
+use crate::message::InitializedAppMessage as Message;
 
 /// Configuration for the gallery view.
 #[derive(Debug, Clone)]
