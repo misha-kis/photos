@@ -117,10 +117,8 @@ pub struct InitializedApp {
     app_backend: std::sync::Arc<photos_app::App>,
     /// Image caches.
     cache: crate::cache::ImageCache,
-    /// Gallery state (image IDs, handles, cancellation tokens).
+    /// Gallery state (image IDs, handles, cancellation tokens, fullscreen).
     gallery: crate::gallery::GalleryState,
-    /// Fullscreen overlay state.
-    fullscreen: crate::fullscreen::FullscreenState,
 }
 
 impl InitializedApp {
@@ -147,40 +145,13 @@ impl InitializedApp {
                 app_backend: backend,
                 cache,
                 gallery,
-                fullscreen: crate::fullscreen::FullscreenState::new(),
             },
             task,
         )
     }
 
     pub fn subscription(&self) -> iced::Subscription<Message> {
-        if self.fullscreen.is_open {
-            iced::keyboard::listen().map(|event| match event {
-                iced::keyboard::Event::KeyPressed {
-                    key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
-                    ..
-                } => Message::AppMessage(AppMessage::InitializedAppMessage(
-                    InitializedAppMessage::CloseImage,
-                )),
-                iced::keyboard::Event::KeyPressed {
-                    key: iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowLeft),
-                    ..
-                } => Message::AppMessage(AppMessage::InitializedAppMessage(
-                    InitializedAppMessage::PreviousImage,
-                )),
-                iced::keyboard::Event::KeyPressed {
-                    key: iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowRight),
-                    ..
-                } => Message::AppMessage(AppMessage::InitializedAppMessage(
-                    InitializedAppMessage::NextImage,
-                )),
-                _ => Message::AppMessage(AppMessage::InitializedAppMessage(
-                    InitializedAppMessage::CloseImage,
-                )),
-            })
-        } else {
-            iced::Subscription::none()
-        }
+        self.gallery.subscription()
     }
 
     pub fn update(&mut self, message: InitializedAppMessage) -> Task<InitializedAppMessage> {
@@ -209,55 +180,35 @@ impl InitializedApp {
                 &message::InitializedAppMessage::ThumbnailLoaded(id, rgba),
             ),
             InitializedAppMessage::OpenImage(id) => {
-                self.fullscreen.open(id);
+                self.gallery.open_fullscreen(id);
                 load_full_image(id, &mut self.cache, &self.app_backend)
             }
             InitializedAppMessage::CloseImage => {
-                self.fullscreen.close();
+                self.gallery.close_fullscreen();
                 Task::none()
             }
             InitializedAppMessage::NextImage => {
-                if let Some(current_id) = self.fullscreen.current_id {
-                    if let Some(idx) = self
-                        .gallery
-                        .image_ids
-                        .iter()
-                        .position(|id| *id == current_id)
-                    {
-                        if idx + 1 < self.gallery.image_ids.len() {
-                            let next_id = self.gallery.image_ids[idx + 1];
-                            self.fullscreen.open(next_id);
-                            return load_full_image(next_id, &mut self.cache, &self.app_backend);
-                        }
-                    }
+                if let Some(next_id) = self.gallery.next_fullscreen_image() {
+                    load_full_image(next_id, &mut self.cache, &self.app_backend)
+                } else {
+                    Task::none()
                 }
-                Task::none()
             }
             InitializedAppMessage::PreviousImage => {
-                if let Some(current_id) = self.fullscreen.current_id {
-                    if let Some(idx) = self
-                        .gallery
-                        .image_ids
-                        .iter()
-                        .position(|id| *id == current_id)
-                    {
-                        if idx > 0 {
-                            let prev_id = self.gallery.image_ids[idx - 1];
-                            self.fullscreen.open(prev_id);
-                            return load_full_image(prev_id, &mut self.cache, &self.app_backend);
-                        }
-                    }
+                if let Some(prev_id) = self.gallery.previous_fullscreen_image() {
+                    load_full_image(prev_id, &mut self.cache, &self.app_backend)
+                } else {
+                    Task::none()
                 }
-                Task::none()
             }
             InitializedAppMessage::FullImageLoaded(id, rgba) => {
-                if self.fullscreen.current_id == Some(id) {
+                if self.gallery.fullscreen_current_id() == Some(id) {
                     let handle = iced::widget::image::Handle::from_rgba(
                         rgba.width(),
                         rgba.height(),
                         rgba.clone().into_raw(),
                     );
-                    self.fullscreen.handle = Some(handle.clone());
+                    self.gallery.set_full_image_handle(id, handle.clone());
                     self.cache.insert_full(id, handle);
                 }
                 Task::none()
@@ -277,7 +228,7 @@ impl InitializedApp {
         .width(Length::Fill)
         .height(Length::Fill);
 
-        if let Some(overlay) = crate::fullscreen::fullscreen_view(&self.fullscreen) {
+        if let Some(overlay) = crate::fullscreen::fullscreen_view(&self.gallery.fullscreen) {
             stack![content, overlay].into()
         } else {
             content.into()

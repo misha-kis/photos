@@ -4,6 +4,7 @@ use photos_domain::ImageId;
 use tokio_util::sync::CancellationToken;
 
 use crate::cache::ImageCache;
+use crate::fullscreen::FullscreenState;
 use crate::message::InitializedAppMessage as Message;
 
 /// Configuration for the gallery view.
@@ -40,6 +41,8 @@ pub struct GalleryState {
     pub last_viewport: Option<scrollable::Viewport>,
     /// Gallery configuration.
     pub config: GalleryConfig,
+    /// Fullscreen overlay state.
+    pub fullscreen: FullscreenState,
 }
 
 impl GalleryState {
@@ -51,6 +54,7 @@ impl GalleryState {
             tokens: vec![None; count],
             last_viewport: None,
             config: GalleryConfig::default(),
+            fullscreen: FullscreenState::new(),
         }
     }
 
@@ -60,6 +64,92 @@ impl GalleryState {
 
     pub fn len(&self) -> usize {
         self.image_ids.len()
+    }
+
+    /// Returns the keyboard subscription for fullscreen navigation.
+    pub fn subscription(&self) -> iced::Subscription<crate::message::Message> {
+        use crate::message::{AppMessage, Message};
+
+        if self.fullscreen.is_open {
+            iced::keyboard::listen().map(|event| match event {
+                iced::keyboard::Event::KeyPressed {
+                    key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+                    ..
+                } => Message::AppMessage(AppMessage::InitializedAppMessage(
+                    crate::message::InitializedAppMessage::CloseImage,
+                )),
+                iced::keyboard::Event::KeyPressed {
+                    key: iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowLeft),
+                    ..
+                } => Message::AppMessage(AppMessage::InitializedAppMessage(
+                    crate::message::InitializedAppMessage::PreviousImage,
+                )),
+                iced::keyboard::Event::KeyPressed {
+                    key: iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowRight),
+                    ..
+                } => Message::AppMessage(AppMessage::InitializedAppMessage(
+                    crate::message::InitializedAppMessage::NextImage,
+                )),
+                _ => Message::AppMessage(AppMessage::InitializedAppMessage(
+                    crate::message::InitializedAppMessage::CloseImage,
+                )),
+            })
+        } else {
+            iced::Subscription::none()
+        }
+    }
+
+    /// Open the fullscreen overlay for the given image ID.
+    pub fn open_fullscreen(&mut self, id: ImageId) {
+        self.fullscreen.open(id);
+    }
+
+    /// Close the fullscreen overlay.
+    pub fn close_fullscreen(&mut self) {
+        self.fullscreen.close();
+    }
+
+    /// Navigate to the next image in fullscreen, returning its ID if successful.
+    pub fn next_fullscreen_image(&mut self) -> Option<ImageId> {
+        let current_id = self.fullscreen.current_id?;
+        let idx = self.image_ids.iter().position(|id| *id == current_id)?;
+        if idx + 1 < self.image_ids.len() {
+            let next_id = self.image_ids[idx + 1];
+            self.fullscreen.open(next_id);
+            Some(next_id)
+        } else {
+            None
+        }
+    }
+
+    /// Navigate to the previous image in fullscreen, returning its ID if successful.
+    pub fn previous_fullscreen_image(&mut self) -> Option<ImageId> {
+        let current_id = self.fullscreen.current_id?;
+        let idx = self.image_ids.iter().position(|id| *id == current_id)?;
+        if idx > 0 {
+            let prev_id = self.image_ids[idx - 1];
+            self.fullscreen.open(prev_id);
+            Some(prev_id)
+        } else {
+            None
+        }
+    }
+
+    /// Set the full-image handle for the currently-displayed fullscreen image.
+    pub fn set_full_image_handle(&mut self, id: ImageId, handle: iced::widget::image::Handle) {
+        if self.fullscreen.current_id == Some(id) {
+            self.fullscreen.handle = Some(handle);
+        }
+    }
+
+    /// Whether the fullscreen overlay is currently open.
+    pub fn is_fullscreen_open(&self) -> bool {
+        self.fullscreen.is_open
+    }
+
+    /// The currently-displayed fullscreen image ID.
+    pub fn fullscreen_current_id(&self) -> Option<ImageId> {
+        self.fullscreen.current_id
     }
 }
 
