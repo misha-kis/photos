@@ -1,7 +1,7 @@
 use crate::errors::IntoInternal;
 use image::{DynamicImage, GenericImageView};
 use ndarray::Array;
-use ort::ep::{CPUExecutionProvider, CoreMLExecutionProvider};
+use ort::ep::CPU;
 use ort::inputs;
 use ort::session::{Session, SessionOutputs};
 use ort::value::TensorRef;
@@ -20,10 +20,7 @@ impl FaceEmbedder {
         image_size: u32,
     ) -> Result<Self, ImageAnalysisServiceError> {
         ort::init()
-            .with_execution_providers([
-                CoreMLExecutionProvider::default().build(),
-                CPUExecutionProvider::default().build(),
-            ])
+            .with_execution_providers([CPU::default().build()])
             .commit();
         let session = Session::builder()
             .internal()?
