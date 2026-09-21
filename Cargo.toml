@@ -11,6 +11,7 @@ members = [
     "crates/photos-services",
     "crates/photos-task-queue",
     "crates/photos-ui",
+    "src-tauri",
 ]
 exclude = ["assets", "test_data"]
 
