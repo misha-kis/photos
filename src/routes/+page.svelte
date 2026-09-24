@@ -1,5 +1,6 @@
 <script lang="ts">
     import { invoke } from "@tauri-apps/api/core";
+    import { listen } from "@tauri-apps/api/event";
     import { open } from "@tauri-apps/plugin-dialog";
     import Image from "$lib/components/Image.svelte";
     import SideBar from "$lib/components/SideBar.svelte";
@@ -7,14 +8,18 @@
 
     let name = $state("");
     let greetMsg = $state("");
+    let selectedDirectory = $state("");
+    // let image_ids = $state();
 
-    async function greet(event: Event) {
-        event.preventDefault();
-        // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-        greetMsg = await invoke("greet", { name });
+    async function setGallery(gallery: string | null) {
+        await invoke("set_gallery", { gallery }).then(() => {
+            console.log("gallery opened");
+        });
     }
 
-    let selectedDirectory = $state("");
+    const galleryChangedListener = await listen("gallery-changed", (evt) => {
+        selectedDirectory = evt.payload;
+    });
 
     async function selectDirectory() {
         const selected = await open({
@@ -24,13 +29,18 @@
         });
 
         if (typeof selected === "string") {
+            await setGallery(selected);
             selectedDirectory = selected;
         }
     }
 
-    const items: { id: number; title: string }[] = [];
-    for (let i = 0; i < 100; i++) {
-        items.push({ id: i, title: `Photo ${i + 1}` });
+    // const items: { id: number; title: string }[] = [];
+    // for (let i = 0; i < 100; i++) {
+    //     items.push({ id: i, title: `Photo ${i + 1}` });
+    // }
+
+    async function getImageIds(): Promise<string[]> {
+        return await invoke("get_image_ids");
     }
 </script>
 
@@ -39,7 +49,7 @@
         <SideBar />
         <div class="min-w-0 flex-1 bg-gray-100 p-8">
             <p>Selected: {selectedDirectory}</p>
-            <GridView {items} />
+            <GridView {getImageIds} />
         </div>
     </div>
 {:else}
