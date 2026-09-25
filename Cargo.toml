@@ -10,7 +10,6 @@ members = [
     "crates/photos-infra-sqlite-image-metadata-repository",
     "crates/photos-services",
     "crates/photos-task-queue",
-    "crates/photos-ui",
     "src-tauri",
 ]
 exclude = ["assets", "test_data"]

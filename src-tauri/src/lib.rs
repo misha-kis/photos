@@ -3,7 +3,6 @@ use photos_app::App as Gallery;
 use photos_domain::ImageId;
 use std::{path::PathBuf, str::FromStr};
 use tauri::Manager;
-use tauri_plugin_log::{Target, TargetKind};
 use tokio::sync::RwLock;
 
 #[derive(Default)]
