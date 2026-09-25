@@ -17,15 +17,12 @@ fn greet(name: &str) -> String {
 
 #[tauri::command]
 async fn set_gallery(
-    // app: tauri::AppHandle,
     state: tauri::State<'_, RwLock<AppState>>,
     gallery: Option<String>,
 ) -> Result<(), String> {
-    let runtime_handle = tokio::runtime::Handle::current();
     let gallery = Gallery::new(
         PathBuf::from(gallery.ok_or("no gallery")?),
         Options::default(),
-        runtime_handle,
     )
     .await
     .map_err(|e| e.to_string())?;

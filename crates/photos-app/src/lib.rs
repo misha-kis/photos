@@ -29,15 +29,10 @@ use photos_infra_cv::ImageAnalysis;
 pub struct App {
     service_registry: Arc<AppServiceRegistry>,
     task_queue: Arc<Mutex<TaskQueue>>,
-    handle: Handle,
 }
 
 impl App {
-    pub async fn new(
-        path: PathBuf,
-        app_options: config::Options,
-        handle: Handle,
-    ) -> Result<Self, AppError> {
+    pub async fn new(path: PathBuf, app_options: config::Options) -> Result<Self, AppError> {
         if !path.exists() {
             std::fs::create_dir(&path)
                 .map_err(|e| AppError::BadDirectory { err: e.to_string() })?;
@@ -65,19 +60,18 @@ impl App {
         });
 
         let task_queue = Arc::new(Mutex::new(TaskQueue::new(
-            handle.clone(),
+            tokio::runtime::Handle::current(),
             app_options.max_blocking_tasks,
         )));
 
         let app = Self {
             service_registry,
             task_queue,
-            handle,
         };
 
         let analysis_service_registry = app.service_registry.clone();
         let analysis_task_queue = app.task_queue.clone();
-        app.handle.spawn(async move {
+        tokio::spawn(async move {
             let cancel = CancellationToken::new();
             let ctx = TaskContext {
                 service_registry: analysis_service_registry,
