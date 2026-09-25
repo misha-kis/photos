@@ -1,10 +1,19 @@
 <script lang="ts">
-    type Item = {
-        id: number;
-        title: string;
-    };
+    import { convertFileSrc } from "@tauri-apps/api/core";
+    import { invoke } from "@tauri-apps/api/core";
 
-    export let item: Item;
+    let item = $props();
+
+    let imageSrc = $state("");
+
+    async function getThumbnailPath() {
+        const path = await invoke<string>("get_thumbnail_path", {
+            imageId: item.item,
+        });
+        imageSrc = convertFileSrc(path);
+    }
+
+    getThumbnailPath();
 </script>
 
-<img src="/svelte.svg" alt={item.title} />
+<img src={imageSrc} alt={item} />

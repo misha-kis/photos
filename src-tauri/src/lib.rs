@@ -1,7 +1,7 @@
 use photos_app::config::Options;
 use photos_app::App as Gallery;
 use photos_domain::ImageId;
-use std::path::PathBuf;
+use std::{path::PathBuf, str::FromStr};
 use tauri::Manager;
 use tauri_plugin_log::{Target, TargetKind};
 use tokio::sync::RwLock;
@@ -53,6 +53,24 @@ async fn get_image_ids(state: tauri::State<'_, RwLock<AppState>>) -> Result<Vec<
     Ok(ids)
 }
 
+#[tauri::command]
+async fn get_thumbnail_path(
+    state: tauri::State<'_, RwLock<AppState>>,
+    image_id: String,
+) -> Result<PathBuf, String> {
+    tauri_plugin_log::log::info!("get_thumbnail_path: image_id={:?}", &image_id);
+    let image_id = ImageId::from_str(&image_id).map_err(|e| e.to_string())?;
+    let thumbnail = state
+        .read()
+        .await
+        .gallery
+        .as_ref()
+        .ok_or("a gallery must be opened")?
+        .get_thumbnail_path(&image_id, 128)
+        .map_err(|e| e.to_string())?;
+    Ok(thumbnail)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -68,7 +86,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_log::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![greet, set_gallery, get_image_ids])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            set_gallery,
+            get_image_ids,
+            get_thumbnail_path,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

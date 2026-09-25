@@ -2,7 +2,7 @@ use photos_domain::{
     BoundingBox, ClusteredFaceDetection, DynamicImage, FaceDetection, FaceDetectionWithEmbedding,
     ImageId, ImageRecord, Uuid,
 };
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(thiserror::Error, Debug)]
 pub enum ResizeServiceError {
@@ -124,6 +124,12 @@ pub trait ImageRepository {
         bounding_box: BoundingBox,
         thumbnail_size: u32,
     ) -> Result<DynamicImage, ImageRepositoryError>;
+    fn get_thumbnail_path(
+        &self,
+        image_id: &ImageId,
+        thumbnail_size: u32,
+    ) -> Result<PathBuf, ImageRepositoryError>;
+    fn get_original_path(&self, image_record: &ImageRecord) -> PathBuf;
 }
 
 #[derive(thiserror::Error, Debug)]

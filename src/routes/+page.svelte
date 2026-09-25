@@ -17,9 +17,12 @@
         });
     }
 
-    const galleryChangedListener = await listen("gallery-changed", (evt) => {
-        selectedDirectory = evt.payload;
-    });
+    const galleryChangedListener = await listen<string>(
+        "gallery-changed",
+        (evt) => {
+            selectedDirectory = evt.payload;
+        },
+    );
 
     async function selectDirectory() {
         const selected = await open({

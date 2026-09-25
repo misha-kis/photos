@@ -4,6 +4,7 @@ use photos_domain::{ImageId, RgbaImage, Uuid};
 use photos_infra_fast_image_resize_resizer::FastImageResizeResizer;
 use photos_infra_fs_repository::FSImageRepository;
 use photos_infra_sqlite_image_metadata_repository::SqliteImageMetadataRepository;
+use photos_services::ImageRepository;
 use photos_task_queue::{TaskPriority, TaskQueue};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -18,8 +19,9 @@ mod service_registry;
 
 use crate::jobs::{
     DiscoverImportItemsTask, Dispatchable, GetFaceClustersTask, GetFaceDetectionThumbnailTask,
-    GetImageIdsTask, GetImageTask, GetThumbnailFromFileTask, GetThumbnailTask, OneshotDispatchable,
-    TaskContext, get_embeddings_detection_job, get_face_detection_job, get_import_job,
+    GetImageIdsTask, GetImagePathTask, GetImageTask, GetThumbnailFromFileTask, GetThumbnailTask,
+    OneshotDispatchable, TaskContext, get_embeddings_detection_job, get_face_detection_job,
+    get_import_job,
 };
 pub use crate::jobs::{JobEvent, JobHandle};
 use photos_infra_cv::ImageAnalysis;
@@ -249,6 +251,29 @@ impl App {
                 TaskPriority::High,
                 cancel,
             )
+            .await;
+        receiver
+            .await
+            .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?
+    }
+
+    pub fn get_thumbnail_path(
+        &self,
+        image_id: &ImageId,
+        thumbnail_size: u32,
+    ) -> Result<PathBuf, AppError> {
+        self.service_registry
+            .image_repository
+            .get_thumbnail_path(&image_id, thumbnail_size)
+            .map_err(|e| AppError::ImageRepositoryError { err: e.to_string() })
+    }
+
+    pub async fn get_original_path(&self, image_id: ImageId) -> Result<PathBuf, AppError> {
+        let ctx = self.task_context();
+        let task = Arc::new(GetImagePathTask { ctx: ctx.clone() });
+        let cancel = CancellationToken::default();
+        let receiver = task
+            .dispatch(ctx, image_id, TaskPriority::High, cancel)
             .await;
         receiver
             .await

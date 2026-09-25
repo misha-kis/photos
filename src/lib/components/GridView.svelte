@@ -23,7 +23,7 @@
     let columnCount = 1;
 
     // let imageIds = $state([]);
-    let items = $state([]);
+    let items: string[] = $state([]);
 
     let rowSize = $derived(rowHeight + gap);
     let rowCount = $derived(Math.ceil(items.length / columnCount));
@@ -90,8 +90,12 @@
         >
             {#each visibleItems as item}
                 <div class="h-[120px] rounded-lg border bg-white p-4 shadow-sm">
-                    <!-- <Image {item} /> -->
-                    {item}
+                    <Image {item} />
+                    <!-- <img
+                        src="file:///Users/misha-kis/Pictures/photos-lib/thumbnails/128/01/9dedb4-4ae5-70b3-bf1e-c5f6d75aa0d6.jpeg"
+                        alt={item}
+                    /> -->
+                    <!-- {item} -->
                 </div>
             {/each}
         </div>

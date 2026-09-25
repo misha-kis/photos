@@ -47,29 +47,6 @@ impl<T: ResizeService> FSImageRepository<T> {
             .with_added_extension(extension)
     }
 
-    fn thumbnail_path(
-        &self,
-        image_id: &ImageId,
-        thumbnail_size: u32,
-    ) -> Result<PathBuf, ImageRepositoryError> {
-        if !self.thumbnail_sizes.contains(&thumbnail_size) {
-            tracing::error!("thumbnail_path: invalid thumbnail size {thumbnail_size}");
-            Err(ImageRepositoryError::InvalidThumbnailSize)
-        } else {
-            let image_id_string = image_id.to_string();
-            let image_id_split = image_id_string.split_at(2);
-            let path = self
-                .path
-                .join("thumbnails")
-                .join(thumbnail_size.to_string())
-                .join(image_id_split.0)
-                .join(image_id_split.1)
-                .with_added_extension("jpeg");
-            tracing::debug!("thumbnail_path: {image_id}@{thumbnail_size}px: {:?}", path);
-            Ok(path)
-        }
-    }
-
     fn thumbnail_paths(&self, image_id: ImageId) -> Vec<PathBuf> {
         tracing::debug!("getting thumbnail paths for {image_id}");
         let thumbnails_path = self.path.join("thumbnails");
@@ -184,7 +161,7 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
     ) -> Result<DynamicImage, ImageRepositoryError> {
         // todo(static assert size >= 0)
         tracing::info!("getting image {:?}", image_record.id);
-        let path = self.original_path(image_record.id, image_record.format.extensions_str()[0]);
+        let path = self.get_original_path(image_record);
         if !path.exists() {
             return Err(ImageRepositoryError::ImageDoesNotExist);
         }
@@ -208,7 +185,7 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
         image_id: &ImageId,
         thumbnail_size: u32,
     ) -> Result<DynamicImage, ImageRepositoryError> {
-        let path = self.thumbnail_path(image_id, thumbnail_size)?;
+        let path = self.get_thumbnail_path(image_id, thumbnail_size)?;
         self.get_thumbnail_from_file(&path, thumbnail_size)
     }
 
@@ -254,6 +231,33 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
         self.resize_service
             .resize(&image, thumbnail_size, thumbnail_size)
             .internal()
+    }
+
+    fn get_thumbnail_path(
+        &self,
+        image_id: &ImageId,
+        thumbnail_size: u32,
+    ) -> Result<PathBuf, ImageRepositoryError> {
+        if !self.thumbnail_sizes.contains(&thumbnail_size) {
+            tracing::error!("thumbnail_path: invalid thumbnail size {thumbnail_size}");
+            Err(ImageRepositoryError::InvalidThumbnailSize)
+        } else {
+            let image_id_string = image_id.to_string();
+            let image_id_split = image_id_string.split_at(2);
+            let path = self
+                .path
+                .join("thumbnails")
+                .join(thumbnail_size.to_string())
+                .join(image_id_split.0)
+                .join(image_id_split.1)
+                .with_added_extension("jpeg");
+            tracing::debug!("thumbnail_path: {image_id}@{thumbnail_size}px: {:?}", path);
+            Ok(path)
+        }
+    }
+
+    fn get_original_path(&self, image_record: &ImageRecord) -> PathBuf {
+        self.original_path(image_record.id, image_record.format.extensions_str()[0])
     }
 }
 
