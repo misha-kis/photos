@@ -1,19 +1,19 @@
 <script lang="ts">
-    import { convertFileSrc } from "@tauri-apps/api/core";
-    import { invoke } from "@tauri-apps/api/core";
+    import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 
-    let item = $props();
+    let { item }: { item: string } = $props();
 
     let imageSrc = $state("");
 
     async function getThumbnailPath() {
         const path = await invoke<string>("get_thumbnail_path", {
-            imageId: item.item,
+            imageId: item,
         });
+
         imageSrc = convertFileSrc(path);
     }
 
     getThumbnailPath();
 </script>
 
-<img src={imageSrc} alt={item} />
+<img src={imageSrc} alt={item} class="h-full w-full object-cover" />

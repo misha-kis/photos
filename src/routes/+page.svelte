@@ -50,7 +50,7 @@
 {#if selectedDirectory}
     <div class="flex h-screen overflow-hidden">
         <SideBar />
-        <div class="min-w-0 flex-1 bg-gray-100 p-8">
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col bg-gray-100 p-8">
             <p>Selected: {selectedDirectory}</p>
             <GridView {getImageIds} />
         </div>

@@ -67,6 +67,24 @@ async fn get_thumbnail_path(
     Ok(thumbnail)
 }
 
+#[tauri::command]
+async fn get_original_path(
+    state: tauri::State<'_, RwLock<AppState>>,
+    image_id: String,
+) -> Result<PathBuf, String> {
+    let image_id = ImageId::from_str(&image_id).map_err(|e| e.to_string())?;
+
+    state
+        .read()
+        .await
+        .gallery
+        .as_ref()
+        .ok_or("a gallery must be opened")?
+        .get_original_path(image_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -87,6 +105,7 @@ pub fn run() {
             set_gallery,
             get_image_ids,
             get_thumbnail_path,
+            get_original_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
