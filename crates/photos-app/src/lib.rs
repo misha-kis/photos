@@ -8,7 +8,6 @@ use photos_services::ImageRepository;
 use photos_task_queue::{TaskPriority, TaskQueue};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
