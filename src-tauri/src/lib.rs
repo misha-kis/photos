@@ -2,7 +2,7 @@ use photos_app::config::Options;
 use photos_app::App as Gallery;
 use photos_app::JobEvent;
 use photos_domain::ImageId;
-use std::{path::PathBuf, str::FromStr};
+use std::path::PathBuf;
 use tauri::{Emitter, Manager};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
@@ -10,11 +10,6 @@ use tokio_util::sync::CancellationToken;
 #[derive(Default)]
 struct AppState {
     gallery: Option<Gallery>,
-}
-
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
 #[tauri::command]
@@ -34,24 +29,6 @@ async fn set_gallery(
 }
 
 #[tauri::command]
-async fn get_image_ids(state: tauri::State<'_, RwLock<AppState>>) -> Result<Vec<ImageId>, String> {
-    let ids: Vec<_> = state
-        .read()
-        .await
-        .gallery
-        .as_ref()
-        .ok_or("a gallery must be opened")?
-        .get_image_ids_async()
-        .await
-        .map_err(|e| e.to_string())?;
-    // .iter()
-    // .map(|id| id.to_string())
-    // .collect();
-    tauri_plugin_log::log::info!("get_image_ids: {:?}", &ids);
-    Ok(ids)
-}
-
-#[tauri::command]
 async fn get_image_ids_with_paths(
     state: tauri::State<'_, RwLock<AppState>>,
 ) -> Result<Vec<(ImageId, PathBuf, PathBuf)>, String> {
@@ -65,42 +42,6 @@ async fn get_image_ids_with_paths(
         .await
         .map_err(|e| e.to_string())?;
     Ok(ids_with_paths)
-}
-
-#[tauri::command]
-async fn get_thumbnail_path(
-    state: tauri::State<'_, RwLock<AppState>>,
-    image_id: String,
-) -> Result<PathBuf, String> {
-    tauri_plugin_log::log::info!("get_thumbnail_path: image_id={:?}", &image_id);
-    let image_id = ImageId::from_str(&image_id).map_err(|e| e.to_string())?;
-    let thumbnail = state
-        .read()
-        .await
-        .gallery
-        .as_ref()
-        .ok_or("a gallery must be opened")?
-        .get_thumbnail_path(&image_id, 128)
-        .map_err(|e| e.to_string())?;
-    Ok(thumbnail)
-}
-
-#[tauri::command]
-async fn get_original_path(
-    state: tauri::State<'_, RwLock<AppState>>,
-    image_id: String,
-) -> Result<PathBuf, String> {
-    let image_id = ImageId::from_str(&image_id).map_err(|e| e.to_string())?;
-
-    state
-        .read()
-        .await
-        .gallery
-        .as_ref()
-        .ok_or("a gallery must be opened")?
-        .get_original_path(image_id)
-        .await
-        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -160,11 +101,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_log::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            greet,
             set_gallery,
-            get_image_ids,
-            get_thumbnail_path,
-            get_original_path,
             import_images,
             discover_images_for_import,
             get_image_ids_with_paths,
