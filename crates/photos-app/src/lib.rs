@@ -18,8 +18,8 @@ mod service_registry;
 
 use crate::jobs::{
     DiscoverImportItemsTask, Dispatchable, GetFaceClustersTask, GetFaceDetectionThumbnailTask,
-    GetImageIdsTask, OneshotDispatchable, TaskContext, get_embeddings_detection_job,
-    get_face_detection_job, get_import_job,
+    OneshotDispatchable, TaskContext, get_embeddings_detection_job, get_face_detection_job,
+    get_import_job,
 };
 pub use crate::jobs::{JobEvent, JobHandle};
 use photos_infra_cv::ImageAnalysis;
@@ -89,23 +89,6 @@ impl App {
             service_registry: self.service_registry.clone(),
             task_queue: self.task_queue.clone(),
         }
-    }
-
-    #[allow(clippy::async_yields_async)]
-    pub async fn get_image_ids_async(&self) -> Result<Vec<ImageId>, AppError> {
-        let ctx = self.task_context();
-        let task = Arc::new(GetImageIdsTask { ctx });
-        let receiver = task
-            .dispatch(
-                self.task_context(),
-                (),
-                TaskPriority::High,
-                CancellationToken::new(),
-            )
-            .await;
-        receiver
-            .await
-            .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?
     }
 
     pub async fn get_image_ids_with_paths_async(

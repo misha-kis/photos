@@ -161,28 +161,6 @@ impl ImageMetadataRepository for SqliteImageMetadataRepository {
         Ok(())
     }
 
-    async fn get_image_record(
-        &self,
-        image_id: ImageId,
-    ) -> Result<ImageRecord, ImageMetadataRepositoryError> {
-        tracing::debug!("sqlite getting image record for {}", image_id);
-
-        let row = sqlx::query_as::<_, ImageRecordRow>(
-            r#"
-SELECT image_uuid, image_format_id, image_exif_timestamp, image_os_timestamp, image_import_timestamp
-FROM image
-WHERE image_uuid = ?
-"#,
-        )
-        .bind(image_id)
-        .fetch_one(&self.pool)
-        .await
-        .internal()?;
-
-        tracing::debug!("sqlite getting image ids done");
-        Ok(row.into())
-    }
-
     async fn get_image_records(&self) -> Result<Vec<ImageRecord>, ImageMetadataRepositoryError> {
         tracing::debug!("sqlite getting image records");
 
@@ -219,26 +197,6 @@ FROM image
 
         tracing::debug!("sqlite delete done");
         Ok(())
-    }
-
-    async fn get_image_ids(&self) -> Result<Vec<ImageId>, ImageMetadataRepositoryError> {
-        tracing::debug!("sqlite getting image ids");
-        #[derive(FromRow)]
-        struct Row {
-            image_uuid: ImageId,
-        }
-
-        let result = sqlx::query_as::<_, Row>(
-            r#"SELECT image_uuid FROM image ORDER BY coalesce(image_exif_timestamp, image_os_timestamp)"#,
-        )
-        .fetch_all(&self.pool)
-        .await
-        .internal()?
-        .iter()
-        .map(|row| row.image_uuid)
-        .collect();
-        tracing::debug!("sqlite getting image ids done");
-        Ok(result)
     }
 
     async fn get_face_clusters(

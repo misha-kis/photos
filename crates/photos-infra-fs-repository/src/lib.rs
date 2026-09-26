@@ -180,41 +180,6 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
         }
     }
 
-    fn get_thumbnail(
-        &self,
-        image_id: &ImageId,
-        thumbnail_size: u32,
-    ) -> Result<DynamicImage, ImageRepositoryError> {
-        let path = self.get_thumbnail_path(image_id, thumbnail_size)?;
-        self.get_thumbnail_from_file(&path, thumbnail_size)
-    }
-
-    fn get_thumbnail_from_file(
-        &self,
-        path: &Path,
-        thumbnail_size: u32,
-    ) -> Result<DynamicImage, ImageRepositoryError> {
-        tracing::info!("getting thumbnail from file: {:?} @ {thumbnail_size}", path);
-        if !path.exists() {
-            tracing::error!("path doesn't exist: {:?}", path);
-            return Err(ImageRepositoryError::ImageDoesNotExist);
-        }
-        tracing::debug!("opening image");
-        let image = image::open(path).internal()?;
-        let image = match read_orientation(path) {
-            None => image,
-            Some(orientation) => apply_orientation(image, orientation),
-        };
-        let width = image.width();
-        let height = image.height();
-        let (width, height) = thumbnail_width_height(width, height, thumbnail_size);
-
-        tracing::debug!("resizing");
-        let resized = self.resize_service.resize(&image, width, height).internal();
-        tracing::debug!("done resizing");
-        resized
-    }
-
     fn get_face_thumbnail(
         &self,
         image_record: &ImageRecord,
@@ -341,69 +306,5 @@ fn thumbnail_width_height(
             ((original_width * thumbnail_size) as f32 / original_height as f32) as u32,
             thumbnail_size,
         )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::FSImageRepository;
-    use image::GenericImageView;
-    use photos_infra_fast_image_resize_resizer::FastImageResizeResizer;
-    use photos_services::{ImageRepository, ImageRepositoryError};
-    use std::path::PathBuf;
-    use tempfile::tempdir;
-
-    fn test_image_path(name: &str) -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("test_data")
-            .join(name)
-    }
-
-    #[test]
-    fn test_insert_get_delete() {
-        let temp = tempdir().unwrap();
-        let base = temp.path().to_path_buf();
-
-        let thumbnail_sizes = vec![512];
-        let resize_service = FastImageResizeResizer::default();
-        let repo = FSImageRepository::new(base.clone(), thumbnail_sizes.clone(), resize_service);
-
-        let source = test_image_path("example.jpeg");
-        let record = repo.insert_image(&source).unwrap();
-        let id_string = record.id.to_string();
-        let id_string_split = id_string.split_at(2);
-
-        let original_path = base
-            .join("originals")
-            .join(id_string_split.0)
-            .join(id_string_split.1)
-            .with_added_extension(record.format.extensions_str()[0]);
-
-        assert!(original_path.exists());
-
-        let thumbnail_path = base
-            .join("thumbnails")
-            .join("512")
-            .join(id_string_split.0)
-            .join(id_string_split.1)
-            .with_added_extension(record.format.extensions_str()[0]);
-
-        assert!(thumbnail_path.exists());
-
-        let thumb = repo.get_thumbnail(&record.id, 512).unwrap();
-        let (w, h) = thumb.dimensions();
-
-        assert!(w == 512 || h == 512);
-
-        repo.delete_image(&record).unwrap();
-
-        assert!(matches!(
-            repo.delete_image(&record),
-            Err(ImageRepositoryError::ImageDoesNotExist)
-        ))
     }
 }

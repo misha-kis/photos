@@ -43,16 +43,12 @@ pub trait ImageMetadataRepository {
         &self,
         image_records: &[ImageRecord],
     ) -> Result<(), ImageMetadataRepositoryError>;
-    async fn get_image_record(
-        &self,
-        image_id: ImageId,
-    ) -> Result<ImageRecord, ImageMetadataRepositoryError>;
+
     async fn delete_image_record(
         &self,
         image_id: ImageId,
     ) -> Result<(), ImageMetadataRepositoryError>;
 
-    async fn get_image_ids(&self) -> Result<Vec<ImageId>, ImageMetadataRepositoryError>;
     /// Returns clusters: each item is (cluster_face_uuid, list of detection uuids in that cluster).
     async fn get_face_clusters(
         &self,
@@ -109,16 +105,7 @@ pub trait ImageRepository {
         image_record: &ImageRecord,
         resize: Option<(u32, u32)>,
     ) -> Result<DynamicImage, ImageRepositoryError>;
-    fn get_thumbnail(
-        &self,
-        image_id: &ImageId,
-        thumbnail_size: u32,
-    ) -> Result<DynamicImage, ImageRepositoryError>;
-    fn get_thumbnail_from_file(
-        &self,
-        path: &Path,
-        thumbnail_size: u32,
-    ) -> Result<DynamicImage, ImageRepositoryError>;
+
     fn get_face_thumbnail(
         &self,
         image_record: &ImageRecord,
