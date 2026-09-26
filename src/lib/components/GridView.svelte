@@ -140,7 +140,7 @@
                 {@const absoluteItemId = startIndex + itemId}
                 <button
                     type="button"
-                    class="h-[120px] cursor-zoom-in overflow-hidden rounded-lg border bg-white p-4 text-left shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    class="h-32 cursor-zoom-in overflow-hidden rounded-lg border bg-white p-4 text-left shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     aria-label={`Open image ${item.id}`}
                     onclick={() => openImage(absoluteItemId)}
                 >
