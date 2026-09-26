@@ -183,6 +183,23 @@ WHERE image_uuid = ?
         Ok(row.into())
     }
 
+    async fn get_image_records(&self) -> Result<Vec<ImageRecord>, ImageMetadataRepositoryError> {
+        tracing::debug!("sqlite getting image records");
+
+        let rows = sqlx::query_as::<_, ImageRecordRow>(
+            r#"
+SELECT image_uuid, image_format_id, image_exif_timestamp, image_os_timestamp, image_import_timestamp
+FROM image
+"#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .internal()?;
+
+        tracing::debug!("sqlite getting image ids done");
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
     async fn delete_image_record(
         &self,
         image_id: ImageId,

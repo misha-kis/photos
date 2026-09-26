@@ -1,22 +1,17 @@
 <script lang="ts">
     import { onMount } from "svelte";
-    import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+    import { convertFileSrc } from "@tauri-apps/api/core";
     import Image from "./Image.svelte";
-
-    type Item = {
-        id: number;
-        title: string;
-    };
+    import type { Photo } from "$lib/types";
 
     let container: HTMLDivElement;
 
     type Props = {
-        getImageIds?: () => Promise<string[]>;
+        getPhotos?: () => Promise<Photo[]>;
         initialItems?: string[];
-        preview?: boolean;
     };
 
-    let { getImageIds, initialItems = [], preview = false }: Props = $props();
+    let { getPhotos, initialItems = [] }: Props = $props();
 
     // Grid configuration
     const rowHeight = 120;
@@ -31,7 +26,7 @@
     let columnCount = $state(1);
 
     // let imageIds = $state([]);
-    let items: string[] = $state([]);
+    let items: Photo[] = $state([]);
 
     let rowSize = $derived(rowHeight + gap);
     let rowCount = $derived(Math.ceil(items.length / columnCount));
@@ -48,15 +43,6 @@
     let startIndex = $derived(firstRow * columnCount);
     let endIndex = $derived(Math.min(items.length, lastRow * columnCount));
     let visibleItems = $derived(items.slice(startIndex, endIndex));
-    $inspect(
-        scrollTop,
-        firstRow,
-        startIndex,
-        endIndex,
-        visibleItems.length,
-        visibleItems[0],
-    );
-    // $inspect(visibleItems);
 
     function updateColumns() {
         if (!container) return;
@@ -77,15 +63,8 @@
         }
     }
 
-    async function openImage(imageItemId: number) {
-        const imageId = items[imageItemId];
-        const path = preview
-            ? imageId
-            : await invoke<string>("get_original_path", {
-                  imageId,
-              });
-
-        fullscreenSrc = convertFileSrc(path);
+    function openImage(imageItemId: number) {
+        fullscreenSrc = convertFileSrc(items[imageItemId].originalPath);
         fullscreenItemId = imageItemId;
     }
 
@@ -110,13 +89,17 @@
         }
     }
 
-    async function updateImageIds() {
+    async function updateImages() {
         if (initialItems.length) {
-            items = initialItems;
+            items = initialItems.map((path) => ({
+                id: path,
+                thumbnailPath: path,
+                originalPath: path,
+            }));
             return;
         }
-        if (getImageIds) {
-            items = await getImageIds();
+        if (getPhotos) {
+            items = await getPhotos();
         }
     }
 
@@ -124,7 +107,7 @@
         updateColumns();
         updateContainerHeight();
         (async () => {
-            await updateImageIds();
+            await updateImages();
         })();
 
         const observer = new ResizeObserver(() => {
@@ -149,21 +132,19 @@
         <!-- Only visible rows -->
         <div
             class="absolute left-0 right-0 grid"
-            style="
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: 16px;
-        "
+            style:grid-template-columns={`repeat(${columnCount}, minmax(0, 1fr))`}
+            style:gap={`${gap}px`}
             style:transform={`translateY(${firstRow * rowSize}px)`}
         >
-            {#each visibleItems as item, itemId (item)}
+            {#each visibleItems as item, itemId (item.id)}
                 {@const absoluteItemId = startIndex + itemId}
                 <button
                     type="button"
                     class="h-[120px] cursor-zoom-in overflow-hidden rounded-lg border bg-white p-4 text-left shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    aria-label={`Open image ${item}`}
+                    aria-label={`Open image ${item.id}`}
                     onclick={() => openImage(absoluteItemId)}
                 >
-                    <Image {item} {preview} />
+                    <Image src={item.thumbnailPath} alt={item.id} />
                 </button>
             {/each}
         </div>

@@ -1,5 +1,5 @@
 pub use crate::errors::AppError;
-use crate::service_registry::AppServiceRegistry;
+use crate::{jobs::GetImageIdsWithPathsTask, service_registry::AppServiceRegistry};
 use photos_domain::{ImageId, RgbaImage, Uuid};
 use photos_infra_fast_image_resize_resizer::FastImageResizeResizer;
 use photos_infra_fs_repository::FSImageRepository;
@@ -96,6 +96,24 @@ impl App {
     pub async fn get_image_ids_async(&self) -> Result<Vec<ImageId>, AppError> {
         let ctx = self.task_context();
         let task = Arc::new(GetImageIdsTask { ctx });
+        let receiver = task
+            .dispatch(
+                self.task_context(),
+                (),
+                TaskPriority::High,
+                CancellationToken::new(),
+            )
+            .await;
+        receiver
+            .await
+            .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?
+    }
+
+    pub async fn get_image_ids_with_paths_async(
+        &self,
+    ) -> Result<Vec<(ImageId, PathBuf, PathBuf)>, AppError> {
+        let ctx = self.task_context();
+        let task = Arc::new(GetImageIdsWithPathsTask { ctx });
         let receiver = task
             .dispatch(
                 self.task_context(),

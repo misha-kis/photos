@@ -84,6 +84,7 @@ pub trait ImageMetadataRepository {
         &self,
         detection_id: Uuid,
     ) -> Result<(BoundingBox, ImageRecord), ImageMetadataRepositoryError>;
+    async fn get_image_records(&self) -> Result<Vec<ImageRecord>, ImageMetadataRepositoryError>;
 }
 
 #[derive(thiserror::Error, Debug)]

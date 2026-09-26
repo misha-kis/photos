@@ -52,6 +52,22 @@ async fn get_image_ids(state: tauri::State<'_, RwLock<AppState>>) -> Result<Vec<
 }
 
 #[tauri::command]
+async fn get_image_ids_with_paths(
+    state: tauri::State<'_, RwLock<AppState>>,
+) -> Result<Vec<(ImageId, PathBuf, PathBuf)>, String> {
+    let ids_with_paths: Vec<_> = state
+        .read()
+        .await
+        .gallery
+        .as_ref()
+        .ok_or("a gallery must be opened")?
+        .get_image_ids_with_paths_async()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(ids_with_paths)
+}
+
+#[tauri::command]
 async fn get_thumbnail_path(
     state: tauri::State<'_, RwLock<AppState>>,
     image_id: String,
@@ -151,6 +167,7 @@ pub fn run() {
             get_original_path,
             import_images,
             discover_images_for_import,
+            get_image_ids_with_paths,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -6,6 +6,7 @@
     import SideBar from "$lib/components/SideBar.svelte";
     import GridView from "$lib/components/GridView.svelte";
     import ImportView from "$lib/components/ImportView.svelte";
+    import type { Photo } from "$lib/types";
 
     let name = $state("");
     let greetMsg = $state("");
@@ -44,8 +45,16 @@
     //     items.push({ id: i, title: `Photo ${i + 1}` });
     // }
 
-    async function getImageIds(): Promise<string[]> {
-        return await invoke("get_image_ids");
+    async function getPhotos(): Promise<Photo[]> {
+        const records = await invoke<[string, string, string][]>(
+            "get_image_ids_with_paths",
+        );
+
+        return records.map(([id, thumbnailPath, originalPath]) => ({
+            id,
+            thumbnailPath,
+            originalPath,
+        }));
     }
 </script>
 
@@ -69,7 +78,7 @@
                         Import photos
                     </button>
                 </div>
-                <GridView {getImageIds} />
+                <GridView {getPhotos} />
             {/if}
         </div>
     </div>

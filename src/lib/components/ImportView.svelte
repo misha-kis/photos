@@ -129,7 +129,7 @@
             No importable images were found.
         </div>
     {:else}
-        <GridView initialItems={items} preview />
+        <GridView initialItems={items} />
     {/if}
 
     {#if importing}
