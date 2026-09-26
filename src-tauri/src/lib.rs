@@ -1,9 +1,11 @@
 use photos_app::config::Options;
 use photos_app::App as Gallery;
+use photos_app::JobEvent;
 use photos_domain::ImageId;
 use std::{path::PathBuf, str::FromStr};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 
 #[derive(Default)]
 struct AppState {
@@ -85,6 +87,47 @@ async fn get_original_path(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn import_images(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, RwLock<AppState>>,
+    image_paths: Vec<PathBuf>,
+) -> Result<(), String> {
+    let total_items = image_paths.len();
+    let state = state.write().await;
+    let gallery = state.gallery.as_ref().ok_or("a gallery must be opened")?;
+    let mut job_handle = gallery.import_items(image_paths).await;
+
+    while let Some(event) = job_handle.evt_rx.recv().await {
+        match event {
+            JobEvent::Progress(completed, total) => {
+                app.emit("import-progress", (completed, total))
+                    .map_err(|e| e.to_string())?;
+            }
+            JobEvent::Done | JobEvent::NextJob(_) => {
+                app.emit("import-progress", (total_items, total_items))
+                    .map_err(|e| e.to_string())?;
+                return Ok(());
+            }
+        }
+    }
+    unreachable!("should only complete with JobEvent::Done or JobEvent::NextJob")
+}
+
+#[tauri::command]
+async fn discover_images_for_import(
+    state: tauri::State<'_, RwLock<AppState>>,
+    directory: PathBuf,
+) -> Result<Vec<PathBuf>, String> {
+    let state = state.write().await;
+    let gallery = state.gallery.as_ref().ok_or("a gallery must be opened")?;
+    let cancel = CancellationToken::default();
+    gallery
+        .discover_import_items_async(directory, cancel)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -106,6 +149,8 @@ pub fn run() {
             get_image_ids,
             get_thumbnail_path,
             get_original_path,
+            import_images,
+            discover_images_for_import,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

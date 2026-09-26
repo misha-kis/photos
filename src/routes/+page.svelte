@@ -5,10 +5,12 @@
     import Image from "$lib/components/Image.svelte";
     import SideBar from "$lib/components/SideBar.svelte";
     import GridView from "$lib/components/GridView.svelte";
+    import ImportView from "$lib/components/ImportView.svelte";
 
     let name = $state("");
     let greetMsg = $state("");
     let selectedDirectory = $state("");
+    let showImport = $state(false);
     // let image_ids = $state();
 
     async function setGallery(gallery: string | null) {
@@ -51,8 +53,24 @@
     <div class="flex h-screen overflow-hidden">
         <SideBar />
         <div class="flex min-h-0 min-w-0 flex-1 flex-col bg-gray-100 p-8">
-            <p>Selected: {selectedDirectory}</p>
-            <GridView {getImageIds} />
+            {#if showImport}
+                <ImportView
+                    oncancel={() => (showImport = false)}
+                    oncomplete={() => (showImport = false)}
+                />
+            {:else}
+                <div class="mb-4 flex items-center justify-between">
+                    <p>Selected: {selectedDirectory}</p>
+                    <button
+                        type="button"
+                        class="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+                        onclick={() => (showImport = true)}
+                    >
+                        Import photos
+                    </button>
+                </div>
+                <GridView {getImageIds} />
+            {/if}
         </div>
     </div>
 {:else}

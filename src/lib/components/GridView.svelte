@@ -10,7 +10,13 @@
 
     let container: HTMLDivElement;
 
-    let { getImageIds } = $props();
+    type Props = {
+        getImageIds?: () => Promise<string[]>;
+        initialItems?: string[];
+        preview?: boolean;
+    };
+
+    let { getImageIds, initialItems = [], preview = false }: Props = $props();
 
     // Grid configuration
     const rowHeight = 120;
@@ -18,11 +24,11 @@
     const gap = 16;
     const overscan = 3;
 
-    let containerHeight = 0;
-    let scrollTop = 0;
+    let containerHeight = $state(0);
+    let scrollTop = $state(0);
     let fullscreenItemId = $state<number | null>(null);
     let fullscreenSrc = $state<string | null>(null);
-    let columnCount = 1;
+    let columnCount = $state(1);
 
     // let imageIds = $state([]);
     let items: string[] = $state([]);
@@ -37,10 +43,20 @@
     let visibleRowCount = $derived(
         Math.ceil(containerHeight / rowSize) + overscan * 2,
     );
+
     let lastRow = $derived(Math.min(rowCount, firstRow + visibleRowCount));
     let startIndex = $derived(firstRow * columnCount);
     let endIndex = $derived(Math.min(items.length, lastRow * columnCount));
     let visibleItems = $derived(items.slice(startIndex, endIndex));
+    $inspect(
+        scrollTop,
+        firstRow,
+        startIndex,
+        endIndex,
+        visibleItems.length,
+        visibleItems[0],
+    );
+    // $inspect(visibleItems);
 
     function updateColumns() {
         if (!container) return;
@@ -62,11 +78,12 @@
     }
 
     async function openImage(imageItemId: number) {
-        console.log(imageItemId);
-        const imageId = visibleItems[imageItemId];
-        const path = await invoke<string>("get_original_path", {
-            imageId,
-        });
+        const imageId = items[imageItemId];
+        const path = preview
+            ? imageId
+            : await invoke<string>("get_original_path", {
+                  imageId,
+              });
 
         fullscreenSrc = convertFileSrc(path);
         fullscreenItemId = imageItemId;
@@ -94,9 +111,13 @@
     }
 
     async function updateImageIds() {
-        items = await getImageIds();
-        console.log(items);
-        console.log(items.length);
+        if (initialItems.length) {
+            items = initialItems;
+            return;
+        }
+        if (getImageIds) {
+            items = await getImageIds();
+        }
     }
 
     onMount(() => {
@@ -134,14 +155,15 @@
         "
             style:transform={`translateY(${firstRow * rowSize}px)`}
         >
-            {#each visibleItems as item, itemId}
+            {#each visibleItems as item, itemId (item)}
+                {@const absoluteItemId = startIndex + itemId}
                 <button
                     type="button"
                     class="h-[120px] cursor-zoom-in overflow-hidden rounded-lg border bg-white p-4 text-left shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     aria-label={`Open image ${item}`}
-                    onclick={() => openImage(itemId)}
+                    onclick={() => openImage(absoluteItemId)}
                 >
-                    <Image {item} />
+                    <Image {item} {preview} />
                 </button>
             {/each}
         </div>
