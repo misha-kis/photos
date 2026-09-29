@@ -22,11 +22,7 @@ impl Map<(ImageRecord, FaceDetection), ()> for GenerateEmbeddings {
             .ctx
             .service_registry
             .analysis_service
-            .get_face_embedding(
-                &image,
-                detection,
-                self.ctx.service_registry.resize_service.as_ref(),
-            )
+            .get_face_embedding(&image, detection)
             .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?;
         self.ctx
             .service_registry

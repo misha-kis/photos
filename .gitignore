@@ -3,6 +3,7 @@
 /assets/icons/icon.icns
 /runs
 /data
+/test_data/output
 /**/.DS_Store
 /**/.sqlx
 
@@ -41,4 +42,3 @@ node_modules
 !.env.example
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
-

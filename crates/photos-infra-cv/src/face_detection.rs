@@ -148,3 +148,30 @@ impl FaceDetector {
         Ok(result)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{apple_face_detection, geometry::transform_image};
+    use std::fs;
+
+    #[test]
+    fn saves_transformed_test_image() {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let root = manifest_dir.parent().unwrap().parent().unwrap();
+        let image_path = root.join("test_data/example.jpeg");
+        let output_dir = root.join("test_data/output");
+        fs::create_dir_all(&output_dir).unwrap();
+
+        let image = image::open(&image_path).unwrap();
+        let detection = apple_face_detection::detect(image_path.to_str().unwrap())
+            .unwrap()
+            .into_iter()
+            .next()
+            .expect("test image has a face");
+        let transformed = transform_image(&image, &detection.transform, (160, 160)).unwrap();
+        transformed
+            .save(output_dir.join("face_embedding_input.png"))
+            .unwrap();
+    }
+}

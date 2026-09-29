@@ -1,5 +1,9 @@
+use crate::errors::IntoInternal;
+use image::{DynamicImage, RgbImage};
+use kornia_image::{Image, ImageSize};
+use kornia_imgproc::warp::warp_affine_u8;
 use photos_domain::Affine2D;
-use photos_domain::BoundingBox;
+
 use photos_services::ImageAnalysisServiceError;
 
 #[derive(Debug, Clone, Copy)]
@@ -81,6 +85,57 @@ fn estimate_similarity_transform(src: &[Point], dst: &[Point]) -> Option<Affine2
         tx: dst_cx - a * src_cx + b * src_cy,
         ty: dst_cy - b * src_cx - a * src_cy,
     })
+}
+
+fn scale_transform_for_output(transform: &Affine2D, output_size: (u32, u32)) -> Affine2D {
+    let (output_width, output_height) = output_size;
+    let scale_x = output_width as f64 / 112.0;
+    let scale_y = output_height as f64 / 112.0;
+
+    Affine2D {
+        a: scale_x * transform.a,
+        b: scale_x * transform.b,
+        tx: scale_x * transform.tx,
+        c: scale_y * transform.c,
+        d: scale_y * transform.d,
+        ty: scale_y * transform.ty,
+    }
+}
+
+pub(crate) fn transform_image(
+    image: &DynamicImage,
+    transform: &Affine2D,
+    output_size: (u32, u32),
+) -> Result<RgbImage, ImageAnalysisServiceError> {
+    let rgb = image.to_rgb8();
+    let source = Image::<u8, 3>::new(
+        ImageSize {
+            width: rgb.width() as usize,
+            height: rgb.height() as usize,
+        },
+        rgb.into_raw(),
+    )
+    .internal()?;
+    let (width, height) = output_size;
+    let mut destination = Image::<u8, 3>::from_size_val(
+        ImageSize {
+            width: width as usize,
+            height: height as usize,
+        },
+        0,
+    )
+    .internal()?;
+
+    let transform = scale_transform_for_output(transform, output_size);
+    warp_affine_u8(
+        &source,
+        &mut destination,
+        &transform.as_kornia().map(|value| value as f32),
+    )
+    .internal()?;
+
+    RgbImage::from_raw(width, height, destination.into_vec())
+        .ok_or(ImageAnalysisServiceError::CouldNotInfer)
 }
 
 pub(crate) fn calculate_alignment_matrix(

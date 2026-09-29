@@ -1,6 +1,6 @@
 use photos_domain::{
-    Affine2D, BoundingBox, ClusteredFaceDetection, DynamicImage, FaceDetection,
-    FaceDetectionWithEmbedding, ImageId, ImageRecord, Uuid,
+    BoundingBox, ClusteredFaceDetection, DynamicImage, FaceDetection, FaceDetectionWithEmbedding,
+    ImageId, ImageRecord, Uuid,
 };
 use std::path::{Path, PathBuf};
 
@@ -140,7 +140,6 @@ pub trait ImageAnalysisService {
         &self,
         image: &DynamicImage,
         face_detection: FaceDetection,
-        resize_service: &dyn ResizeService,
     ) -> Result<FaceDetectionWithEmbedding, ImageAnalysisServiceError>;
 
     fn cluster_embeddings(

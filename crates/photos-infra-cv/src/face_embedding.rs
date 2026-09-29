@@ -1,12 +1,12 @@
-use crate::errors::IntoInternal;
-use image::{DynamicImage, GenericImageView};
+use crate::{errors::IntoInternal, geometry::transform_image};
+use image::DynamicImage;
 use ndarray::Array;
 use ort::ep::CPU;
 use ort::inputs;
 use ort::session::{Session, SessionOutputs};
 use ort::value::TensorRef;
 use photos_domain::{FaceDetection, FaceDetectionWithEmbedding};
-use photos_services::{ImageAnalysisServiceError, ResizeService};
+use photos_services::ImageAnalysisServiceError;
 use std::path::PathBuf;
 
 pub(crate) struct FaceEmbedder {
@@ -36,25 +36,20 @@ impl FaceEmbedder {
         &mut self,
         image: &DynamicImage,
         detection: FaceDetection,
-        resize_service: &dyn ResizeService,
     ) -> Result<FaceDetectionWithEmbedding, ImageAnalysisServiceError> {
-        let image = image.crop_imm(
-            detection.bounding_box.x as u32,
-            detection.bounding_box.y as u32,
-            detection.bounding_box.w as u32,
-            detection.bounding_box.h as u32,
-        );
-        let img = resize_service
-            .resize(&image, self.image_size, self.image_size)
-            .internal()?;
+        let aligned = transform_image(
+            image,
+            &detection.transform,
+            (self.image_size, self.image_size),
+        )?;
+
         let mut input = Array::zeros((1, 3, self.image_size as usize, self.image_size as usize));
-        for pixel in img.pixels() {
-            let x = pixel.0 as _;
-            let y = pixel.1 as _;
-            let [r, g, b, _] = pixel.2.0;
-            input[[0, 0, y, x]] = (r as f32) / 255.;
-            input[[0, 1, y, x]] = (g as f32) / 255.;
-            input[[0, 2, y, x]] = (b as f32) / 255.;
+        for (index, pixel) in aligned.into_raw().chunks_exact(3).enumerate() {
+            let y = index / self.image_size as usize;
+            let x = index % self.image_size as usize;
+            input[[0, 0, y, x]] = (pixel[0] as f32) / 255.;
+            input[[0, 1, y, x]] = (pixel[1] as f32) / 255.;
+            input[[0, 2, y, x]] = (pixel[2] as f32) / 255.;
         }
         let outputs: SessionOutputs = self
             .session

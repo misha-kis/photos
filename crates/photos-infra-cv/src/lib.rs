@@ -13,12 +13,9 @@ use face_detection::FaceDetector;
 use face_embedding::FaceEmbedder;
 use image::DynamicImage;
 use photos_domain::{
-    Affine2D, ClusteredFaceDetection, FaceDetection, FaceDetectionWithEmbedding, ImageRecord,
+    ClusteredFaceDetection, FaceDetection, FaceDetectionWithEmbedding, ImageRecord,
 };
-use photos_services::{
-    ImageAnalysisService, ImageAnalysisServiceError, ImageMetadataRepository, ImageRepository,
-    ResizeService,
-};
+use photos_services::{ImageAnalysisService, ImageAnalysisServiceError, ImageRepository};
 
 pub struct ImageAnalysisConfig {
     pub detector_model_path: PathBuf,
@@ -62,12 +59,11 @@ impl ImageAnalysisService for ImageAnalysis {
         &self,
         image: &DynamicImage,
         face_detection: photos_domain::FaceDetection,
-        resize_service: &dyn ResizeService,
     ) -> Result<FaceDetectionWithEmbedding, ImageAnalysisServiceError> {
         self.face_embedder
             .lock()
             .map_err(|_| ImageAnalysisServiceError::CouldNotInfer)?
-            .generate_embedding(image, face_detection, resize_service)
+            .generate_embedding(image, face_detection)
     }
 
     fn cluster_embeddings(
@@ -93,9 +89,6 @@ impl ImageAnalysisService for ImageAnalysis {
 
 #[cfg(test)]
 mod tests {
-    use image::ImageFormat;
-    use photos_domain::{ImageId, Timestamps};
-    use photos_infra_fast_image_resize_resizer::FastImageResizeResizer;
 
     use super::*;
 
@@ -108,15 +101,6 @@ mod tests {
             .unwrap()
             .join("test_data")
             .join("example.jpeg");
-        let image_record = ImageRecord {
-            id: ImageId::default(),
-            format: ImageFormat::Jpeg,
-            timestamps: Timestamps {
-                exif_timestamp: None,
-                os_timestamp: chrono::Utc::now(),
-                import_timestamp: chrono::Utc::now(),
-            },
-        };
         let detections = apple_face_detection::detect(image_path.to_str().unwrap()).unwrap();
         let image = image::open(image_path).unwrap();
 
@@ -129,11 +113,9 @@ mod tests {
             .join("models")
             .join("facenet_240.onnx");
         let mut face_embedder = FaceEmbedder::new(face_detector_model_path, 160).unwrap();
-        let resize_service = FastImageResizeResizer::default();
         for detection in detections {
-            let embedding = face_embedder
-                .generate_embedding(&image, detection, &resize_service)
-                .unwrap();
+            let embedding = face_embedder.generate_embedding(&image, detection).unwrap();
+            assert_ne!(embedding.embedding[0], 0.0);
         }
     }
 }
