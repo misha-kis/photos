@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use image::ImageFormat;
 use photos_domain::{
-    BoundingBox, ClusteredFaceDetection, FaceDetection, FaceDetectionWithEmbedding, ImageId,
-    ImageRecord, Timestamps, Uuid,
+    Affine2D, BoundingBox, ClusteredFaceDetection, FaceDetection, FaceDetectionWithEmbedding,
+    ImageId, ImageRecord, Timestamps, Uuid,
 };
 use photos_services::{ImageMetadataRepository, ImageMetadataRepositoryError};
 use sqlx::FromRow;
@@ -56,10 +56,10 @@ impl From<ImageRecordRow> for ImageRecord {
 
 #[derive(Debug, Clone, PartialEq, FromRow)]
 pub struct BoundingBoxRow {
-    pub fd_roi_x: f32,
-    pub fd_roi_y: f32,
-    pub fd_roi_w: f32,
-    pub fd_roi_h: f32,
+    pub fd_roi_x: f64,
+    pub fd_roi_y: f64,
+    pub fd_roi_w: f64,
+    pub fd_roi_h: f64,
 }
 
 impl From<BoundingBoxRow> for BoundingBox {
@@ -74,11 +74,36 @@ impl From<BoundingBoxRow> for BoundingBox {
 }
 
 #[derive(Debug, Clone, PartialEq, FromRow)]
-pub struct FaceDetectionRow {
+struct Affine2DRow {
+    pub fd_affine2d_a: f64,
+    pub fd_affine2d_b: f64,
+    pub fd_affine2d_c: f64,
+    pub fd_affine2d_d: f64,
+    pub fd_affine2d_tx: f64,
+    pub fd_affine2d_ty: f64,
+}
+
+impl From<Affine2DRow> for Affine2D {
+    fn from(row: Affine2DRow) -> Self {
+        Affine2D {
+            a: row.fd_affine2d_a,
+            b: row.fd_affine2d_b,
+            c: row.fd_affine2d_c,
+            d: row.fd_affine2d_d,
+            tx: row.fd_affine2d_tx,
+            ty: row.fd_affine2d_ty,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, FromRow)]
+struct FaceDetectionRow {
     pub fd_uuid: Uuid,
     #[sqlx(flatten)]
     pub bounding_box: BoundingBoxRow,
     pub fd_confidence: f32,
+    #[sqlx(flatten)]
+    pub transform: Affine2DRow,
 }
 
 impl From<FaceDetectionRow> for FaceDetection {
@@ -87,6 +112,7 @@ impl From<FaceDetectionRow> for FaceDetection {
             uuid: row.fd_uuid,
             bounding_box: row.bounding_box.into(),
             confidence: row.fd_confidence,
+            transform: row.transform.into(),
         }
     }
 }
@@ -276,17 +302,31 @@ ORDER BY f.face_uuid, fd.fd_uuid
         let mut tx = self.pool.begin().await.internal()?;
 
         for detection in face_detections {
-            let result = sqlx::query(r#"INSERT INTO face_detection(fd_uuid, image_uuid, fd_roi_x, fd_roi_y, fd_roi_w, fd_roi_h, fd_confidence) VALUES (?, ?, ?, ?, ?, ?, ?)"#)
-                .bind(detection.uuid)
-                .bind(image_id)
-                .bind(detection.bounding_box.x)
-                .bind(detection.bounding_box.y)
-                .bind(detection.bounding_box.w)
-                .bind(detection.bounding_box.h)
-                .bind(detection.confidence)
-                .execute(&mut *tx)
-                .await
-                .internal();
+            let result = sqlx::query(
+                r#"
+INSERT INTO face_detection(
+fd_uuid, image_uuid,
+fd_roi_x, fd_roi_y, fd_roi_w, fd_roi_h,
+fd_confidence,
+fd_affine2d_a, fd_affine2d_b, fd_affine2d_c, fd_affine2d_d, fd_affine2d_tx, fd_affine2d_ty
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+            )
+            .bind(detection.uuid)
+            .bind(image_id)
+            .bind(detection.bounding_box.x)
+            .bind(detection.bounding_box.y)
+            .bind(detection.bounding_box.w)
+            .bind(detection.bounding_box.h)
+            .bind(detection.confidence)
+            .bind(detection.transform.a)
+            .bind(detection.transform.b)
+            .bind(detection.transform.c)
+            .bind(detection.transform.d)
+            .bind(detection.transform.tx)
+            .bind(detection.transform.ty)
+            .execute(&mut *tx)
+            .await
+            .internal();
             if let Err(e) = result {
                 tracing::warn!("bad query: {e:?}");
             }
@@ -317,7 +357,10 @@ ORDER BY f.face_uuid, fd.fd_uuid
 
         let result = sqlx::query_as::<_, Row>(
             r#"
-SELECT i.image_uuid, image_format_id, image_exif_timestamp, image_os_timestamp, image_import_timestamp, fd_uuid, fd_roi_x, fd_roi_y, fd_roi_w, fd_roi_h, fd_confidence
+SELECT
+i.image_uuid, image_format_id, image_exif_timestamp, image_os_timestamp, image_import_timestamp,
+fd_uuid, fd_roi_x, fd_roi_y, fd_roi_w, fd_roi_h, fd_confidence,
+fd_affine2d_a, fd_affine2d_b, fd_affine2d_c, fd_affine2d_d, fd_affine2d_tx, fd_affine2d_ty
 FROM face_detection f
 JOIN image i on i.image_uuid = f.image_uuid
 WHERE fd_embedding IS NULL
@@ -329,7 +372,8 @@ WHERE fd_embedding IS NULL
         .into_iter()
         .map(|row| {
             tracing::debug!("{row:?}");
-            (row.image_record_row.into(), row.face_detection.into()) })
+            (row.image_record_row.into(), row.face_detection.into())
+        })
         .collect();
         tracing::debug!("sqlite getting detections without embeddings done");
 
@@ -370,7 +414,10 @@ WHERE fd_uuid = ?
 
         let result = sqlx::query_as::<_, Row>(
             r#"
-SELECT fd_uuid, fd_roi_x, fd_roi_y, fd_roi_w, fd_roi_h, fd_confidence, fd_embedding
+SELECT fd_uuid,
+fd_roi_x, fd_roi_y, fd_roi_w, fd_roi_h, fd_confidence,
+fd_affine2d_a, fd_affine2d_b, fd_affine2d_c, fd_affine2d_d, fd_affine2d_tx, fd_affine2d_ty,
+fd_embedding
 FROM face_detection
 WHERE fd_embedding IS NOT NULL
 "#,
@@ -439,7 +486,9 @@ UPDATE face_detection SET face_uuid = ? WHERE fd_uuid = ?
         }
         let row = sqlx::query_as::<_, Row>(
             r#"
-SELECT i.image_uuid, image_format_id, image_exif_timestamp, image_os_timestamp, image_import_timestamp, fd_roi_x, fd_roi_y, fd_roi_w, fd_roi_h
+SELECT i.image_uuid, image_format_id, image_exif_timestamp, image_os_timestamp, image_import_timestamp,
+fd_roi_x, fd_roi_y, fd_roi_w, fd_roi_h,
+fd_affine2d_a, fd_affine2d_b, fd_affine2d_c, fd_affine2d_d, fd_affine2d_tx, fd_affine2d_ty
 FROM face_detection fd
 JOIN image i ON fd.image_uuid = i.image_uuid
 WHERE fd.fd_uuid = ?

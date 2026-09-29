@@ -22,7 +22,7 @@ impl Default for Options {
                 detector_model_path,
                 embedder_model_path,
                 detector_image_size: 640,
-                embedder_image_size: 240,
+                embedder_image_size: 160,
             },
         }
     }

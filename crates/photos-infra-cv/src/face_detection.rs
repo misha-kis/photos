@@ -15,7 +15,7 @@ use photos_services::{ImageAnalysisServiceError, ResizeService};
 #[derive(Copy, Clone)]
 pub(crate) struct FaceDetection {
     pub(crate) bounding_box: BoundingBox,
-    pub(crate) confidence: f32,
+    pub(crate) confidence: f64,
 }
 
 impl PartialEq for FaceDetection {
@@ -67,12 +67,12 @@ impl FaceDetector {
         resize_service: &dyn ResizeService,
     ) -> Result<Vec<FaceDetection>, ImageAnalysisServiceError> {
         let (img_width, img_height) = (image.width(), image.height());
-        let scale = self.image_size as f32 / img_width.max(img_height) as f32;
+        let scale = self.image_size as f64 / img_width.max(img_height) as f64;
         let img = resize_service
             .resize(
                 image,
-                (img_width as f32 * scale) as u32,
-                (img_height as f32 * scale) as u32,
+                (img_width as f64 * scale) as u32,
+                (img_height as f64 * scale) as u32,
             )
             .internal()?;
         let mut input = Array::zeros((1, 3, self.image_size as usize, self.image_size as usize));
@@ -80,16 +80,16 @@ impl FaceDetector {
             let x = pixel.0 as _;
             let y = pixel.1 as _;
             let [r, g, b, _] = pixel.2.0;
-            input[[0, 0, y, x]] = (r as f32) / 255.;
-            input[[0, 1, y, x]] = (g as f32) / 255.;
-            input[[0, 2, y, x]] = (b as f32) / 255.;
+            input[[0, 0, y, x]] = (r as f64) / 255.;
+            input[[0, 1, y, x]] = (g as f64) / 255.;
+            input[[0, 2, y, x]] = (b as f64) / 255.;
         }
         let outputs: SessionOutputs = self
             .session
             .run(inputs!["images" => TensorRef::from_array_view(&input).internal()?])
             .internal()?;
         let output = outputs["output0"]
-            .try_extract_array::<f32>()
+            .try_extract_array::<f64>()
             .internal()?
             .t()
             .into_owned();
@@ -121,7 +121,7 @@ impl FaceDetector {
             let x = xc - w / 2.;
             let y = yc - h / 2.;
 
-            if x < 0. || y < 0. || x + w > img_width as f32 || y + h > img_height as f32 {
+            if x < 0. || y < 0. || x + w > img_width as f64 || y + h > img_height as f64 {
                 continue;
             }
             face_detections.push(FaceDetection {

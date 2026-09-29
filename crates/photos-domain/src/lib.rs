@@ -10,7 +10,7 @@ use std::cmp::Ordering;
 use image::ImageFormat;
 pub use image::{DynamicImage, RgbaImage};
 pub use image_features::{
-    BoundingBox, ClusteredFaceDetection, FaceDetection, FaceDetectionWithEmbedding,
+    Affine2D, BoundingBox, ClusteredFaceDetection, FaceDetection, FaceDetectionWithEmbedding,
 };
 
 pub type Uuid = uuid::Uuid;

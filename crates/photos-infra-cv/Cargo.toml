@@ -11,6 +11,11 @@ hdbscan = "0.12.0"
 photos-domain = { path = "../photos-domain" }
 photos-services = { path = "../photos-services" }
 tracing = { workspace = true }
+apple-vision = "0.17.0"
+
+[dev-dependencies]
+chrono = { workspace = true }
+photos-infra-fast-image-resize-resizer = { path = "../photos-infra-fast-image-resize-resizer" }
 
 [build-dependencies]
 reqwest = "0.13.2"

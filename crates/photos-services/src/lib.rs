@@ -1,6 +1,6 @@
 use photos_domain::{
-    BoundingBox, ClusteredFaceDetection, DynamicImage, FaceDetection, FaceDetectionWithEmbedding,
-    ImageId, ImageRecord, Uuid,
+    Affine2D, BoundingBox, ClusteredFaceDetection, DynamicImage, FaceDetection,
+    FaceDetectionWithEmbedding, ImageId, ImageRecord, Uuid,
 };
 use std::path::{Path, PathBuf};
 
@@ -124,6 +124,8 @@ pub trait ImageRepository {
 pub enum ImageAnalysisServiceError {
     #[error("could not infer")]
     CouldNotInfer,
+    #[error("affine matrix calculation failed")]
+    AffineMatrixCalculationFailed,
     #[error("ImageAnalysisServiceError {0}")]
     Internal(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
@@ -131,8 +133,8 @@ pub enum ImageAnalysisServiceError {
 pub trait ImageAnalysisService {
     fn get_face_detections(
         &self,
-        image: &DynamicImage,
-        resize_service: &dyn ResizeService,
+        image_record: &ImageRecord,
+        image_repository: &dyn ImageRepository,
     ) -> Result<Vec<FaceDetection>, ImageAnalysisServiceError>;
     fn get_face_embedding(
         &self,
