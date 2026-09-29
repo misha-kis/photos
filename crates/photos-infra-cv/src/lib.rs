@@ -2,14 +2,13 @@ mod apple_face_detection;
 mod errors;
 mod face_alignment;
 mod face_clustering;
-mod face_detection;
+
 mod face_embedding;
 mod geometry;
 
 use std::{path::PathBuf, sync::Mutex};
 
 use face_clustering::{ClusteringConfig, cluster_embeddings};
-use face_detection::FaceDetector;
 use face_embedding::FaceEmbedder;
 use image::DynamicImage;
 use photos_domain::{
@@ -25,20 +24,16 @@ pub struct ImageAnalysisConfig {
 }
 
 pub struct ImageAnalysis {
-    face_detector: Mutex<FaceDetector>,
     face_embedder: Mutex<FaceEmbedder>,
 }
 
 impl ImageAnalysis {
     pub fn new(config: ImageAnalysisConfig) -> Result<Self, ImageAnalysisServiceError> {
         tracing::debug!("initializing models");
-        let face_detector =
-            FaceDetector::new(config.detector_model_path, config.detector_image_size)?;
         let face_embedder =
             FaceEmbedder::new(config.embedder_model_path, config.embedder_image_size)?;
         tracing::debug!("initializing models done");
         Ok(Self {
-            face_detector: Mutex::new(face_detector),
             face_embedder: Mutex::new(face_embedder),
         })
     }

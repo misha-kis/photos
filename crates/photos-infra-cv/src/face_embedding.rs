@@ -44,7 +44,7 @@ impl FaceEmbedder {
         )?;
 
         let mut input = Array::zeros((1, 3, self.image_size as usize, self.image_size as usize));
-        for (index, pixel) in aligned.into_raw().chunks_exact(3).enumerate() {
+        for (index, pixel) in aligned.into_raw().as_chunks::<3>().0.iter().enumerate() {
             let y = index / self.image_size as usize;
             let x = index % self.image_size as usize;
             input[[0, 0, y, x]] = (pixel[0] as f32) / 255.;
