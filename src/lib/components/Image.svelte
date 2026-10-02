@@ -3,7 +3,13 @@
 
     let { src, alt }: { src: string; alt: string } = $props();
 
-    let imageSrc = $derived(convertFileSrc(src));
+    let imageSrc = $derived(
+        src.startsWith("blob:") ||
+            src.startsWith("data:") ||
+            src.startsWith("http")
+            ? src
+            : convertFileSrc(src),
+    );
 </script>
 
 <img src={imageSrc} {alt} class="h-full w-full object-cover" />
