@@ -85,7 +85,7 @@
             </nav>
         {/if}
     </aside>
-    <div class="min-w-0 flex-1 p-8">
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col p-8">
         {#if !selectedPerson}
             <p class="text-zinc-400">Select a person to view their photos.</p>
         {:else if personLoading}
