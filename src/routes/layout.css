@@ -21,12 +21,14 @@ h1 {
 }
 
 button {
-    padding: 0.5rem 1rem;
-    border-radius: 0.5rem;
-    border-width: 1px;
-    border-color: #52525b;
+    border: 0;
 }
 
-button:hover {
+.button-bordered {
+    border: 1px solid #52525b;
+    border-radius: 0.5rem;
+}
+
+.button-bordered:hover {
     background-color: #3f3f46;
 }

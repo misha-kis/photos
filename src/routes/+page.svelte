@@ -20,6 +20,8 @@
 <div
     class="flex min-h-screen flex-col items-center justify-center gap-4 bg-zinc-900 p-8 text-zinc-100"
 >
-    <button onclick={selectDirectory}>Open/Create a Library</button>
+    <button class="button-bordered px-4 py-2" onclick={selectDirectory}
+        >Open/Create a Library</button
+    >
     <p class="text-zinc-400">No directory selected.</p>
 </div>

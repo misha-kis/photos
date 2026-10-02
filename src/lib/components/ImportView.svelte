@@ -105,7 +105,7 @@
         </div>
         <button
             type="button"
-            class="rounded border px-3 py-2 text-sm hover:bg-zinc-800 disabled:opacity-50"
+            class="button-bordered px-3 py-2 text-sm disabled:opacity-50"
             onclick={chooseDirectory}
             disabled={importing}
         >
@@ -147,7 +147,7 @@
     <footer class="flex justify-end gap-3 border-t pt-4">
         <button
             type="button"
-            class="rounded border px-4 py-2 hover:bg-zinc-800 disabled:opacity-50"
+            class="button-bordered px-4 py-2 disabled:opacity-50"
             onclick={cancelImport}
             disabled={importing}
         >
@@ -155,7 +155,7 @@
         </button>
         <button
             type="button"
-            class="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            class="button-bordered bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             onclick={applyImport}
             disabled={loading || importing || !items.length}
         >

@@ -182,7 +182,7 @@
             />
             <button
                 type="button"
-                class="absolute right-3 top-3 rounded-full bg-black/60 px-3 py-1 text-xl text-white"
+                class="button-bordered absolute right-3 top-3 rounded-full bg-black/60 px-3 py-1 text-xl text-white"
                 aria-label="Close fullscreen image"
                 onclick={closeFullscreen}
             >
