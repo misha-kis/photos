@@ -38,28 +38,21 @@ impl<T: ResizeService> FSImageRepository<T> {
 
     fn original_path(&self, image_id: ImageId, extension: &str) -> PathBuf {
         tracing::debug!("getting original paths for {image_id}");
-        let image_id_string = image_id.to_string();
-        let image_id_split = image_id_string.split_at(2);
-        self.path
-            .join("originals")
-            .join(image_id_split.0)
-            .join(image_id_split.1)
-            .with_added_extension(extension)
+        let (bucket, filename) = image_path_parts(image_id, extension);
+        self.path.join("originals").join(bucket).join(filename)
     }
 
     fn thumbnail_paths(&self, image_id: ImageId) -> Vec<PathBuf> {
         tracing::debug!("getting thumbnail paths for {image_id}");
         let thumbnails_path = self.path.join("thumbnails");
-        let image_id_string = image_id.to_string();
-        let image_id_split = image_id_string.split_at(2);
+        let (bucket, filename) = image_path_parts(image_id, "jpeg");
         self.thumbnail_sizes
             .iter()
             .map(|thumbnail_size| {
                 thumbnails_path
                     .join(thumbnail_size.to_string())
-                    .join(image_id_split.0)
-                    .join(image_id_split.1)
-                    .with_added_extension("jpeg")
+                    .join(&bucket)
+                    .join(&filename)
             })
             .collect()
     }
@@ -230,15 +223,13 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
             tracing::error!("thumbnail_path: invalid thumbnail size {thumbnail_size}");
             Err(ImageRepositoryError::InvalidThumbnailSize)
         } else {
-            let image_id_string = image_id.to_string();
-            let image_id_split = image_id_string.split_at(2);
+            let (bucket, filename) = image_path_parts(*image_id, "jpeg");
             let path = self
                 .path
                 .join("thumbnails")
                 .join(thumbnail_size.to_string())
-                .join(image_id_split.0)
-                .join(image_id_split.1)
-                .with_added_extension("jpeg");
+                .join(bucket)
+                .join(filename);
             tracing::debug!("thumbnail_path: {image_id}@{thumbnail_size}px: {:?}", path);
             Ok(path)
         }
@@ -247,6 +238,12 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
     fn get_original_path(&self, image_record: &ImageRecord) -> PathBuf {
         self.original_path(image_record.id, image_record.format.extensions_str()[0])
     }
+}
+
+fn image_path_parts(image_id: ImageId, extension: &str) -> (String, String) {
+    let image_id = image_id.to_string();
+    let bucket = image_id[image_id.len() - 2..].to_string();
+    (bucket, image_id + "." + extension)
 }
 
 fn read_timestamps_with_import_timestamp(
