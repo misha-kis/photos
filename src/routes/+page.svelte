@@ -1,34 +1,7 @@
 <script lang="ts">
     import { invoke } from "@tauri-apps/api/core";
-    import { listen } from "@tauri-apps/api/event";
     import { open } from "@tauri-apps/plugin-dialog";
-    import SideBar from "$lib/components/SideBar.svelte";
-    import GridView from "$lib/components/GridView.svelte";
-    import ImportView from "$lib/components/ImportView.svelte";
-    import type { PersonCluster, Photo } from "$lib/types";
-
-    let selectedDirectory = $state("");
-    let showImport = $state(false);
-    let view = $state<"gallery" | "people">("gallery");
-    let peopleLoading = $state(false);
-    let peopleError = $state<string | null>(null);
-    let people = $state<PersonCluster[]>([]);
-    let selectedPerson = $state<PersonCluster | null>(null);
-    let personPhotos = $state<Photo[]>([]);
-    let personLoading = $state(false);
-    let personError = $state<string | null>(null);
-
-    async function setGallery(gallery: string | null) {
-        await invoke("set_gallery", { gallery });
-    }
-
-    const galleryChangedListener = await listen<string>(
-        "gallery-changed",
-        (evt) => {
-            selectedDirectory = evt.payload;
-            view = "gallery";
-        },
-    );
+    import { goto } from "$app/navigation";
 
     async function selectDirectory() {
         const selected = await open({
@@ -36,136 +9,17 @@
             multiple: false,
             title: "Select the Library directory",
         });
+
         if (typeof selected === "string") {
-            await setGallery(selected);
-            selectedDirectory = selected;
-            view = "gallery";
+            await invoke("set_gallery", { gallery: selected });
+            await goto("/app");
         }
-    }
-
-    async function getPhotos(): Promise<Photo[]> {
-        const records = await invoke<[string, string, string][]>(
-            "get_image_ids_with_paths",
-        );
-        return records.map(([id, thumbnailPath, originalPath]) => ({
-            id,
-            thumbnailPath,
-            originalPath,
-        }));
-    }
-
-    async function navigate(viewName: "gallery" | "people") {
-        view = viewName;
-        if (viewName !== "people") return;
-
-        selectedPerson = null;
-        personPhotos = [];
-        peopleError = null;
-        peopleLoading = true;
-        try {
-            people = await invoke<PersonCluster[]>("get_people");
-        } catch (error) {
-            people = [];
-            peopleError = String(error);
-        } finally {
-            peopleLoading = false;
-        }
-    }
-
-    async function openPerson(person: PersonCluster) {
-        selectedPerson = person;
-        personError = null;
-        personLoading = true;
-        try {
-            const records = await invoke<[string, string, string][]>(
-                "get_person_photos",
-                { detectionIds: person.detection_ids },
-            );
-            personPhotos = records.map(([id, thumbnailPath, originalPath]) => ({
-                id,
-                thumbnailPath,
-                originalPath,
-            }));
-        } catch (error) {
-            personPhotos = [];
-            personError = String(error);
-        } finally {
-            personLoading = false;
-        }
-    }
-
-    function personThumbnail(person: PersonCluster) {
-        return person.thumbnail_path;
     }
 </script>
 
-{#if selectedDirectory}
-    <div class="flex h-screen overflow-hidden">
-        <SideBar active={view} onnavigate={navigate} />
-        <div
-            class="flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-900 p-8 text-zinc-100"
-        >
-            {#if showImport}
-                <ImportView
-                    oncancel={() => (showImport = false)}
-                    oncomplete={() => (showImport = false)}
-                />
-            {:else if view === "people"}
-                {#if selectedPerson}
-                    <div class="mb-4 flex items-center gap-4">
-                        <button
-                            type="button"
-                            class="rounded bg-zinc-700 px-4 py-2 text-white hover:bg-zinc-600"
-                            onclick={() => (selectedPerson = null)}
-                            >Back to People</button
-                        >
-                        <h1 class="text-xl font-semibold">Person</h1>
-                    </div>
-                    {#if personLoading}
-                        <p>Loading photos…</p>
-                    {:else if personError}
-                        <p class="text-red-400">{personError}</p>
-                    {:else}
-                        <GridView getPhotos={async () => personPhotos} />
-                    {/if}
-                {:else if peopleLoading}
-                    <p>Loading people…</p>
-                {:else if peopleError}
-                    <p class="text-red-400">{peopleError}</p>
-                {:else if !people.length}
-                    <p>No people found yet</p>
-                {:else}
-                    <GridView
-                        initialItems={people.map(personThumbnail)}
-                        showFullscreen={false}
-                        itemLabels={Object.fromEntries(
-                            people.map((person) => [
-                                personThumbnail(person),
-                                `${person.photo_count} photos`,
-                            ]),
-                        )}
-                        onItemClick={(_, index) => openPerson(people[index])}
-                    />
-                {/if}
-            {:else}
-                <div class="mb-4 flex items-center justify-between">
-                    <p>Selected: {selectedDirectory}</p>
-                    <button
-                        type="button"
-                        class="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-                        onclick={() => (showImport = true)}
-                        >Import photos</button
-                    >
-                </div>
-                <GridView {getPhotos} />
-            {/if}
-        </div>
-    </div>
-{:else}
-    <div
-        class="flex min-h-screen flex-col items-center justify-center gap-4 bg-zinc-900 p-8 text-zinc-100"
-    >
-        <button onclick={selectDirectory}>Open/Create a Library</button>
-        <p class="text-zinc-400">No directory selected.</p>
-    </div>
-{/if}
+<div
+    class="flex min-h-screen flex-col items-center justify-center gap-4 bg-zinc-900 p-8 text-zinc-100"
+>
+    <button onclick={selectDirectory}>Open/Create a Library</button>
+    <p class="text-zinc-400">No directory selected.</p>
+</div>
