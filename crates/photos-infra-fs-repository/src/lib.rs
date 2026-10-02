@@ -59,12 +59,12 @@ impl<T: ResizeService> FSImageRepository<T> {
 }
 
 impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
-    fn insert_image(&self, image_path: &Path) -> Result<ImageRecord, ImageRepositoryError> {
-        tracing::info!("inserting image from path {:?}", image_path);
+    fn insert_image(&self, import_image_path: &Path) -> Result<ImageRecord, ImageRepositoryError> {
+        tracing::info!("inserting image from path {:?}", import_image_path);
         let image_id = ImageId::now_v7();
 
         tracing::debug!("opening image");
-        let reader = ImageReader::open(image_path)
+        let reader = ImageReader::open(import_image_path)
             .internal()?
             .with_guessed_format()
             .internal()?;
@@ -77,15 +77,15 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
         ensure_dir(original_path.parent().expect("parent dir exists")).internal()?;
 
         tracing::debug!("copying original image");
-        let orientation = read_orientation(image_path);
+        let orientation = read_orientation(import_image_path);
         let image = match &orientation {
             None | Some(1) => {
-                copy(image_path, &original_path).internal()?;
+                copy(import_image_path, &original_path).internal()?;
                 image
             }
             Some(orientation) => {
                 let image = apply_orientation(image, *orientation);
-                let file = File::create(image_path).internal()?;
+                let file = File::create(&original_path).internal()?;
                 let mut writer = BufWriter::new(file);
                 image.write_to(&mut writer, format).internal()?;
                 image
@@ -94,10 +94,6 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
         tracing::debug!("done copying original image");
 
         let thumbnail_paths = self.thumbnail_paths(image_id);
-        let image = match read_orientation(image_path) {
-            None => image,
-            Some(orientation) => apply_orientation(image, orientation),
-        };
         let width = image.width();
         let height = image.height();
 
