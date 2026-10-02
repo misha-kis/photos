@@ -12,4 +12,4 @@
     );
 </script>
 
-<img src={imageSrc} {alt} class="h-full w-full object-cover" />
+<img src={imageSrc} {alt} class="h-full w-full object-contain" />

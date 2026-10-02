@@ -11,7 +11,6 @@
         initialItems?: string[];
         onItemClick?: (item: Photo, index: number) => void;
         showFullscreen?: boolean;
-        itemLabels?: Record<string, string>;
     };
 
     let {
@@ -19,7 +18,6 @@
         initialItems = [],
         onItemClick,
         showFullscreen = true,
-        itemLabels = {},
     }: Props = $props();
 
     // Grid configuration
@@ -144,7 +142,7 @@
                 {@const absoluteItemId = startIndex + itemId}
                 <button
                     type="button"
-                    class="relative flex h-32 flex-col overflow-hidden rounded-lg border border-zinc-700 bg-zinc-800 p-2 text-left shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    class="relative flex h-32 flex-col overflow-hidden bg-transparent p-0 text-left focus:outline-none focus:ring-2 focus:ring-blue-500"
                     class:cursor-zoom-in={showFullscreen}
                     aria-label={`Open image ${item.id}`}
                     onclick={() =>
@@ -153,13 +151,8 @@
                             : showFullscreen && openImage(absoluteItemId)}
                 >
                     <div class="min-h-0 flex-1">
-                        <Image src={item.thumbnailPath} alt={item.id} />
+                        <Image src={item.thumbnailPath} alt="" />
                     </div>
-                    {#if itemLabels[item.id]}
-                        <span class="pt-1 text-sm text-zinc-300"
-                            >{itemLabels[item.id]}</span
-                        >
-                    {/if}
                 </button>
             {/each}
         </div>

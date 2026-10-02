@@ -6,7 +6,7 @@
     let { active, onnavigate }: Props = $props();
 </script>
 
-<aside class="w-64 shrink-0 bg-zinc-950 text-zinc-100">
+<aside class="w-40 shrink-0 bg-zinc-950 text-zinc-100">
     <div class="h-full overflow-y-auto p-5">
         <h2 class="mb-8 text-2xl font-bold">Gallery</h2>
         <nav class="space-y-2">
