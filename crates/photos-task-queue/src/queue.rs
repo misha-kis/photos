@@ -62,9 +62,6 @@ impl TaskQueue {
                             Some(TaskPriority::High) => &priorities_high,
                         };
 
-
-                        tracing::trace!("max allowed priority: {allowed_priority:?}");
-
                         for priority in priorities_to_run {
                             while !queues.is_empty() && can_start(*priority, &running_tasks, max_blocking_tasks) {
                                 let task = match queues.pop(*priority) {

@@ -2,28 +2,31 @@
     import { invoke } from "@tauri-apps/api/core";
     import { listen } from "@tauri-apps/api/event";
     import { open } from "@tauri-apps/plugin-dialog";
-    import Image from "$lib/components/Image.svelte";
     import SideBar from "$lib/components/SideBar.svelte";
     import GridView from "$lib/components/GridView.svelte";
     import ImportView from "$lib/components/ImportView.svelte";
-    import type { Photo } from "$lib/types";
+    import type { PersonCluster, Photo } from "$lib/types";
 
-    let name = $state("");
-    let greetMsg = $state("");
     let selectedDirectory = $state("");
     let showImport = $state(false);
-    // let image_ids = $state();
+    let view = $state<"gallery" | "people">("gallery");
+    let peopleLoading = $state(false);
+    let peopleError = $state<string | null>(null);
+    let people = $state<PersonCluster[]>([]);
+    let selectedPerson = $state<PersonCluster | null>(null);
+    let personPhotos = $state<Photo[]>([]);
+    let personLoading = $state(false);
+    let personError = $state<string | null>(null);
 
     async function setGallery(gallery: string | null) {
-        await invoke("set_gallery", { gallery }).then(() => {
-            console.log("gallery opened");
-        });
+        await invoke("set_gallery", { gallery });
     }
 
     const galleryChangedListener = await listen<string>(
         "gallery-changed",
         (evt) => {
             selectedDirectory = evt.payload;
+            view = "gallery";
         },
     );
 
@@ -33,40 +36,115 @@
             multiple: false,
             title: "Select the Library directory",
         });
-
         if (typeof selected === "string") {
             await setGallery(selected);
             selectedDirectory = selected;
+            view = "gallery";
         }
     }
-
-    // const items: { id: number; title: string }[] = [];
-    // for (let i = 0; i < 100; i++) {
-    //     items.push({ id: i, title: `Photo ${i + 1}` });
-    // }
 
     async function getPhotos(): Promise<Photo[]> {
         const records = await invoke<[string, string, string][]>(
             "get_image_ids_with_paths",
         );
-
         return records.map(([id, thumbnailPath, originalPath]) => ({
             id,
             thumbnailPath,
             originalPath,
         }));
     }
+
+    async function navigate(viewName: "gallery" | "people") {
+        view = viewName;
+        if (viewName !== "people") return;
+
+        selectedPerson = null;
+        personPhotos = [];
+        peopleError = null;
+        peopleLoading = true;
+        try {
+            people = await invoke<PersonCluster[]>("get_people");
+        } catch (error) {
+            people = [];
+            peopleError = String(error);
+        } finally {
+            peopleLoading = false;
+        }
+    }
+
+    async function openPerson(person: PersonCluster) {
+        selectedPerson = person;
+        personError = null;
+        personLoading = true;
+        try {
+            const records = await invoke<[string, string, string][]>(
+                "get_person_photos",
+                { detectionIds: person.detection_ids },
+            );
+            personPhotos = records.map(([id, thumbnailPath, originalPath]) => ({
+                id,
+                thumbnailPath,
+                originalPath,
+            }));
+        } catch (error) {
+            personPhotos = [];
+            personError = String(error);
+        } finally {
+            personLoading = false;
+        }
+    }
+
+    function personThumbnail(person: PersonCluster) {
+        return person.thumbnail_path;
+    }
 </script>
 
 {#if selectedDirectory}
     <div class="flex h-screen overflow-hidden">
-        <SideBar />
+        <SideBar active={view} onnavigate={navigate} />
         <div class="flex min-h-0 min-w-0 flex-1 flex-col bg-gray-100 p-8">
             {#if showImport}
                 <ImportView
                     oncancel={() => (showImport = false)}
                     oncomplete={() => (showImport = false)}
                 />
+            {:else if view === "people"}
+                {#if selectedPerson}
+                    <div class="mb-4 flex items-center gap-4">
+                        <button
+                            type="button"
+                            class="rounded bg-gray-700 px-4 py-2 text-white"
+                            onclick={() => (selectedPerson = null)}
+                            >Back to People</button
+                        >
+                        <h1 class="text-xl font-semibold">Person</h1>
+                    </div>
+                    {#if personLoading}
+                        <p>Loading photos…</p>
+                    {:else if personError}
+                        <p class="text-red-700">{personError}</p>
+                    {:else}
+                        <GridView getPhotos={async () => personPhotos} />
+                    {/if}
+                {:else if peopleLoading}
+                    <p>Loading people…</p>
+                {:else if peopleError}
+                    <p class="text-red-700">{peopleError}</p>
+                {:else if !people.length}
+                    <p>No people found yet</p>
+                {:else}
+                    <GridView
+                        initialItems={people.map(personThumbnail)}
+                        showFullscreen={false}
+                        itemLabels={Object.fromEntries(
+                            people.map((person) => [
+                                personThumbnail(person),
+                                `${person.photo_count} photos`,
+                            ]),
+                        )}
+                        onItemClick={(_, index) => openPerson(people[index])}
+                    />
+                {/if}
             {:else}
                 <div class="mb-4 flex items-center justify-between">
                     <p>Selected: {selectedDirectory}</p>
@@ -74,9 +152,8 @@
                         type="button"
                         class="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
                         onclick={() => (showImport = true)}
+                        >Import photos</button
                     >
-                        Import photos
-                    </button>
                 </div>
                 <GridView {getPhotos} />
             {/if}

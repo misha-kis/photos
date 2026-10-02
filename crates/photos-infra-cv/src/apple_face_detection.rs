@@ -109,7 +109,7 @@ mod tests {
             .into_iter()
             .next()
             .expect("test image has a face");
-        let transformed = transform_image(&image, &detection.transform, (160, 160)).unwrap();
+        let transformed = transform_image(&image, &detection.transform, (112, 112)).unwrap();
         transformed
             .save(output_dir.join("face_embedding_input.png"))
             .unwrap();

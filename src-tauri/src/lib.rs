@@ -1,7 +1,8 @@
 use photos_app::config::Options;
 use photos_app::App as Gallery;
 use photos_app::JobEvent;
-use photos_domain::ImageId;
+use photos_domain::{ImageId, Uuid};
+use serde::Serialize;
 use std::path::PathBuf;
 use tauri::{Emitter, Manager};
 use tokio::sync::RwLock;
@@ -42,6 +43,63 @@ async fn get_image_ids_with_paths(
         .await
         .map_err(|e| e.to_string())?;
     Ok(ids_with_paths)
+}
+
+#[derive(Serialize)]
+struct PersonCluster {
+    id: Uuid,
+    thumbnail_path: PathBuf,
+    photo_count: usize,
+    detection_ids: Vec<Uuid>,
+}
+
+#[tauri::command]
+async fn get_people(
+    state: tauri::State<'_, RwLock<AppState>>,
+) -> Result<Vec<PersonCluster>, String> {
+    let state = state.read().await;
+    let gallery = state.gallery.as_ref().ok_or("a gallery must be opened")?;
+    let clusters = gallery
+        .get_face_clusters_async()
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut people = Vec::with_capacity(clusters.len());
+
+    for (id, detection_ids) in clusters {
+        let thumbnail_path = gallery.get_face_thumbnail_path(id);
+        let records = gallery
+            .get_image_records_for_face_cluster_async(&detection_ids)
+            .await
+            .map_err(|e| e.to_string())?;
+        people.push(PersonCluster {
+            id,
+            thumbnail_path,
+            photo_count: records.len(),
+            detection_ids,
+        });
+    }
+
+    people.sort_by(|a, b| {
+        b.photo_count
+            .cmp(&a.photo_count)
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    Ok(people)
+}
+
+#[tauri::command]
+async fn get_person_photos(
+    state: tauri::State<'_, RwLock<AppState>>,
+    detection_ids: Vec<Uuid>,
+) -> Result<Vec<(ImageId, PathBuf, PathBuf)>, String> {
+    let state = state.read().await;
+    state
+        .gallery
+        .as_ref()
+        .ok_or("a gallery must be opened")?
+        .get_image_records_for_face_cluster_async(&detection_ids)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -90,7 +148,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(
             tauri_plugin_log::Builder::new()
-                .level(tauri_plugin_log::log::LevelFilter::Info)
+                .level(tauri_plugin_log::log::LevelFilter::Warn)
                 .build(),
         )
         .setup(|app| {
@@ -99,12 +157,13 @@ pub fn run() {
         })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_log::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             set_gallery,
             import_images,
             discover_images_for_import,
             get_image_ids_with_paths,
+            get_people,
+            get_person_photos,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

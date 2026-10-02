@@ -106,8 +106,8 @@ mod tests {
             .unwrap()
             .join("assets")
             .join("models")
-            .join("facenet_240.onnx");
-        let mut face_embedder = FaceEmbedder::new(face_detector_model_path, 160).unwrap();
+            .join("facenet_112.onnx");
+        let mut face_embedder = FaceEmbedder::new(face_detector_model_path, 112).unwrap();
         for detection in detections {
             let embedding = face_embedder.generate_embedding(&image, detection).unwrap();
             assert_ne!(embedding.embedding[0], 0.0);

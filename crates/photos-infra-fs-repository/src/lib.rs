@@ -2,7 +2,7 @@ use chrono::{NaiveDateTime, Utc};
 use exif::{Reader, Tag};
 use image::codecs::jpeg::JpegEncoder;
 use image::{DynamicImage, ImageEncoder, ImageReader};
-use photos_domain::{BoundingBox, ImageId, ImageRecord, Timestamps};
+use photos_domain::{BoundingBox, ImageId, ImageRecord, Timestamps, Uuid};
 use photos_services::{ImageRepository, ImageRepositoryError, ResizeService};
 use std::fs::{self, File, copy, create_dir_all};
 use std::io::{BufReader, BufWriter};
@@ -196,6 +196,29 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
         self.resize_service
             .resize(&image, thumbnail_size, thumbnail_size)
             .internal()
+    }
+
+    fn save_face_thumbnail(
+        &self,
+        cluster_id: Uuid,
+        thumbnail: &DynamicImage,
+    ) -> Result<PathBuf, ImageRepositoryError> {
+        let path = self.get_face_thumbnail_path(cluster_id);
+        if let Some(parent) = path.parent() {
+            ensure_dir(parent).internal()?;
+        }
+        let file = File::create(&path).internal()?;
+        let mut writer = BufWriter::new(file);
+        let encoder = JpegEncoder::new_with_quality(&mut writer, 85);
+        thumbnail.write_with_encoder(encoder).internal()?;
+        Ok(path)
+    }
+
+    fn get_face_thumbnail_path(&self, cluster_id: Uuid) -> PathBuf {
+        self.path
+            .join("face_thumbnails")
+            .join(cluster_id.to_string())
+            .with_added_extension("jpeg")
     }
 
     fn get_thumbnail_path(

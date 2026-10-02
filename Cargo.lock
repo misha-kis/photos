@@ -3813,6 +3813,7 @@ dependencies = [
 name = "photos"
 version = "0.1.0"
 dependencies = [
+ "image",
  "photos-app",
  "photos-domain",
  "serde",

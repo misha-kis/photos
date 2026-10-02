@@ -4,6 +4,7 @@ use photos_domain::{ImageId, RgbaImage, Uuid};
 use photos_infra_fast_image_resize_resizer::FastImageResizeResizer;
 use photos_infra_fs_repository::FSImageRepository;
 use photos_infra_sqlite_image_metadata_repository::SqliteImageMetadataRepository;
+use photos_services::{ImageMetadataRepository, ImageRepository};
 
 use photos_task_queue::{TaskPriority, TaskQueue};
 use std::path::PathBuf;
@@ -69,17 +70,17 @@ impl App {
 
         let analysis_service_registry = app.service_registry.clone();
         let analysis_task_queue = app.task_queue.clone();
-        tokio::spawn(async move {
-            let cancel = CancellationToken::new();
-            let ctx = TaskContext {
-                service_registry: analysis_service_registry,
-                task_queue: analysis_task_queue,
-            };
-            let face_detection_job = Arc::new(get_face_detection_job(ctx.clone()));
-            let embedding_job = Arc::new(get_embeddings_detection_job(ctx.clone()));
-            let jobs = (face_detection_job, embedding_job);
-            let _ = jobs.dispatch(ctx, (), cancel).await;
-        });
+        // tokio::spawn(async move {
+        //     let cancel = CancellationToken::new();
+        //     let ctx = TaskContext {
+        //         service_registry: analysis_service_registry,
+        //         task_queue: analysis_task_queue,
+        //     };
+        //     let face_detection_job = Arc::new(get_face_detection_job(ctx.clone()));
+        //     let embedding_job = Arc::new(get_embeddings_detection_job(ctx.clone()));
+        //     let jobs = (face_detection_job, embedding_job);
+        //     let _ = jobs.dispatch(ctx, (), cancel).await;
+        // });
 
         Ok(app)
     }
@@ -146,6 +147,41 @@ impl App {
         receiver
             .await
             .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?
+    }
+
+    pub fn get_face_thumbnail_path(&self, cluster_id: Uuid) -> PathBuf {
+        self.service_registry
+            .image_repository
+            .get_face_thumbnail_path(cluster_id)
+    }
+
+    pub async fn get_image_records_for_face_cluster_async(
+        &self,
+        detection_ids: &[Uuid],
+    ) -> Result<Vec<(ImageId, PathBuf, PathBuf)>, AppError> {
+        let mut records = std::collections::BTreeMap::new();
+        for detection_id in detection_ids {
+            let (_, image_record) = self
+                .service_registry
+                .image_metadata_repository
+                .get_bbox_and_image_for_detection_id(*detection_id)
+                .await
+                .map_err(|e| AppError::InvalidDatabaseState { err: e.to_string() })?;
+            let thumbnail_path = self
+                .service_registry
+                .image_repository
+                .get_thumbnail_path(&image_record.id, 128)
+                .map_err(|e| AppError::ImageRepositoryError { err: e.to_string() })?;
+            let original_path = self
+                .service_registry
+                .image_repository
+                .get_original_path(&image_record);
+            records.insert(
+                image_record.id,
+                (image_record.id, thumbnail_path, original_path),
+            );
+        }
+        Ok(records.into_values().collect())
     }
 
     #[allow(clippy::async_yields_async)]

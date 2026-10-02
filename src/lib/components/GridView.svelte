@@ -9,9 +9,18 @@
     type Props = {
         getPhotos?: () => Promise<Photo[]>;
         initialItems?: string[];
+        onItemClick?: (item: Photo, index: number) => void;
+        showFullscreen?: boolean;
+        itemLabels?: Record<string, string>;
     };
 
-    let { getPhotos, initialItems = [] }: Props = $props();
+    let {
+        getPhotos,
+        initialItems = [],
+        onItemClick,
+        showFullscreen = true,
+        itemLabels = {},
+    }: Props = $props();
 
     // Grid configuration
     const rowHeight = 120;
@@ -25,7 +34,6 @@
     let fullscreenSrc = $state<string | null>(null);
     let columnCount = $state(1);
 
-    // let imageIds = $state([]);
     let items: Photo[] = $state([]);
 
     let rowSize = $derived(rowHeight + gap);
@@ -74,18 +82,16 @@
     }
 
     function handleKeydown(event: KeyboardEvent) {
-        if (fullscreenItemId === null) return;
+        const itemId = fullscreenItemId;
+        if (itemId === null) return;
         if (event.key === "Escape") {
             closeFullscreen();
         }
-        if (event.key === "ArrowLeft" && fullscreenItemId! > 0) {
-            openImage(fullscreenItemId! - 1);
+        if (event.key === "ArrowLeft" && itemId > 0) {
+            openImage(itemId - 1);
         }
-        if (
-            event.key === "ArrowRight" &&
-            fullscreenItemId! < items.length - 1
-        ) {
-            openImage(fullscreenItemId! + 1);
+        if (event.key === "ArrowRight" && itemId < items.length - 1) {
+            openImage(itemId + 1);
         }
     }
 
@@ -106,9 +112,7 @@
     onMount(() => {
         updateColumns();
         updateContainerHeight();
-        (async () => {
-            await updateImages();
-        })();
+        void updateImages();
 
         const observer = new ResizeObserver(() => {
             updateColumns();
@@ -140,11 +144,22 @@
                 {@const absoluteItemId = startIndex + itemId}
                 <button
                     type="button"
-                    class="h-32 cursor-zoom-in overflow-hidden rounded-lg border bg-white p-4 text-left shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    class="relative flex h-32 flex-col overflow-hidden rounded-lg border bg-white p-2 text-left shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    class:cursor-zoom-in={showFullscreen}
                     aria-label={`Open image ${item.id}`}
-                    onclick={() => openImage(absoluteItemId)}
+                    onclick={() =>
+                        onItemClick
+                            ? onItemClick(item, absoluteItemId)
+                            : showFullscreen && openImage(absoluteItemId)}
                 >
-                    <Image src={item.thumbnailPath} alt={item.id} />
+                    <div class="min-h-0 flex-1">
+                        <Image src={item.thumbnailPath} alt={item.id} />
+                    </div>
+                    {#if itemLabels[item.id]}
+                        <span class="pt-1 text-sm text-gray-700"
+                            >{itemLabels[item.id]}</span
+                        >
+                    {/if}
                 </button>
             {/each}
         </div>

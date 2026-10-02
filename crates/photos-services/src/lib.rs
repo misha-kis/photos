@@ -112,6 +112,12 @@ pub trait ImageRepository {
         bounding_box: BoundingBox,
         thumbnail_size: u32,
     ) -> Result<DynamicImage, ImageRepositoryError>;
+    fn save_face_thumbnail(
+        &self,
+        cluster_id: Uuid,
+        thumbnail: &DynamicImage,
+    ) -> Result<PathBuf, ImageRepositoryError>;
+    fn get_face_thumbnail_path(&self, cluster_id: Uuid) -> PathBuf;
     fn get_thumbnail_path(
         &self,
         image_id: &ImageId,

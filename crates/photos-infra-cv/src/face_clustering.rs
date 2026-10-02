@@ -14,7 +14,7 @@ pub struct ClusteringConfig {
 impl Default for ClusteringConfig {
     fn default() -> Self {
         Self {
-            min_cluster_size: 2,
+            min_cluster_size: 10,
             min_samples: None,
         }
     }
