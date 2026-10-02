@@ -53,16 +53,10 @@ impl Reduce<(), ()> for ClusterEmbeddings {
                 .get_bbox_and_image_for_detection_id(*representative)
                 .await
                 .map_err(|e| AppError::InvalidDatabaseState { err: e.to_string() })?;
-            let thumbnail = self
-                .ctx
-                .service_registry
-                .image_repository
-                .get_face_thumbnail(&image_record, bounding_box, 128)
-                .map_err(|e| AppError::ImageRepositoryError { err: e.to_string() })?;
             self.ctx
                 .service_registry
                 .image_repository
-                .save_face_thumbnail(cluster_id, &thumbnail)
+                .save_face_thumbnail(cluster_id, &image_record, bounding_box, 128)
                 .map_err(|e| AppError::ImageRepositoryError { err: e.to_string() })?;
         }
         Ok(())

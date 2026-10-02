@@ -194,8 +194,11 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
     fn save_face_thumbnail(
         &self,
         cluster_id: Uuid,
-        thumbnail: &DynamicImage,
+        image_record: &ImageRecord,
+        bounding_box: BoundingBox,
+        thumbnail_size: u32,
     ) -> Result<PathBuf, ImageRepositoryError> {
+        let thumbnail = self.get_face_thumbnail(image_record, bounding_box, thumbnail_size)?;
         let path = self.get_face_thumbnail_path(cluster_id);
         if let Some(parent) = path.parent() {
             ensure_dir(parent).internal()?;
