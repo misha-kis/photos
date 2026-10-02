@@ -100,12 +100,12 @@
         <div>
             <h1 class="text-2xl font-semibold">Import photos</h1>
             {#if directory}
-                <p class="truncate text-sm text-gray-600">{directory}</p>
+                <p class="truncate text-sm text-zinc-400">{directory}</p>
             {/if}
         </div>
         <button
             type="button"
-            class="rounded border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+            class="rounded border px-3 py-2 text-sm hover:bg-zinc-800 disabled:opacity-50"
             onclick={chooseDirectory}
             disabled={importing}
         >
@@ -114,7 +114,7 @@
     </header>
 
     {#if loading}
-        <div class="flex flex-1 items-center justify-center text-gray-600">
+        <div class="flex flex-1 items-center justify-center text-zinc-400">
             Looking for images…
         </div>
     {:else if error}
@@ -125,7 +125,7 @@
             {error}
         </div>
     {:else if !items.length}
-        <div class="flex flex-1 items-center justify-center text-gray-600">
+        <div class="flex flex-1 items-center justify-center text-zinc-400">
             No importable images were found.
         </div>
     {:else}
@@ -147,7 +147,7 @@
     <footer class="flex justify-end gap-3 border-t pt-4">
         <button
             type="button"
-            class="rounded border px-4 py-2 hover:bg-gray-50 disabled:opacity-50"
+            class="rounded border px-4 py-2 hover:bg-zinc-800 disabled:opacity-50"
             onclick={cancelImport}
             disabled={importing}
         >

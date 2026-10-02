@@ -144,7 +144,7 @@
                 {@const absoluteItemId = startIndex + itemId}
                 <button
                     type="button"
-                    class="relative flex h-32 flex-col overflow-hidden rounded-lg border bg-white p-2 text-left shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    class="relative flex h-32 flex-col overflow-hidden rounded-lg border border-zinc-700 bg-zinc-800 p-2 text-left shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     class:cursor-zoom-in={showFullscreen}
                     aria-label={`Open image ${item.id}`}
                     onclick={() =>
@@ -156,7 +156,7 @@
                         <Image src={item.thumbnailPath} alt={item.id} />
                     </div>
                     {#if itemLabels[item.id]}
-                        <span class="pt-1 text-sm text-gray-700"
+                        <span class="pt-1 text-sm text-zinc-300"
                             >{itemLabels[item.id]}</span
                         >
                     {/if}

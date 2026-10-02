@@ -1,5 +1,21 @@
 @import "tailwindcss";
 
+:root {
+    color-scheme: dark;
+    background: #18181b;
+    color: #f4f4f5;
+}
+
+html,
+body {
+    min-height: 100%;
+    background: #18181b;
+}
+
+body {
+    margin: 0;
+}
+
 h1 {
     font-size: 2rem;
 }
@@ -8,9 +24,9 @@ button {
     padding: 0.5rem 1rem;
     border-radius: 0.5rem;
     border-width: 1px;
-    border-color: #d0d0d0;
+    border-color: #52525b;
 }
 
 button:hover {
-    background-color: #d0d0d0;
+    background-color: #3f3f46;
 }

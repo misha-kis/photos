@@ -102,7 +102,9 @@
 {#if selectedDirectory}
     <div class="flex h-screen overflow-hidden">
         <SideBar active={view} onnavigate={navigate} />
-        <div class="flex min-h-0 min-w-0 flex-1 flex-col bg-gray-100 p-8">
+        <div
+            class="flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-900 p-8 text-zinc-100"
+        >
             {#if showImport}
                 <ImportView
                     oncancel={() => (showImport = false)}
@@ -113,7 +115,7 @@
                     <div class="mb-4 flex items-center gap-4">
                         <button
                             type="button"
-                            class="rounded bg-gray-700 px-4 py-2 text-white"
+                            class="rounded bg-zinc-700 px-4 py-2 text-white hover:bg-zinc-600"
                             onclick={() => (selectedPerson = null)}
                             >Back to People</button
                         >
@@ -122,14 +124,14 @@
                     {#if personLoading}
                         <p>Loading photos…</p>
                     {:else if personError}
-                        <p class="text-red-700">{personError}</p>
+                        <p class="text-red-400">{personError}</p>
                     {:else}
                         <GridView getPhotos={async () => personPhotos} />
                     {/if}
                 {:else if peopleLoading}
                     <p>Loading people…</p>
                 {:else if peopleError}
-                    <p class="text-red-700">{peopleError}</p>
+                    <p class="text-red-400">{peopleError}</p>
                 {:else if !people.length}
                     <p>No people found yet</p>
                 {:else}
@@ -160,6 +162,10 @@
         </div>
     </div>
 {:else}
-    <button onclick={selectDirectory}>Open/Create a Library</button>
-    <p>No directory selected.</p>
+    <div
+        class="flex min-h-screen flex-col items-center justify-center gap-4 bg-zinc-900 p-8 text-zinc-100"
+    >
+        <button onclick={selectDirectory}>Open/Create a Library</button>
+        <p class="text-zinc-400">No directory selected.</p>
+    </div>
 {/if}
