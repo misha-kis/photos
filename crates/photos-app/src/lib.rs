@@ -70,17 +70,17 @@ impl App {
 
         let analysis_service_registry = app.service_registry.clone();
         let analysis_task_queue = app.task_queue.clone();
-        // tokio::spawn(async move {
-        //     let cancel = CancellationToken::new();
-        //     let ctx = TaskContext {
-        //         service_registry: analysis_service_registry,
-        //         task_queue: analysis_task_queue,
-        //     };
-        //     let face_detection_job = Arc::new(get_face_detection_job(ctx.clone()));
-        //     let embedding_job = Arc::new(get_embeddings_detection_job(ctx.clone()));
-        //     let jobs = (face_detection_job, embedding_job);
-        //     let _ = jobs.dispatch(ctx, (), cancel).await;
-        // });
+        tokio::spawn(async move {
+            let cancel = CancellationToken::new();
+            let ctx = TaskContext {
+                service_registry: analysis_service_registry,
+                task_queue: analysis_task_queue,
+            };
+            let face_detection_job = Arc::new(get_face_detection_job(ctx.clone()));
+            let embedding_job = Arc::new(get_embeddings_detection_job(ctx.clone()));
+            let jobs = (face_detection_job, embedding_job);
+            let _ = jobs.dispatch(ctx, (), cancel).await;
+        });
 
         Ok(app)
     }

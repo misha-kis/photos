@@ -191,23 +191,30 @@ impl<T: ResizeService> ImageRepository for FSImageRepository<T> {
             .internal()
     }
 
-    fn save_face_thumbnail(
+    fn save_face_thumbnails(
         &self,
-        cluster_id: Uuid,
-        image_record: &ImageRecord,
-        bounding_box: BoundingBox,
+        thumbnails: &[(Uuid, ImageRecord, BoundingBox)],
         thumbnail_size: u32,
-    ) -> Result<PathBuf, ImageRepositoryError> {
-        let thumbnail = self.get_face_thumbnail(image_record, bounding_box, thumbnail_size)?;
-        let path = self.get_face_thumbnail_path(cluster_id);
-        if let Some(parent) = path.parent() {
-            ensure_dir(parent).internal()?;
+    ) -> Result<Vec<PathBuf>, ImageRepositoryError> {
+        let face_thumbnails_path = self.path.join("face_thumbnails");
+        if face_thumbnails_path.exists() {
+            fs::remove_dir_all(&face_thumbnails_path).internal()?;
         }
-        let file = File::create(&path).internal()?;
-        let mut writer = BufWriter::new(file);
-        let encoder = JpegEncoder::new_with_quality(&mut writer, 85);
-        thumbnail.write_with_encoder(encoder).internal()?;
-        Ok(path)
+
+        let mut paths = Vec::with_capacity(thumbnails.len());
+        for (cluster_id, image_record, bounding_box) in thumbnails {
+            let thumbnail = self.get_face_thumbnail(image_record, *bounding_box, thumbnail_size)?;
+            let path = self.get_face_thumbnail_path(*cluster_id);
+            if let Some(parent) = path.parent() {
+                ensure_dir(parent).internal()?;
+            }
+            let file = File::create(&path).internal()?;
+            let mut writer = BufWriter::new(file);
+            let encoder = JpegEncoder::new_with_quality(&mut writer, 85);
+            thumbnail.write_with_encoder(encoder).internal()?;
+            paths.push(path);
+        }
+        Ok(paths)
     }
 
     fn get_face_thumbnail_path(&self, cluster_id: Uuid) -> PathBuf {

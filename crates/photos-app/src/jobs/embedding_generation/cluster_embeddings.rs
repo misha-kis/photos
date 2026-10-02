@@ -10,7 +10,13 @@ pub(crate) struct ClusterEmbeddings {
 
 #[async_trait]
 impl Reduce<(), ()> for ClusterEmbeddings {
-    async fn reduce(&self, _inputs: Vec<()>) -> Result<(), AppError> {
+    async fn reduce(&self, inputs: Vec<()>) -> Result<(), AppError> {
+        if inputs.is_empty() {
+            tracing::info!("No clustering needed");
+            return Ok(());
+        }
+        tracing::info!("Clustering embeddings");
+
         let detections_with_embeddings = self
             .ctx
             .service_registry
@@ -39,6 +45,7 @@ impl Reduce<(), ()> for ClusterEmbeddings {
             .await
             .map_err(|e| AppError::TaskSpawnFailed { err: e.to_string() })?;
 
+        let mut thumbnails = Vec::with_capacity(clusters.len());
         for (cluster_id, detection_ids) in clusters {
             let representative =
                 detection_ids
@@ -53,12 +60,13 @@ impl Reduce<(), ()> for ClusterEmbeddings {
                 .get_bbox_and_image_for_detection_id(*representative)
                 .await
                 .map_err(|e| AppError::InvalidDatabaseState { err: e.to_string() })?;
-            self.ctx
-                .service_registry
-                .image_repository
-                .save_face_thumbnail(cluster_id, &image_record, bounding_box, 128)
-                .map_err(|e| AppError::ImageRepositoryError { err: e.to_string() })?;
+            thumbnails.push((cluster_id, image_record, bounding_box));
         }
+        self.ctx
+            .service_registry
+            .image_repository
+            .save_face_thumbnails(&thumbnails, 128)
+            .map_err(|e| AppError::ImageRepositoryError { err: e.to_string() })?;
         Ok(())
     }
 }
