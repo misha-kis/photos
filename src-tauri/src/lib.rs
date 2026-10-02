@@ -149,6 +149,7 @@ pub fn run() {
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(tauri_plugin_log::log::LevelFilter::Info)
+                .filter(|metadata| metadata.target().starts_with("photos"))
                 .build(),
         )
         .setup(|app| {
