@@ -5,7 +5,7 @@ Photos App is a desktop application for managing and viewing your photo library.
 
 ### Demo
 
-![photos app demo](assets/demo.webm)
+https://github.com/user-attachments/assets/e6478503-4f33-490a-887a-e8d54df8a0de
 
 # Building and Running
 
