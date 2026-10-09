@@ -2,6 +2,11 @@
 
 Photos App is a desktop application for managing and viewing your photo library. The idea of the project came from the fact, that Mac's Photos app doesn't analyze the libraries if they are on external drives. To solve this problem, I decided to create my own photo library app that can analyze and manage photos on external drives.
 
+
+### Demo
+
+[photos app demo](assets/demo.webm)
+
 # Building and Running
 
 To build and run the Photos App, you need to have Rust installed on your system. You can install Rust from [rustup.rs](https://rustup.rs/).
@@ -26,7 +31,7 @@ After that, you will be able to select a directory for your first photo library 
 
 The app uses hexagonal architecture, where Application (crates/photos-app) is the core, and it depends on and wires together other components: Filesystem Image Repository (crates/photos-infra-fs-repository), Metadata Repository (crates/photos-infra-sqlite-image-metadata-repository), CV Services (crates/photos-infra-cv), etc.
 
-For the UI, I used [egui](https://github.com/emilk/egui). It works for now, but sometime in the future I want to try something else, currently I'm thinking about `iced` (mainly because of its async support). That said, UI is the hardest part for me, so I will probably stick with `egui` for a while.
+For the UI, I used Svelte. The previous version used `egui`, I enjoyed working with it but found Svelte + Tauri to be easier to maintain and work with.
 
 Here is the component diagram of the app:
 
