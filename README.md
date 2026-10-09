@@ -1,7 +1,12 @@
 # Photos App — a desktop Photo Library app \[work in progress 🏗️\]
 
-Photos App is a desktop application for managing and viewing your photo library. The idea of the project came from the fact, that Mac's Photos app doesn't analyze the libraries if they are on external drives. To solve this problem, I decided to create my own photo library app that can analyze and manage photos on external drives.
+Photos App is a desktop application for managing and viewing your photo library. Mac's Photos app doesn't analyze the libraries if they are on external drives. To solve this problem, I decided to create my own photo library app that can analyze and manage photos anywhere you wish.
 
+It is now in a rather tech demo state and supports:
+
+- having a library;
+- importing images into the library;
+- background facial detection, embedding and clustering.
 
 ### Demo
 
@@ -9,20 +14,16 @@ https://github.com/user-attachments/assets/e6478503-4f33-490a-887a-e8d54df8a0de
 
 # Building and Running
 
-To build and run the Photos App, you need to have Rust installed on your system. You can install Rust from [rustup.rs](https://rustup.rs/).
+> Mind you that the project is developed for MacOS and _doesn't support_ Linux or Windows. The part specific to MacOS is face detection, which uses Apple's proprietary face detection API. While I plan to implement a cross-platform detector module as well, currently it isn't my priority.
 
-Then build according to the instructions:
+To build and run the Photos App, you need to have [Rust](https://rustup.rs/) and [Bun](https://bun.com/docs/installation).
+
+To run the app, run:
 
 ```bash
 git clone https://github.com/misha-kis/photos.git
-cd photos
-cargo build --release
-```
-
-Run the app with:
-
-```bash
-cargo run --release
+bun i
+bun run tauri dev
 ```
 
 After that, you will be able to select a directory for your first photo library and start using the app.
@@ -71,12 +72,21 @@ Thus, a chain of Expand, Map, and Reduce makes a "one `I` → one `O`" task too.
 
 ### ML
 
-Right now the app supports face detection and creating embeddings for faces. This (theoretically) allows to make clusters of faces and add make photo collections based on the people in the pictures.
-
-In reality, there is a lot of work to do either with clustering algorithm, or with embedding model, because right now clustering is far from perfect.
+Right now the app supports face detection and creating embeddings for faces. This allows to make clusters of faces and add make photo collections based on the people in the pictures.
 
 The current version uses
 
-- [yolo-face](https://github.com/akanametov/yolo-face) for face detection
+- a proprietary Apple on-device model for face detection
 - [facenet](https://github.com/davidsandberg/facenet) for creating the embeddings
 - HDBSCAN for clustering
+
+## Core Libraries
+
+| Library      | Purpose                                       |
+| ------------ | --------------------------------------------- |
+| Tauri        | Binding Backend & Frontend                    |
+| Tokio        | Workflows and stuff                           |
+| Svelte       | Frontend                                      |
+| apple-vision | Crate exposing Apple face detection model API |
+| ort          | ONNX runtime for Rust                         |
+| sqlx         | SQL for Rust                                  |
