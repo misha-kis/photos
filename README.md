@@ -2,12 +2,6 @@
 
 Photos App is a desktop application for managing and viewing your photo library. Mac's Photos app doesn't analyze the libraries if they are on external drives. To solve this problem, I decided to create my own photo library app that can analyze and manage photos anywhere you wish.
 
-It is now in a rather tech demo state and supports:
-
-- having a library;
-- importing images into the library;
-- background facial detection, embedding and clustering.
-
 ### Demo
 
 https://github.com/user-attachments/assets/e6478503-4f33-490a-887a-e8d54df8a0de
