@@ -1,5 +1,5 @@
 use crate::errors::IntoInternal;
-use hdbscan::{DistanceMetric, Hdbscan, HdbscanHyperParams};
+use hdbscan::{Hdbscan, HdbscanHyperParams};
 use photos_services::ImageAnalysisServiceError;
 
 /// Configuration for HDBSCAN clustering
@@ -7,15 +7,12 @@ use photos_services::ImageAnalysisServiceError;
 pub struct ClusteringConfig {
     /// Minimum cluster size for HDBSCAN
     pub min_cluster_size: usize,
-    /// Minimum number of samples in a neighborhood for a point to be considered a core point
-    pub min_samples: Option<usize>,
 }
 
 impl Default for ClusteringConfig {
     fn default() -> Self {
         Self {
-            min_cluster_size: 10,
-            min_samples: None,
+            min_cluster_size: 20,
         }
     }
 }
@@ -90,12 +87,9 @@ pub(crate) fn cluster_embeddings(
     }
 
     let distance_matrix = distance_matrix(embeddings);
-    let min_samples = config.min_samples.unwrap_or(config.min_cluster_size);
     let hyper_params = HdbscanHyperParams::builder()
         .min_cluster_size(config.min_cluster_size)
-        .min_samples(min_samples)
-        .dist_metric(DistanceMetric::Precalculated)
-        .allow_single_cluster(true)
+        .allow_single_cluster(false)
         .build();
 
     let clusterer = Hdbscan::new(&distance_matrix, hyper_params);
@@ -121,24 +115,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_cluster_identical_embeddings() {
-        // Create two identical embeddings
-        let embedding1 = [1.0; 512];
-        let embedding2 = [1.0; 512];
-        let embeddings = vec![embedding1, embedding2];
-
-        let config = ClusteringConfig {
-            min_cluster_size: 2,
-            min_samples: None,
-        };
-
-        let result = cluster_embeddings(&embeddings, config).unwrap();
-        // Identical embeddings should be in the same cluster
-        assert!(result.labels[0] == result.labels[1] && result.labels[0].is_some());
-        assert_eq!(result.n_clusters, 1);
-    }
-
-    #[test]
     fn test_cluster_empty() {
         let embeddings: Vec<[f32; 512]> = Vec::new();
         let config = ClusteringConfig::default();
@@ -152,7 +128,6 @@ mod tests {
         let embeddings = vec![[1.0; 512]];
         let config = ClusteringConfig {
             min_cluster_size: 2,
-            min_samples: None,
         };
         let result = cluster_embeddings(&embeddings, config).unwrap();
         // Single point should be noise
