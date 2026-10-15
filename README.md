@@ -1,4 +1,4 @@
-# Photos App — a desktop Photo Library app \[work in progress 🏗️\]
+# Photos App — a desktop Photo Library app
 
 Photos App is a desktop application for managing and viewing your photo library. Mac's Photos app doesn't analyze the libraries if they are on external drives. To solve this problem, I decided to create my own photo library app that can analyze and manage photos anywhere you wish.
 
